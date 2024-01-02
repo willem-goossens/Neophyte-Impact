@@ -1,0 +1,451 @@
+---
+title: "Data preparation"
+subtitle: "based on the work of Christian Ledergerber"
+author: "Willem Goossens"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# Start
+We first clean the environment
+```{r, echo=T}
+rm(list=ls())
+```
+
+We load the required libraries
+```{r, warning=F, message=F}
+library(readr)
+library(tidyr)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(AER)
+library(mgcv)
+library(modEvA)
+```
+
+
+# Eva Data
+We load the data
+```{r , message=FALSE, warning=FALSE}
+fast <- F
+if(fast) {
+  eva <- read_delim("../EVA Data/onePromilleEva.csv", "\t")
+} else {
+  eva <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_species.csv", "\t")
+}
+```
+
+We remove the rows without observations.
+```{r}
+# Count the number of rows with NA values
+numberOfRowsWithoutPlotID <- sum(is.na(eva$PlotObservationID))
+# Check rows with NA
+eva[which(is.na(eva$PlotObservationID)),]
+# Filter out all rows which don't have a plot ID
+eva <- eva[!is.na(eva$PlotObservationID),]
+# Count number of plots in eva before data removal
+originalPlotNumberEva<- length(unique(eva$PlotObservationID))
+```
+
+We update the taxa data
+```{r, warning=F, message=FALSE}
+# Update taxon group for some species where it was specified incorrectly
+taxonGroupCorrections <- read_csv("../Intermediate Data/taxa_taxon_group_corrections.csv")
+index <- eva$`Matched concept` %in% taxonGroupCorrections$Matched.concept
+eva$`Taxon group`[index] <- taxonGroupCorrections$NewTaxonGroup[match(eva$`Matched concept`[index], taxonGroupCorrections$Matched.concept)]
+
+# Update taxon group for species that did not have one in EVA
+taxonGroupAssignments <- read_csv("../Intermediate Data/taxa_taxon_group_assignments.csv")
+index <- eva$`Matched concept` %in% taxonGroupAssignments$Matched.concept
+eva$`Taxon group`[index] <- taxonGroupAssignments$TaxonGroup[match(eva$`Matched concept`[index], taxonGroupAssignments$Matched.concept)]
+
+# Not looked at yet
+taxonNameCorrections <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv")
+eva$species <- taxonNameCorrections$species[match(tolower(eva$`Matched concept`), tolower(taxonNameCorrections$Matched.concept))]
+eva$species[is.na(eva$species)] <- eva$`Matched concept`[is.na(eva$species)] # fix problem with plant not present in neophyte file from irena (only a handful of plant observations in EVA)
+```
+
+We only keep vascular plants and remove the columns in which this data is designated.
+```{r}
+eva <- eva[eva$`Taxon group` == "Vascular plant",!names(eva) %in% c("Taxon group", "Taxon group ID")]
+```
+
+# Header Data
+Read in the header information. Look at and remove plots for which:
+
+-   Area is NA or smaller than 0
+-   Area is larger than 1000 m²
+-   The longitude or latitude data is not known
+-   The plot is not assigned to a region
+-   The plot only contains presence/absence data
+
+```{r, message=F, warning=F}
+header <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_header.csv", "\t")
+totalNumberOfPlots <- length(header$PlotObservationID)
+
+# Plot sizes too small/ inexistent
+plotsWithoutPlotSize <- is.na(header$`Relevé area (m²)`) | header$`Relevé area (m²)` <= 0
+numberOfPlotsWithoutPlotSize <- sum(plotsWithoutPlotSize)
+
+# Plot sizes too large
+tooLargePlots <- header$`Relevé area (m²)` > 1000
+numberOfTooLargePlots <- sum(sort(header$`Relevé area (m²)`, decreasing = T)>1000)
+
+# Plots without coordinates
+plotsWithoutLocation <- is.na(header$Latitude) | is.na(header$Longitude)
+numberOfPlotsWithoutLocation <- sum(plotsWithoutLocation)
+# Check whether the amount of observation plots correspond
+plotsRegionAssignments <- read_csv("../Intermediate Data/plot_to_region_assignment.csv")
+if( sum(header$PlotObservationID[!plotsWithoutLocation] != plotsRegionAssignments$PlotObservationID) > 0) {
+  message("Error: plotsRegionAssignments expected to contain the same plots as contained in header data.")
+}
+# Count number of plots unassigned
+plotsWithoutRegionAssignment <- vector(mode = "logical", length = length(header$PlotObservationID))
+plotsWithoutRegionAssignment[!plotsWithoutLocation] <- is.na(plotsRegionAssignments$Region)
+numberOfPlotsWithoutRegionAssignment = sum(plotsWithoutRegionAssignment)
+
+# Remove only Presence/ Absence data and NA data
+namesForPresenceAbsence <- c("Presence/Absence", "Presentie/Absentie", NA)
+plotsWithPresenceAbsenceOnly <- header$`Cover abundance scale` %in% namesForPresenceAbsence
+numberOfPlotsWithoutCoverInformation <- sum(plotsWithPresenceAbsenceOnly)
+
+allPlotsToBeRemoved <- plotsWithoutPlotSize | tooLargePlots | plotsWithoutLocation | plotsWithPresenceAbsenceOnly | plotsWithoutRegionAssignment
+totalNumberRemoved <- sum(allPlotsToBeRemoved)
+```
+`r numberOfPlotsWithoutPlotSize` of the plots do not contain a size, `r numberOfTooLargePlots` were larger than 1000m² and therefore most likely no plots, `r numberOfPlotsWithoutLocation` of the plots do not have a location, `r numberOfPlotsWithoutRegionAssignment` cannot be assigned to one of the neophyte regions and `r numberOfPlotsWithoutCoverInformation` of the plots do not contain cover data. All these plots (`r totalNumberRemoved`) are removed:
+```{r}
+header <- header[!allPlotsToBeRemoved,]
+```
+
+We also add the region to the data for analysis and change the region and dataset to a factor.
+```{r}
+header <- left_join(header, plotsRegionAssignments, by = "PlotObservationID")
+header$Region <- as.factor(header$Region)
+header$Dataset <- as.factor(header$Dataset)
+```
+
+Finally, we will keep only the plots that are still available in both Eva and Header
+```{r}
+plotsInEvaAndHeader <- intersect(eva$PlotObservationID, header$PlotObservationID)
+eva <- eva[eva$PlotObservationID %in% plotsInEvaAndHeader,]
+header <- header[header$PlotObservationID %in% plotsInEvaAndHeader,]
+```
+After filtering `r length(header$PlotObservationID)` plots remain.
+
+# EIVE
+Reading in the EIVE data and explore data by boxplotting the moisture (M), nitrogen (N), pH (R), light (L) and temperature (T) variables.
+```{r, message=F}
+eive <- read_delim("../EIVE Data/EIVE_Paper_1.0_SM_08.csv", ",")
+
+par(mfrow = c(1,1))
+boxplot(eive$`EIVEres-M`, xlab="M")
+boxplot(eive$`EIVEres-N`, xlab="N")
+boxplot(eive$`EIVEres-R`, xlab="R")
+boxplot(eive$`EIVEres-L`, xlab="L")
+boxplot(eive$`EIVEres-T`, xlab="T")
+```
+
+The EIVE values are OK balanced with some outliers. No extreme skewness to be expected for the average indicator values at the plot level.
+
+Extend eva with columns from EIVE.
+```{r}
+eva$EIVEresM <- eive$`EIVEres-M`[match(eva$species, eive$TaxonConcept)]
+eva$EIVEresN <- eive$`EIVEres-N`[match(eva$species, eive$TaxonConcept)]
+eva$EIVEresR <- eive$`EIVEres-R`[match(eva$species, eive$TaxonConcept)]
+eva$EIVEresL <- eive$`EIVEres-L`[match(eva$species, eive$TaxonConcept)]
+eva$EIVEresT <- eive$`EIVEres-T`[match(eva$species, eive$TaxonConcept)]
+
+eva$EIVEnwM <- eive$`EIVEres-M.nw3`[match(eva$species, eive$TaxonConcept)]
+eva$EIVEnwN <- eive$`EIVEres-N.nw3`[match(eva$species, eive$TaxonConcept)]
+eva$EIVEnwR <- eive$`EIVEres-R.nw3`[match(eva$species, eive$TaxonConcept)]
+eva$EIVEnwL <- eive$`EIVEres-L.nw3`[match(eva$species, eive$TaxonConcept)]
+eva$EIVEnwT <- eive$`EIVEres-T.nw3`[match(eva$species, eive$TaxonConcept)]
+
+numberOfPlantsInEvaFoundInEive <- sum(!(is.na(eva$EIVEresM) | 
+                                              is.na(eva$EIVEresN) | 
+                                              is.na(eva$EIVEresR) | 
+                                              is.na(eva$EIVEresL) | 
+                                              is.na(eva$EIVEresT)))
+percentEvaInEive<- numberOfPlantsInEvaFoundInEive/length(eva$PlotObservationID)
+```
+
+`r numberOfPlantsInEvaFoundInEive` of the `r length(eva$PlotObservationID)` plant observations in Eva have indicator values in EIVE.
+
+
+TODO: how to handle niche width and number of original EIVs in EIVE to improve the estimation of the EIVE value in EVA?
+
+# DIV
+Reading in the disturbance indicator values en plotting severity and frequency.
+```{r, messagge=F}
+div <- read_delim("../Disturbance Data/disturbance_indicator_values.csv", ",")
+
+par(mfrow = c(1,1))
+boxplot(div$Disturbance.Severity)
+boxplot(div$Disturbance.Frequency)
+```
+
+
+Extend eva with columns from disturbance indicator values:
+```{r}
+eva$Disturbance.Severity <- div$Disturbance.Severity[match(eva$species, div$species)]
+eva$Disturbance.Severity.herblayer <- div$Disturbance.Severity.herblayer[match(eva$species, div$species)]
+eva$Disturbance.Frequency <- div$Disturbance.Frequency[match(eva$species, div$species)]
+eva$Disturbance.Frequency.herblayer <- div$Disturbance.Frequency.herblayer[match(eva$species, div$species)]
+eva$Grazing.Pressure <- div$Grazing.Pressure[match(eva$species, div$species)]
+eva$Mowing.Frequency <- div$Mowing.Frequency[match(eva$species, div$species)]
+eva$Soil.Disturbance <- div$Soil.Disturbance[match(eva$species, div$species)]
+
+numberOfPlantsInEvaFoundInDiv <- sum(!is.na(eva$Disturbance.Severity))
+percentEvaInDiv<- numberOfPlantsInEvaFoundInDiv/length(eva$PlotObservationID)
+```
+
+`r numberOfPlantsInEvaFoundInDiv` of the `r length(eva$PlotObservationID)` plant observations in Eva have disturbance indicator value.
+
+# Plot level EVA
+Aggregating EVA (#plant per plot and average indicator values) and calculating all kinds of weighting methods for the Eive values.
+```{r}
+# Function to compute the square root of coverage weighted indicator value 
+# Calculate the weight for every species in the plot, then take the indicator value and finally compute the weighted mean
+computeSquareRootWeightedMean <- function(indicatorValue, coverage) {
+  weights <- sqrt(coverage[!is.na(indicatorValue)])
+  indicators <- indicatorValue[!is.na(indicatorValue)]
+  weighted.mean(indicators, weights)
+}
+
+# Function to compute 1/niche-width weighted mean
+NWwmean <- function(indicatorValue, nicheWidth) {
+  weights <- 1 / nicheWidth[!is.na(indicatorValue)]
+  indicators <- indicatorValue[!is.na(indicatorValue)]
+  weighted.mean(indicators, weights)
+}
+
+# Function to compute sqrt(cover)/niche-width weighted mean
+cNWwmean <- function(indicatorValue, cover, nicheWidth) {
+  weights <- sqrt(cover[!is.na(indicatorValue)]) / nicheWidth[!is.na(indicatorValue)]
+  indicators <- indicatorValue[!is.na(indicatorValue)]
+  weighted.mean(indicators, weights)
+}
+
+aggregatedEva <- eva |> 
+  group_by(PlotObservationID) |> 
+  summarise(
+    numberOfVascularPlantSpecies = n(), 
+    
+    EIVEresM.sqrt = computeSquareRootWeightedMean(EIVEresM, `Cover %`), 
+    EIVEresN.sqrt = computeSquareRootWeightedMean(EIVEresN, `Cover %`), 
+    EIVEresR.sqrt = computeSquareRootWeightedMean(EIVEresR, `Cover %`), 
+    EIVEresL.sqrt = computeSquareRootWeightedMean(EIVEresL, `Cover %`),
+    EIVEresT.sqrt = computeSquareRootWeightedMean(EIVEresT, `Cover %`),
+    
+    EIVEresM.nw = NWwmean(EIVEresM, EIVEnwM), 
+    EIVEresN.nw = NWwmean(EIVEresN, EIVEnwN), 
+    EIVEresR.nw = NWwmean(EIVEresR, EIVEnwR), 
+    EIVEresL.nw = NWwmean(EIVEresL, EIVEnwL),
+    EIVEresT.nw = NWwmean(EIVEresT, EIVEnwT), 
+
+    EIVEresM.cnw = cNWwmean(EIVEresM, `Cover %`, EIVEnwM), 
+    EIVEresN.cnw = cNWwmean(EIVEresN, `Cover %`, EIVEnwN), 
+    EIVEresR.cnw = cNWwmean(EIVEresR, `Cover %`, EIVEnwR), 
+    EIVEresL.cnw = cNWwmean(EIVEresL, `Cover %`, EIVEnwL),
+    EIVEresT.cnw = cNWwmean(EIVEresT, `Cover %`, EIVEnwT), 
+
+    EIVEresM = mean(EIVEresM, na.rm = T), 
+    EIVEresN = mean(EIVEresN, na.rm = T), 
+    EIVEresR = mean(EIVEresR, na.rm = T), 
+    EIVEresL = mean(EIVEresL, na.rm = T), 
+    EIVEresT = mean(EIVEresT, na.rm = T), 
+
+    DistSeverity.sqrt = computeSquareRootWeightedMean(Disturbance.Severity, `Cover %`), 
+    DistSeverityHerblayer.sqrt = computeSquareRootWeightedMean(Disturbance.Severity.herblayer, `Cover %`),
+    DistFrequency.sqrt = computeSquareRootWeightedMean(Disturbance.Frequency, `Cover %`),
+    DistFrequencyHerblayer.sqrt = computeSquareRootWeightedMean(Disturbance.Frequency.herblayer, `Cover %`),
+    Grazing.Pressure.sqrt = computeSquareRootWeightedMean(Grazing.Pressure, `Cover %`),
+    Mowing.Frequency.sqrt = computeSquareRootWeightedMean(Mowing.Frequency, `Cover %`),
+    Soil.Disturbance.sqrt = computeSquareRootWeightedMean(Soil.Disturbance, `Cover %`),
+    
+    DistSeverity = mean(Disturbance.Severity, na.rm = T),
+    DistFrequency = mean(Disturbance.Frequency, na.rm = T),
+
+    DistSeverity.cnw = cNWwmean(Disturbance.Severity, `Cover %`, rep(1,length(`Cover %`))),
+    DistFrequency.cnw = cNWwmean(Disturbance.Frequency, `Cover %`, rep(1,length(`Cover %`))),
+    
+    logDistSeverity = mean(log(Disturbance.Severity + 1/2*min(div$Disturbance.Severity[div$Disturbance.Severity>0])), na.rm = T),
+    logDistFrequency = mean(log(Disturbance.Frequency + 1/2*min(div$Disturbance.Frequency[div$Disturbance.Frequency>0])), na.rm = T)
+    )
+```
+
+
+Join the result with the header data:
+```{r}
+fullPlotData <- full_join(header, aggregatedEva, by = "PlotObservationID")
+fullPlotData <- rename(fullPlotData, Area = `Relevé area (m²)`, Date = `Date of recording`)
+```
+
+# Filtering
+## High SR
+Check which plots are extremely species rich:
+```{r}
+# Which plots SR>100
+highDiversityPlots <- fullPlotData[fullPlotData$numberOfVascularPlantSpecies > 100,]
+
+# Jurgen plots suspiciously high
+highDiversityPlotsToBeRemoved <- c(842839, 843192, 842921) # plots published by Juergen which are for sure incorrect
+
+# Look at datasets containing the plots with SR> 100
+highDiversityDatasets <- unique(highDiversityPlots$Dataset)
+# Look when SR is high for more than two plots in a dataset and obtain their observation ID
+for(dataset in highDiversityDatasets) {
+  plotsInDataset <- highDiversityPlots[highDiversityPlots$Dataset == dataset,]
+  multiplicityOfRichnessOccurrence <- as.data.frame(table(plotsInDataset$numberOfVascularPlantSpecies))
+  multiplicityOfRichnessOccurrence <- multiplicityOfRichnessOccurrence[multiplicityOfRichnessOccurrence$Freq >= 2,] # we want to remove only the plots which > 100 species and suspiciously frequent in the database
+  for(richness in multiplicityOfRichnessOccurrence$Var1) {
+    plotsToBeRemoved <- plotsInDataset[plotsInDataset$numberOfVascularPlantSpecies == richness,]
+    highDiversityPlotsToBeRemoved <- append(highDiversityPlotsToBeRemoved, plotsToBeRemoved$PlotObservationID)
+  }
+}
+
+
+numberOfHighDiversityPlotsToBeRemoved <- length(highDiversityPlotsToBeRemoved)
+fullPlotData <- fullPlotData[!(fullPlotData$PlotObservationID %in% highDiversityPlotsToBeRemoved),]
+
+highDiversityPlots <- fullPlotData[fullPlotData$numberOfVascularPlantSpecies > 100,]
+#write_csv(highDiversityPlots, "highDiversityPlots.csv")
+```
+
+`r numberOfHighDiversityPlotsToBeRemoved` of the plots were removed because they have suspiciously high, non unique richness in the same database or are known to be incorrect.
+
+## Not all IVs calculatable
+Filtering out plots for which some of the indicator values could not be estimated:
+```{r}
+# Cells with NA in fullPlot
+fullPlotDataNas <- is.na(fullPlotData)
+# Get the plot observations
+plotsForWhichNotAllIndicatorValuesWereEstimated <- fullPlotDataNas[,1]
+for(i in 35:dim(fullPlotDataNas)[2]) {
+  plotsForWhichNotAllIndicatorValuesWereEstimated <- plotsForWhichNotAllIndicatorValuesWereEstimated | fullPlotDataNas[,i]
+}
+numberOfPlotsWithMissingIndicatorValues <- sum(plotsForWhichNotAllIndicatorValuesWereEstimated)
+fullPlotData <- fullPlotData[!plotsForWhichNotAllIndicatorValuesWereEstimated,]
+
+aggregatedEva <- aggregatedEva[aggregatedEva$PlotObservationID %in% fullPlotData$PlotObservationID,]
+header <- header[header$PlotObservationID %in% fullPlotData$PlotObservationID,]
+eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
+```
+
+`r numberOfPlotsWithMissingIndicatorValues` of the plots were removed because not all indicator values could be estimated.
+
+# Plot
+
+```{r}
+par(mfrow=c(1,1))
+boxplot(fullPlotData$numberOfVascularPlantSpecies)
+```
+
+As expected the count data on species richness looks quite skewed. Hence, we will need to use a poisson glm.
+
+```{r}
+boxplot(fullPlotData$DistSeverity.sqrt)
+boxplot(fullPlotData$DistFrequency.sqrt)
+boxplot(fullPlotData$EIVEresM.sqrt)
+boxplot(fullPlotData$EIVEresN.sqrt)
+boxplot(fullPlotData$EIVEresR.sqrt)
+boxplot(fullPlotData$EIVEresL.sqrt)
+boxplot(fullPlotData$EIVEresT.sqrt)
+```
+
+The distribution of the EIVE predictors look symmetrical. However, the disturbance indicators are heavily skewed. Hence, they need to be transformed. Because there are zeros in the data we choos a root transoformation. Trying different powers we found that the 4th root worked best:
+
+```{r}
+fullPlotData$transformedDisturbanceSeverity.sqrt <- fullPlotData$DistSeverity.sqrt^(1/4)
+fullPlotData$transformedDisturbanceFrequency.sqrt <- fullPlotData$DistFrequency.sqrt^(1/4)
+fullPlotData$transformedDisturbanceSeverity <- fullPlotData$DistSeverity^(1/4)
+fullPlotData$transformedDisturbanceFrequency <- fullPlotData$DistFrequency^(1/4)
+fullPlotData$transformedDisturbanceSeverity.cnw <- fullPlotData$DistSeverity.cnw^(1/4)
+fullPlotData$transformedDisturbanceFrequency.cnw <- fullPlotData$DistFrequency.cnw^(1/4)
+
+par(mfrow = c(1,2))
+boxplot(fullPlotData$transformedDisturbanceSeverity.sqrt)
+boxplot(fullPlotData$transformedDisturbanceFrequency.sqrt)
+```
+
+After transformation with log(x + eps) the disturbance indicator values are much better centered. However, the transformation function is a bit arbitrary and there are still outliers which cause difficulties with analysis as can be seen by fitting a straight forward model:
+
+# Base model test
+Note that this is not the final Base Model, rather we will use this to check the assumptions made.
+```{r}
+glm0 <- glm(numberOfVascularPlantSpecies ~ 
+                    log(Area) + 
+                    EIVEresM.sqrt + I(EIVEresM.sqrt^2) + 
+                    EIVEresN.sqrt + I(EIVEresN.sqrt^2) + 
+                    EIVEresR.sqrt + I(EIVEresR.sqrt^2) + 
+                    EIVEresL.sqrt + I(EIVEresL.sqrt^2) + 
+                    EIVEresT.sqrt + I(EIVEresT.sqrt^2) +
+                    transformedDisturbanceSeverity.sqrt + I(transformedDisturbanceSeverity.sqrt^2) +
+                    transformedDisturbanceFrequency.sqrt + I(transformedDisturbanceFrequency.sqrt^2)
+                    , family=poisson, fullPlotData)
+
+summary(glm0)
+par(mfrow = c(2,2))
+plot(glm0)
+```
+We can see that the residuals of this model are in a reasonable range and hence the model fits reasonably well to the data.
+
+## Check individual country data
+```{r}
+dataFromGermany <- fullPlotData[fullPlotData$Region == "Germany",]
+dataFromGermany$Dataset <- as.factor(as.character(dataFromGermany$Dataset))
+par(mfrow = c(1,1))
+boxplot(numberOfVascularPlantSpecies ~ Dataset, data = dataFromGermany)
+boxplot(log(fullPlotData$Area))
+```
+
+Looking at different datasets from a similar region exhibits quite large differences in terms of species richness. It will most likely make sense to include Dataset as a random factor. The log transformed size of the plots is very symmetrical. This looks good.
+
+# Write CSV
+```{r}
+fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
+fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
+#write_csv(fullPlotData, "fullPlotData.csv")
+
+eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
+#write_csv(eva, "fullPlotEva.csv")
+```
+
+# Species occurence
+Compute which species occurs how often in eva:
+```{r}
+# For speed optimization we extract only the necessary information from EVA
+reducedEva <- eva |> select(PlotObservationID, species, `Cover %`)
+
+uniqueSpecies <- unique(reducedEva$species)
+
+# Empty dataset
+plotsPerSpecies <- data.frame(names = character(), numberOfPlots = integer())
+
+# Count in how many plots a species occurs
+for(i in 1:length(uniqueSpecies)) {
+  tmp <- reducedEva$PlotObservationID[reducedEva$species == uniqueSpecies[i]]
+  plotsPerSpecies <- add_row(plotsPerSpecies, names = uniqueSpecies[i], numberOfPlots = length(unique(tmp)))
+}
+
+#write_csv(plotsPerSpecies, "plotsPerSpeciesInEurope.csv")
+```
+
+Determine which plant species have more than 10 plots with cover > 50% and cover < 1% for analysis:
+```{r}
+plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv")
+candidatesForCoverClassAnalysis <- plotsPerSpecies$names[plotsPerSpecies$numberOfPlots >= 20]
+
+taxaForCoverClassAnalysis <- c()
+for(taxon in candidatesForCoverClassAnalysis) {
+  if(sum(eva$species == taxon & eva$`Cover %` >= 50) > 10 && sum(eva$species == taxon & eva$`Cover %` < 1) > 10) {
+    taxaForCoverClassAnalysis <- append(taxaForCoverClassAnalysis, c(taxon))
+  }
+}
+
+#write_csv(data.frame(taxa = taxaForCoverClassAnalysis), "taxaForCoverClassAnalysis.csv")
+```
+
+# To Do
+TODO: how to handle niche width and number of original EIVs in EIVE to improve the estimation of the EIVE value in EVA?
+TODO also calculate richness without neophytes?

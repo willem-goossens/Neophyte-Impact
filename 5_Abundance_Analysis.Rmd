@@ -1,0 +1,203 @@
+---
+title: "Analysis of abundance and frequency"
+subtitle: "based on the work of Christian Ledergerber"
+author: "Willem Goossens"
+date: "`r Sys.Date()`"
+output: html_document
+---
+This script analyses whether neophytes are more dominant and frequent than native plants or not:
+
+# Start
+We first clean the environment.
+```{r, echo=T}
+rm(list=ls())
+```
+
+Subsequently we load the required packages.
+```{r, warnings=F, message=F}
+library(readr)
+library(dplyr)
+library(ggplot2)
+```
+
+This script analyses whether neophytes are more dominant and frequent than native plants or not.
+```{r, warnings=F, message=F}
+eva <- read_csv("fullPlotEva.csv")
+```
+
+Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it.
+```{r, warnings=F, message=F}
+fullPlotData <- read_csv("fullPlotData.csv")
+
+fast <- F
+if(fast) {
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
+  eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
+}
+```
+
+Load the neophyte definitions:
+```{r}
+neophyteDefinitions <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv")
+neophyteNames <- neophyteDefinitions$species[neophyteDefinitions$statusEurope == "neo"]
+neophyteNames <- neophyteNames[neophyteNames %in% eva$species]
+```
+# Cover distribution
+Compute which species has which cover distribution in eva:
+```{r}
+# For speed optimization we extract only the necessary information from EVA
+reducedEva <- eva |> select(PlotObservationID, species, `Cover %`)
+
+# Get the species from eva
+uniqueSpecies <- unique(reducedEva$species)
+
+# Make new dataframe to store in the obtained data. 
+speciesDominance <- data.frame(names = character(), coverMedian = numeric(), coverMean = numeric(), var = numeric(), numberOfPlots = integer(), neophyte = logical())
+
+for(i in 1:length(uniqueSpecies)) {
+  # Get dataset for each unique species
+  tmp <- reducedEva[reducedEva$species == uniqueSpecies[i],]
+  # Make ID a factor
+  tmp$PlotObservationID <- as.factor(tmp$PlotObservationID)
+  # Group by plot and calculate the mean species cover for that species in all plots where it is present
+  tmp <- tmp |> group_by(PlotObservationID) |> summarise(cover = mean(`Cover %`))
+  # We are only interested in the dominance of species occuring in at least 50 plots
+  if(length(tmp$PlotObservationID) >= 50) {
+    # Get the summary (median and mean at place 3 and 4) for when the species is present
+    sum <- summary(tmp$cover)
+    speciesDominance <- 
+      add_row(speciesDominance, names = uniqueSpecies[i], coverMedian = sum[[3]], coverMean = sum[[4]], var = var(tmp$cover), numberOfPlots = length(tmp$PlotObservationID), neophyte = (uniqueSpecies[i] %in% neophyteNames))
+  }
+  
+  if(i %% 1000 == 0) {
+    message(i)
+  }
+}
+```
+
+We also analyse which species are significantly negative / positive when compared to the distribution of the native species. We do this for all plants.
+```{r}
+# Get the quantile values of all native plant species.
+quantiles <- quantile(speciesDominance$coverMean[!speciesDominance$neophyte], probs = c(0, 0.01, 0.05, 0.95, 0.99, 1))
+
+# Assign each species to a class
+speciesDominance$significantCoverMean <- as.factor(cut(speciesDominance$coverMean, breaks = quantiles, labels = c("p=0.01 negative", "p=0.05 negative", "", "p=0.05 positive", "p=0.01 positive"), right = TRUE))
+```
+
+Store the results in file for co-authors / publication.
+```{r}
+#write_csv(speciesDominance, "speciesDominance.csv")
+```
+
+
+Finally, visualize the distribution of positive and negative plants for native plants and neophytes:
+```{r}
+speciesDominance <- read_csv("speciesDominance.csv")
+
+ggplot(speciesDominance, mapping = aes(x = log(coverMean), after_stat(density), colour = neophyte)) + geom_freqpoly(binwidth = 0.1)
+
+nNAT<- sum(!speciesDominance$neophyte)
+nNEO<- sum(speciesDominance$neophyte)
+
+p<-ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(coverMean), colour = neophyte)) + 
+  geom_violin() + ylab("Mean cover when present (%)") + xlab(NULL)+
+  scale_colour_manual(values=c("#27cf6a", "#cf274e"), 
+                    name="Legend",
+                    breaks=c(FALSE, TRUE),
+                    labels=c("native species", "neophytes")) +
+  guides(color="none")+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= neophyte), size=3)+
+  theme_classic()+
+  scale_y_continuous(breaks = c(-1, 0, 1, 2), labels = c(0.1,1,10,100), limits=c(-1, 2.2))+
+  scale_x_discrete(labels= c("Native", "Neophyte"))+ theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=12) )+
+  labs(subtitle= "Welch t-test   p<0.0001")+ theme(plot.subtitle=element_text(size=12))+ 
+  annotate("text", x = 1, y = max(log10(speciesDominance$coverMean[!speciesDominance$neophyte])), label = "b", size = 4, vjust = -0.5, hjust = 0.5, size=4) +
+  annotate("text", x = 2, y = max(log10(speciesDominance$coverMean[speciesDominance$neophyte])), label = "a", size = 4, vjust = -0.5, hjust = 0.5, size=4)+
+  annotate("text", x=1, y=2.2, label= paste("n=",nNAT), vjust = -0.5, hjust = 0.5, size=4)+
+  annotate("text", x=2, y=2.2, label= paste("n=",nNEO), vjust = -0.5, hjust = 0.5, size=4)
+p
+
+ggsave("Dominance.jpeg", p )
+
+```
+
+
+Assess, whether the dominance distribution of native plants and neophytes is significantly different:
+```{r}
+# Check variances
+var.test(log10(coverMean) ~ neophyte, speciesDominance, alternative = "two.sided")
+# Not significantly different (but small p values--> Welch probably better e.g. https://doi.org/10.5334/irsp.82)
+
+# Perform Welch t Test
+stat.test<-t.test(log10(coverMean) ~ neophyte, speciesDominance)
+stat.test
+
+# Kolmogorov-Smirnov test 
+ks.test(log10(speciesDominance$coverMean[speciesDominance$neophyte]), log10(speciesDominance$coverMean[!speciesDominance$neophyte]))
+
+# Wilcox test
+wilcox.test(log10(coverMean) ~ neophyte, speciesDominance)
+
+# Get the datasets for the species seperately
+neophyteDominance <- speciesDominance[speciesDominance$neophyte,]
+nativeDominance <- speciesDominance[!speciesDominance$neophyte,]
+
+# Which species have the highest and lowest cover, calculated separately for natives and neophytes
+nativeDominance[match(min(nativeDominance$coverMean), nativeDominance$coverMean),]
+neophyteDominance[match(min(neophyteDominance$coverMean), neophyteDominance$coverMean),]
+
+nativeDominance[match(max(nativeDominance$coverMean), nativeDominance$coverMean),]
+neophyteDominance[match(max(neophyteDominance$coverMean), neophyteDominance$coverMean),]
+
+write.table(neophyteDominance %>%
+    arrange(desc(coverMean)) %>%
+    slice(1:20), "clipboard" )
+
+```
+
+# Frequency
+Analyse whether the frequency distributions of native and neophyte plants are significantly different:
+```{r}
+# Load in the file containing the number of plots per species
+plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv")
+# Only keep when there are at least 10 plots
+plotsPerSpecies <- plotsPerSpecies[plotsPerSpecies$numberOfPlots > 10,]
+# Give neophyte names
+plotsPerSpecies$neophyte <- plotsPerSpecies$names %in% neophyteNames
+
+
+ggplot(plotsPerSpecies, mapping = aes(x = log(numberOfPlots), after_stat(density), colour = neophyte)) + geom_freqpoly(binwidth = .5)
+
+nNEO<- sum(plotsPerSpecies$neophyte)
+nNAT<- sum(!plotsPerSpecies$neophyte)
+
+p<- ggplot(plotsPerSpecies, mapping = aes(x= neophyte, y = log10(numberOfPlots), colour = neophyte)) + 
+   geom_violin() +
+  ylab("log10(number of occurences)") + xlab(NULL)+
+  scale_colour_manual(values=c("#27cf6a", "#cf274e"), 
+                    name="Legend",
+                    breaks=c(FALSE, TRUE),
+                    labels=c("native species", "neophytes")) +
+  guides(color="none")+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= neophyte), size=3)+
+  theme_classic()+
+  scale_x_discrete(labels= c("Native", "Neophyte"))+theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=12) )+
+  labs(subtitle= "Welch t-test   p<0.0001")+  theme(plot.subtitle=element_text(size=12))+ 
+   annotate("text", x = 1, y = max(log10(plotsPerSpecies$numberOfPlots[!plotsPerSpecies$neophyte])), label = "a", size = 4, vjust = -0.5, hjust = 0.5) +
+  annotate("text", x = 2, y = max(log10(plotsPerSpecies$numberOfPlots[plotsPerSpecies$neophyte])), label = "b", size = 4, vjust = -0.5, hjust = 0.5)+
+    annotate("text", x=1, y=5.5, label= paste("n=",nNAT), vjust = -0.5, hjust = 0.5, size=4)+
+  annotate("text", x=2, y=5.5, label= paste("n=",nNEO), vjust = -0.5, hjust = 0.5, size=4)
+p
+ggsave("Frequency.jpeg", p )
+
+
+summary(log10(plotsPerSpecies$numberOfPlots[!plotsPerSpecies$neophyte]))
+summary(log10(plotsPerSpecies$numberOfPlots[plotsPerSpecies$neophyte]))
+
+var.test(log10(numberOfPlots) ~ neophyte, plotsPerSpecies, alternative = "two.sided")
+t.test(log10(numberOfPlots) ~ neophyte, plotsPerSpecies)
+ks.test(log10(plotsPerSpecies$numberOfPlots[plotsPerSpecies$neophyte]), log10(plotsPerSpecies$numberOfPlots[!plotsPerSpecies$neophyte]))
+```
+

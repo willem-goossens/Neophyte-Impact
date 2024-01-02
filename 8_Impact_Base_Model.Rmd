@@ -1,0 +1,254 @@
+---
+title: "Impact analysis with base model"
+author: "Willem Goossens"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r, echo=FALSE}
+rm(list=ls())
+```
+
+
+Load packages
+```{r, warnings=F, message=F}
+library(readr)
+library(dplyr)
+library(mgcv)
+library(modEvA)
+library(ggplot2)
+library(doParallel)
+library(foreach)
+```
+
+
+# Start
+Here we set some parameters that are useful in the script
+```{r}
+correctArea<- F
+```
+
+
+Load eva and plot data
+```{r, warnings=F, message=F}
+eva <- read_csv("fullPlotEva.csv")
+fullPlotData <- read_csv("fullPlotData.csv")
+```
+
+
+Downsample by a factor of 100 if fast is selected
+```{r}
+fast <- T
+if(fast) {
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.90,]
+  eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
+}
+```
+
+
+Load neophyte definitions and check which of the data exists in EVA
+```{r, warnings=F, message=F}
+neophyteDefinitions <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv")
+neophyteNames <- neophyteDefinitions$species[neophyteDefinitions$statusEurope == "neo"]
+neophyteNames <- neophyteNames[neophyteNames %in% eva$species]
+```
+
+
+Reduce EVA to a smaller dataset to accelerate computations.  
+Count the number of plots in which the species in the dataset exist.
+```{r}
+if(fast) {
+  reducedEva <- eva |> select(PlotObservationID, species, `Cover %`)
+  
+  uniqueSpecies <- unique(reducedEva$species)
+  
+  plotsPerSpecies <- data.frame(names = character(), numberOfPlots = integer())
+  
+  # Count number of plots
+  for(i in 1:length(uniqueSpecies)) {
+    tmp <- reducedEva$PlotObservationID[reducedEva$species == uniqueSpecies[i]]
+    
+    plotsPerSpecies <- 
+      add_row(plotsPerSpecies, names = uniqueSpecies[i], numberOfPlots = length(unique(tmp)))
+  }
+} else {
+  plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv")
+}
+```
+
+
+# Data preparation
+We want all species that are present in at least 50 plots, we order this set from highest to lowest and subsequently make a function to compute the total cover of the species across all sites.
+```{r}
+# determine which plant species should be computed
+minimumNumberOfPlots<- 50
+allPlants <- plotsPerSpecies[plotsPerSpecies$numberOfPlots >= minimumNumberOfPlots,]
+allPlants <- allPlants[order(-allPlants$numberOfPlots),]
+
+computeSpeciesCover <- function(name, species, cover) {
+  result <- sum(cover[species==name]) # we use the sum here, since otherwise the total cover / species cover cannot reach one.
+  if(is.na(result)) {
+    0
+  } else {
+    result
+  }
+}
+```
+
+
+Test the function
+```{r, warnings=F, message=F}
+# Tests of the above function
+computeSpeciesCover("nonExistentPlant", c("plant1", "plant2"), c(1,2)) # If the plant is not present 0 is returned.
+computeSpeciesCover("plant1", c("plant1", "plant2"), c(1,2)) # If the is present the right value is returned
+computeSpeciesCover("plant2", c("plant1", "plant2"), c(1,2))
+computeSpeciesCover("plant2", c("plant1", "plant2", "plant2"), c(1,2,3)) # If the plant is present multiple times the sum is returned
+
+reducedEva <- eva[,c("PlotObservationID", "species", "Cover %")]
+```
+# Function
+```{r}
+# The name of the first species
+plantName = allPlants$names[1]
+
+# Function to compute the impact for each species, so we only need the plant name as input
+computePlantImpact <- function(plantName) {
+  
+  # Copy dataset temporarily to be able to make changes
+  tmpFullPlotData <- fullPlotData
+  
+  # Get the indices of the plant in the eva dataset
+  indexOfPlant <- eva$species == plantName
+  
+  # The majority of the time is spent in computing the cover classes. 
+  # We select only the rows containing the species first because this is much faster than doing it for all plots.
+  # We make the dataset smaller (only those plots where the species is present), group the data per plot and compute the total cover (all species) and cover of the species we are highlighting now
+  plotsWherePlantOccurs <- reducedEva[reducedEva$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant],] |>
+    group_by(PlotObservationID) |>
+    summarise(totalCover = sum(`Cover %`), 
+              speciesCover = computeSpeciesCover(plantName, species, `Cover %`))
+  
+  
+  # Because the cover class was only computed for plots containing the species we need to assign 0% class to the remaining plots.
+  # Join the computed cover plots with the full data
+  tmpFullPlotData <- left_join(tmpFullPlotData, plotsWherePlantOccurs, by = "PlotObservationID")
+  # Identify all plots where the species investigated occurs
+  tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant]
+  
+  # If species is not present:
+  # Make 1 total cover and 0 species cover
+  tmpFullPlotData$totalCover[is.na(tmpFullPlotData$totalCover)] <- 1.0
+  tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
+  
+  # Exclude all plots which have 0 total cover
+  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover > 0,] 
+  
+  # Do SR - 1 for all plots in which the species is present
+  tmpFullPlotData$numberOfVascularPlantSpecies <- tmpFullPlotData$numberOfVascularPlantSpecies - tmpFullPlotData$plantOccurs
+  
+  # Correct area: if true we calculate the area that is reserved for the other plant species. 
+  if(correctArea) {
+    tmpFullPlotData$Area <- tmpFullPlotData$Area*(1.0 - tmpFullPlotData$speciesCover/tmpFullPlotData$totalCover)
+  }
+  
+  # There is a numerical problem in the bam function if we provide empty plots...
+  # This should normally not be possible (as we did data screening) but I will check again
+  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$numberOfVascularPlantSpecies > 0 & tmpFullPlotData$Area > 0,]
+  
+  # Make dataset a factor to add it as a random variable
+  tmpFullPlotData$Dataset <- as.factor(tmpFullPlotData$Dataset)
+  
+  # Count number of plots in which the species is present
+  sum(tmpFullPlotData$plantOccurs)
+  
+  # Base model
+  gam11 <- bam(numberOfVascularPlantSpecies ~ 
+                 log(Area) + 
+                 s(EIVEresM, bs = 'tp') +
+                 s(EIVEresN, bs = 'tp') +
+                 s(EIVEresR, bs = 'tp') +
+                 s(EIVEresL, bs = 'tp') +
+                 s(EIVEresT, bs = 'tp') +
+                 s(transformedDisturbanceSeverity, bs = 'tp') +
+                 s(transformedDisturbanceFrequency, bs = 'tp') +
+                 s(Latitude, Longitude, bs = 'tp') +
+                 s(Dataset, bs = 're') +
+                 plantOccurs, 
+               family = poisson(link = log), 
+               data = tmpFullPlotData, 
+               method = 'fREML',
+               discrete=TRUE,
+               nthreads=1)
+  
+  # Get summary from model
+  gam11.sum <- summary(gam11)
+  
+  # Make a dataframe to add the residuals to
+  res <- data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer())
+  
+  res <- add_row(res, taxa = plantName, Estimate = gam11.sum$p.table[3,1], StdErr = gam11.sum$p.table[3,2], zValue = gam11.sum$p.table[3,3], pr = gam11.sum$p.table[3,4], numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID))
+  res
+}
+```
+
+
+# Impact
+Run whole function for smaller dataset
+```{r}
+allPlantsImpact <- data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer())
+
+#testSpecies<- uniqueSpecies[1:100]
+
+#for(j in 1: round(length(uniqueSpecies)/100)){
+ # start<- 100*(j-1)+1
+ # end<- 100*j
+#  for(i in start:end) {
+ # res <- computePlantImpact(allPlants$names[i])
+  #allPlantsImpact <- rbind(allPlantsImpact, res)
+ # }
+  #name<-paste("allPlantImpact",j, sep = "")
+  #assign(name,allPlantsImpact)
+#}
+
+#allPlantImpact94$neophyte<- allPlantImpact94$taxa %in% neophyteNames
+
+#ggplot(allPlantImpact94, aes(x=neophyte, y= Estimate))+geom_violin()+ stat_summary(fun= "mean",  geom = "point", aes(group= neophyte), size=3)
+
+#stat.test<-t.test((Estimate) ~ neophyte, allPlantImpact94)
+```
+
+
+Use foreach to speed up computations
+```{r}
+n.cores<- parallel::detectCores()-2 
+my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK" )
+print(my.cluster)
+doParallel::registerDoParallel(cl = my.cluster)
+foreach::getDoParRegistered()
+foreach::getDoParWorkers()
+
+allPlantsImpact <- data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer())
+length(allPlants$names)
+
+begin<-Sys.time()
+x<- foreach(i= 1:length(allPlants$names), .combine = "rbind", .packages = c("dplyr","mgcv")) %dopar% {
+  res <- computePlantImpact(allPlants$names[i])
+}
+end<-Sys.time()
+round(end-begin, 2)
+
+x$neophyte<- x$taxa %in% neophyteNames
+
+length(unique(x$taxa[x$neophyte]))
+
+ggplot(x, aes(x=neophyte, y= Estimate))+geom_violin()+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= neophyte), size=3)
+
+mean(x$Estimate[x$neophyte])
+mean(x$Estimate[!x$neophyte])
+t.test(Estimate~neophyte, x)
+parallel::stopCluster(cl = my.cluster)
+```
+
