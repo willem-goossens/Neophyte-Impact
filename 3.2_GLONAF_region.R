@@ -172,7 +172,7 @@ parallel::stopCluster(cl = my.cluster)
 
 ##### PLOT ####
 
-#Check eg Netherlands
+#Check eg Denmark
 plot(st_geometry(glonafRegions[glonafRegions$OBJIDsic=="828",]), reset=F)
 plot(st_geometry(x), add=T)
 plot(st_geometry(boundingBoxes))
