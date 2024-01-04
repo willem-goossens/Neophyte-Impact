@@ -65,7 +65,7 @@ print(setdiff( MED_regions, GLONAF_regions))
 
 # Zang et al excluded the islands
 # Load all data
-allPlotsWithRegion<- read.csv("plot_to_region_assignment.csv")
+allPlotsWithRegion<- read.csv("../Willem R/plot_to_region_assignment.csv")
 # Load header data
 header <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_header.csv", "\t")
 header <- header[!(is.na(header$Latitude) | is.na(header$Longitude)),]
@@ -100,6 +100,8 @@ ggplot() +
   geom_sf(data = plotsInRegion, color = "red", size = 0.5) + 
   coord_sf()
 
+ggplot()+
+  geom_sf(data= medRegions.df)
 
 # Glonaf
 glonafRegions <- read_sf("../GloNAF_Shapefile", "regions2")
