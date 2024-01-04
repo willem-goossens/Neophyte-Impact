@@ -52,9 +52,10 @@ which(is.na(joinedData$OBJIDsic))
 sf_use_s2(F)
 res <- st_join(plotLocations, newGlonaf[24,])
 any(!is.na(res$OBJIDsic))
+index<-which(!is.na(res$OBJIDsic))
 # We cannot merge Northern Ireland
-# Merge the Netherlands back into the overall data
-#joinedData[(res$Region == "Netherlands") %in% TRUE,] <- res[(res$Region == "Netherlands") %in% TRUE,]
+joinedData[index,] <- res[index,]
+
 
 # some data is duplicated because it is located on the edge of two countries and glonaf shapefile is not very accurate
 setdiff(joinedData$PlotObservationID, plotLocations$PlotObservationID)
@@ -119,7 +120,7 @@ round(end-begin, 2)
 remainingPlots2<- remainingPlots
 
 allPlotsWithRegion <- joinedData[,c("PlotObservationID", "code", "Country")]
-allPlotsWithRegion[is.na(allPlotsWithRegion$code),] <- remainingPlots[,c("PlotObservationID", "code", "Country")]
+#allPlotsWithRegion[is.na(allPlotsWithRegion$code),] <- remainingPlots[,c("PlotObservationID", "code", "Country")]
 
 x<-allPlotsWithRegion[is.na(allPlotsWithRegion$code),]
 
@@ -136,115 +137,13 @@ doParallel::registerDoParallel(cl = my.cluster)
 foreach::getDoParRegistered()
 foreach::getDoParWorkers()
 
-foreach(i= 1:length(remainingPlots$PlotObservationID), .combine= 'rbind') %:% 
-  foreach(j=1:85, .combine= 'rbind', .packages= c("dplyr","mgcv", "sf") ) %do% {
-            region <- NA
-            distance <- set_units(1000000,m)
-            distBoundingBox <- st_distance(boundingBoxes[j,], remainingPlots[i,]) #Calculate the distance
-          # Only if the distance to the bounding box is smalle than distanceThreshold we need to compute the real distance to the region
-          if(distBoundingBox < distanceThreshold){
-            dist <- st_distance(glonafRegions[j,], remainingPlots[i,])
-            if(dist < distanceThreshold & dist < distance) {
-              region <- glonafRegions$OBJIDsic[j]
-              distance <- dist
-            }
-            message(i/length(remainingPlots$PlotObservationID)*100, "% ", remainingPlots$Country[i], " ", region)
-            remainingPlots$Region[i] <- region
-            remainingPlots$Distance[i] <- distance
-          }
-        
-  }
-begin<-Sys.time()          
-  for(i in 1:length(remainingPlots$PlotObservationID)){
-    foreach(j=1:85, .combine= 'rbind', .packages= c("dplyr","mgcv", "sf") ) %dopar% {
-      distBoundingBox <- st_distance(boundingBoxes[j,], remainingPlots[i,]) #Calculate the distance
-      # Only if the distance to the bounding box is smalle than distanceThreshold we need to compute the real distance to the region
-      if(distBoundingBox < distanceThreshold){
-        dist <- st_distance(glonafRegions[j,], remainingPlots[i,])
-        if(dist < distanceThreshold & dist < distance) {
-          region <- glonafRegions$OBJIDsic[j]
-          distance <- dist
-        }
-      }
-      message(i/length(remainingPlots$PlotObservationID)*100, "% ", remainingPlots$Country[i], " ", region) 
-      remainingPlots$code[i] <- region
-      remainingPlots$Distance[i] <- distance
-    }
-  }
-end<-Sys.time()
-round(end-begin, 2)
-
-###### correct ######
-distanceThreshold <- set_units(10000,m)
 
 remainingPlots <- plotLocations[is.na(joinedData$code),]
-
-# Compute bounding boxes for the regions, this allows to decide faster, if a plot is outside the distanceThreshold from a region
-boundingBoxes <- glonafRegions
-
-for(i in 1:length(boundingBoxes$OBJIDsic)) {
-  boundingBoxes$geometry[i] <- st_as_sfc(st_bbox(boundingBoxes$geometry[i]))
-}
-
 remainingPlots$code <- NA
 remainingPlots$Distance <- -1
 
-begin<-Sys.time()  
-x<-length(remainingPlots$PlotObservationID)
-foreach(i= 1:x, .combine= 'rbind', .packages= c("dplyr","mgcv", "sf","units")) %dopar% {
-  for(j in 1:85) {
-    distBoundingBox <- st_distance(boundingBoxes[j,], remainingPlots[i,]) #Calculate the distance
-    # Only if the distance to the bounding box is smalle than distanceThreshold we need to compute the real distance to the region
-    if(distBoundingBox < distanceThreshold){
-      dist <- st_distance(glonafRegions[j,], remainingPlots[i,])
-      if(dist < distanceThreshold & dist < distance) {
-        region <- glonafRegions$OBJIDsic[j]
-        distance <- dist
-      }
-    }
-  }
-  remainingPlots$code[i] <- region
-  remainingPlots$Distance[i] <- distance
-}
-end<-Sys.time()
-round(end-begin, 2)  
-  
-remainingPlots$code
-  
-distanceThreshold <- set_units(10000,m)
-
-remainingPlots <- plotLocations[is.na(joinedData$code),]
-
-# Compute bounding boxes for the regions, this allows to decide faster, if a plot is outside the distanceThreshold from a region
-boundingBoxes <- glonafRegions
-
-for(i in 1:length(boundingBoxes$OBJIDsic)) {
-  boundingBoxes$geometry[i] <- st_as_sfc(st_bbox(boundingBoxes$geometry[i]))
-}
-
-remainingPlots$code <- NA
-remainingPlots$Distance <- -1, remainingPlots2$code)
-  
-
-for(i in 1:length(remainingPlots$PlotObservationID)) {
-  region <- NA
-  distance <- set_units(1000000,m)
-  foreach(j=1:length(glonafRegions$OBJIDsic,
-                     .combine= 'rbind', .packages= c("dplyr","mgcv", "sf") ) %do% {
-                       distBoundingBox <- st_distance(boundingBoxes[j,], remainingPlots[i,]) #Calculate the distance
-                       # Only if the distance to the bounding box is smalle than distanceThreshold we need to compute the real distance to the region
-                       if(distBoundingBox < distanceThreshold){
-                         dist <- st_distance(glonafRegions[j,], remainingPlots[i,])
-                         if(dist < distanceThreshold & dist < distance) {
-                           region <- glonafRegions$OBJIDsic[j]
-                           distance <- dist
-                         }
-                       }  
-                     }
-}
-
 begin<-Sys.time() 
-foreach(i = 1:length(remainingPlots$PlotObservationID), .combine='rbind', .packages=c("dplyr","mgcv", "sf")) %dopar% {
+remainingPlots[,35:36]<-foreach(i = 1:length(remainingPlots$PlotObservationID), .combine='rbind', .packages=c("dplyr","mgcv", "sf","units")) %dopar% {
   region <- NA
   distance <- set_units(1000000,m)
   
@@ -261,11 +160,12 @@ foreach(i = 1:length(remainingPlots$PlotObservationID), .combine='rbind', .packa
   }
   # Print the progress
   message(i/length(remainingPlots$PlotObservationID)*100, "% ", remainingPlots$Country[i], " ", region)
-  remainingPlots$Region[i] <- region
-  remainingPlots$Distance[i] <- distance
+  remainingPlots$code[i] <- c(region, distance)
 }
 end<-Sys.time()
 round(end-begin, 2)  
+
+print(setdiff(remainingPlots$code, remainingPlots2$code))
 
 
 parallel::stopCluster(cl = my.cluster)
