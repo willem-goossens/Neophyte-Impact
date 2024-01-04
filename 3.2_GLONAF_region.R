@@ -47,13 +47,29 @@ plot(st_geometry(plotLocations), add=T)
 
 ###### joined ######
 sf_use_s2(T)
-joinedData<-st_join(plotLocations, newGlonaf[c(1:23,25:85),], join=st_within)
+joinedData<-st_join( plotLocations, newGlonaf[c(1:23,25:85),],join=st_within)
+which(is.na(joinedData$OBJIDsic))
 sf_use_s2(F)
 res <- st_join(plotLocations, newGlonaf[24,])
 any(!is.na(res$OBJIDsic))
 # We cannot merge Northern Ireland
 # Merge the Netherlands back into the overall data
 #joinedData[(res$Region == "Netherlands") %in% TRUE,] <- res[(res$Region == "Netherlands") %in% TRUE,]
+
+# some data is duplicated because it is located on the edge of two countries and glonaf shapefile is not very accurate
+setdiff(joinedData$PlotObservationID, plotLocations$PlotObservationID)
+any(is.na(joinedData$PlotObservationID))
+any(is.na(plotLocations$PlotObservationID))
+joinedData$PlotObservationID[duplicated(joinedData$PlotObservationID)]
+joinedData[joinedData$PlotObservationID=="849751",]
+joinedData<-joinedData[!duplicated(joinedData$PlotObservationID),]
+
+pi= st_intersection(glonafRegions[glonafRegions$OBJIDsic=="457",],glonafRegions[glonafRegions$OBJIDsic=="1558",])
+plot(st_geometry(glonafRegions[glonafRegions$OBJIDsic=="457",]), col='blue')
+plot(st_geometry(glonafRegions[glonafRegions$OBJIDsic=="1558",]), add=T, col="yellow")
+plot(pi$geometry, add=T, col="red")
+
+bind_rows(joinedData$PlotObservationID %>% anti_join(plotLocations$PlotObservationID))
 
 percentNotAssignedPlots <- sum(is.na(joinedData$code))/length(joinedData$code)*100
 percentNotAssignedPlots
