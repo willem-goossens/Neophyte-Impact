@@ -19,7 +19,7 @@ native<-read.csv("../Neophyte Assignments/wf_dat.csv")
 neophyte<- read.csv("../Neophyte Assignments/glonaf_dat.csv")
 
 # Load our cleaned up header data
-fullPlotData<- read.csv("fullPlotData.csv")
+fullPlotData<- read.csv("../Willem R/fullPlotData.csv")
 
 # Check how data is organised and retrieve only data on Europe
 # We also checked for Australasia, but this is only Australia, hence, we can only keep the Europe part of the dataset for our analysis
