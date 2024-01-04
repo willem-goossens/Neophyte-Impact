@@ -33,5 +33,6 @@ fractionOfPlotsInOnePromilleEva <- numberOfUniquePlotIDsInEva / nUniquePlotIDs(o
 fractionOfPlotsInOnePromilleEva
 
 # Store the resulting data in a file
-write_delim(onePercentEva, "../EVA Data/onePercentEva.csv", delim = "\t")
-write_delim(onePromilleEva, "../EVA Data/onePromilleEva.csv", delim = "\t")
+#write_delim(onePercentEva, "../EVA Data/onePercentEva.csv", delim = "\t")
+#write_delim(onePromilleEva, "../EVA Data/onePromilleEva.csv", delim = "\t")
+
