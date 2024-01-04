@@ -127,6 +127,7 @@ We store the results in a new file
 
 # No genus
 We first load the data and check uniqueness of taxa
+
 ```{r, message= F, warning=FALSE}
 taxonGroupForGeni <- read_csv("../Intermediate Data/taxon_group_for_unassigned_geni.csv")
 unique(taxonGroupForGeni$TaxonGroup)
