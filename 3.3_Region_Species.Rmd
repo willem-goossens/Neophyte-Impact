@@ -1,0 +1,131 @@
+---
+title: "Unique plant per region"
+author: "Willem Goossens"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r, echo=FALSE}
+rm(list=ls())
+```
+
+```{r}
+library(readr)
+library(tidyr)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+```
+
+# Load data
+
+## Eva
+
+```{r, message=F, warning=F}
+# Read in EVA
+fast <- F
+if(fast) {
+  eva <- read_delim("../EVA Data/onePromilleEva.csv", "\t")
+} else {
+  eva <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_species.csv", "\t")
+}
+
+# Filter out all rows which don't have a plot ID
+eva <- eva[!is.na(eva$PlotObservationID),]
+```
+
+## Taxon corrections
+
+```{r, message=F, warning=F}
+# Taxa which had incorrect taxon assigned
+taxonGroupCorrections <- read_csv("../Intermediate Data/taxa_taxon_group_corrections.csv")
+# Places in eva where the matched concept is the same as from the correction file
+index <- eva$`Matched concept` %in% taxonGroupCorrections$Matched.concept
+# For all places in eva that have to be changed, give the new taxon group based on the matched concept
+eva$`Taxon group`[index] <- taxonGroupCorrections$NewTaxonGroup[match(eva$`Matched concept`[index], taxonGroupCorrections$Matched.concept)]
+
+# Geni that did not have a taxon
+taxonGroupAssignments <- read_csv("../Intermediate Data/taxa_taxon_group_assignments.csv")
+index <- eva$`Matched concept` %in% taxonGroupAssignments$Matched.concept
+eva$`Taxon group`[index] <- taxonGroupAssignments$TaxonGroup[match(eva$`Matched concept`[index], taxonGroupAssignments$Matched.concept)]
+```
+
+## Filter Eva
+
+```{r}
+# Remove all non-vascular plants from eva
+eva <- eva[eva$`Taxon group` == "Vascular plant",]
+```
+
+# Regions
+
+Read the data where each plot is assigned to a region based on the distance or geometry (from file [Region check](3_Region_Check.rmd))
+
+```{r, message=F}
+# Read in the plot to region assignments
+plotRegionAssignments <- read_csv("../Intermediate Data/plot_to_region_assignment.csv")
+```
+
+Assign regions to EVA. This file might be very usefull when used together with glonaf. I think the order would be something like this:
+
+-   read in glonaf
+-   generate for every country a list of species that are native
+-   assign for every country the native status
+-   look at other species status within Europe, if native elsewhere give intracontinental neophyte
+-   otherwise give extra european status
+
+I think this can be done with a for loop? for (i in 1: length(unique(eva$regions))) { country_nat<- if species %in% glonaf$ native status\<- "native" elseif species %in% glonaf\$europe status\<- EU neo else status\<- non-EU neo }
+
+TOO BE CONTINUED
+
+```{r, message=F}
+# Remove plots in EVA which are not in the scope of the study 
+# Outside of scope of study means Region not assigned, ergo NA
+# function returns all plots in eva that are also assigned
+eva <- eva[!is.na(plotRegionAssignments$Region[match(eva$PlotObservationID, plotRegionAssignments$PlotObservationID)]),]
+
+# Add a column to EVA which contains in which region each observation lies
+eva$Region <- plotRegionAssignments$Region[match(eva$PlotObservationID, plotRegionAssignments$PlotObservationID)]
+
+# Check regions
+allRegions <- unique(plotRegionAssignments$Region)
+allRegions <- allRegions[!is.na(allRegions)]
+allRegions
+```
+
+
+# Species per region
+```{r}
+# make empty dataframe
+allResults <- data.frame(Region = character(0), Matched.concept = character(0), NumberOfPlotsWithTaxa = integer(), PercentageOfPlotsWithTaxa = double())
+
+# For each region: compute all the unique plants in the region and in how many of the plots they appear. 
+for(i in 1:length(allRegions)) {
+  # Create temperate file in every run with the region we want to assess
+  tmp <- eva[eva$Region == allRegions[i],]
+  # Make a data frame with the matched concept (immediately also counts the number of times present)
+  result <- as.data.frame(table(tmp$`Matched concept`))
+  colnames(result)[1] <- "Matched.concept"
+  colnames(result)[2] <- "NumberOfPlotsWithTaxa"
+
+  # count number of plots per country
+  numberOfPlots <- length(unique(tmp$PlotObservationID))
+  # add the percentage of plots
+  result$PercentageOfPlotsWithTaxa <- result$NumberOfPlotsWithTaxa / numberOfPlots * 100
+  # give the region his name
+  result$Region <- allRegions[i]
+  
+  # add all data together
+  allResults <- add_row(allResults, Region = result$Region, 
+                        Matched.concept = result$Matched.concept, 
+                        NumberOfPlotsWithTaxa = result$NumberOfPlotsWithTaxa, 
+                        PercentageOfPlotsWithTaxa = result$PercentageOfPlotsWithTaxa)
+}
+
+```
+
+Save data
+```{r}
+write_csv(allResults, "UniqueTaxaPerRegion.csv")
+```
+
