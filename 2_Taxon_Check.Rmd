@@ -43,6 +43,9 @@ unique(eva$`Taxon group`)
 Make a new column with only the genus' name.  
 ```{r Matched concept,  message= F, warning=FALSE}
 # Fast method to extract the first string from the 'Matched concept' column e.g. Genus
+# \\1 says to use the first part (ie word) as input for the new column
+# []+* is used to take all subsequent letters (with capitals and small letters)
+# gsub is the function to replace the text (designated in the first part) with the second part (unless it is like here, then we just take that part) from the column designated last
 eva$Genus <- gsub("([A-Za-z]+).*", "\\1", eva$`Matched concept`)
 
 # This worked, all plant observations have a genus
@@ -61,7 +64,9 @@ taxonGroupToId <- function(taxonGroup) {
 }
 
 computeTaxonGroup <- function(possibleTaxonGroups) {
+  # get all possible groups for that specific genus
   uniqueTaxonGroups <- unique(possibleTaxonGroups[!(is.na(possibleTaxonGroups) | possibleTaxonGroups == "Unknown")])
+  # if more than 1 return NA because one must be incorrect
   if(length(uniqueTaxonGroups) == 1) {
     uniqueTaxonGroups[1]
   } else {
@@ -70,6 +75,7 @@ computeTaxonGroup <- function(possibleTaxonGroups) {
 }
 
 numberOfDifferentTaxonGroups <- function(possibleTaxonGroups) {
+  # count number of possible groups
   length(unique(possibleTaxonGroups[!(is.na(possibleTaxonGroups) | possibleTaxonGroups == "Unknown")]))
 }
 ```
@@ -81,7 +87,9 @@ We later show all geni with multiple taxa, i.e. there is a wrong taxon in Eva. W
 # For every genus: if all taxa with that genus have the same taxon group, give it that taxon group. Else give it NA. 
 # Furthermore: for every genus count the number of different taxon groups found in EVA for that genus.
 taxonGroupForGeni <- eva |> 
+  # group eva per genus
   group_by(Genus) |> 
+  # summarize by computing for each genus the group, if there are multiple return NA and give number
   summarise(
     TaxonGroup = computeTaxonGroup(`Taxon group`), # Unique =name, else= NA
     NumberOfDifferentTaxonGroups = numberOfDifferentTaxonGroups(`Taxon group`)) # Number of options per genus
@@ -90,6 +98,7 @@ taxonGroupForGeni <- eva |>
 taxonGroupForGeni[taxonGroupForGeni$NumberOfDifferentTaxonGroups > 1,]
 
 # All geni with more than one taxon group assignment
+# Checked for correctness
 genusTaxonGroupCorrections <- data.frame(Genus = c("Hepatica", "Lamprothamnium", "Leptorhaphis", "Mycoblastus", "Peltaria"),
                                        TaxonGroup = c("Vascular plant", "Alga", "Lichen", "Lichen", "Vascular plant"))
 ```
@@ -102,17 +111,22 @@ We then make a new dataframe and store in this one the matched concept and old a
 # Function to obtain a vector with TRUE if taxon starts with a specified genus
 hasGenus <- function(taxa, genus) {
  startsWith(taxa, paste(genusTaxonGroupCorrections$Genus[i], " ", sep = ""))
+  # check if the taxa (given) stars with the same words as the name of the genus in the correction file
+  # paste is used to ensure that the genus name is one word
 }
 
 # Compute all taxa which need to be reassigned to a different taxon group and store the result to file
+# fist an empty file
 taxaTaxonGroupCorrections <- data.frame(`Matched concept` = character(0), NewTaxonGroup = character(0), OldTaxonGroup = character(0))
 
 for(i in seq(1,length(genusTaxonGroupCorrections$Genus))) {
   #make vector with T when the genus in eva corresponds to a genus that must be corrected and has the wrong taxon group
   selection <- eva$Genus == genusTaxonGroupCorrections$Genus[i] & eva$`Taxon group` != genusTaxonGroupCorrections$TaxonGroup[i] 
   # count number of erroneous observations per genus and taxon group
+  # give the number of species per group of the same matched concept and taxon group
   erroneousTaxa <- eva[selection,] |> group_by(`Matched concept`, `Taxon group`) |> summarise(n = n())
   # Add all taxa with correction to the final result
+  # This is a file that we can use, containing the name, the taxon group we just assigned and the old one
   taxaTaxonGroupCorrections <- add_row(taxaTaxonGroupCorrections, #Dataframe
           Matched.concept = erroneousTaxa$`Matched concept`,  #genus
           NewTaxonGroup = rep(genusTaxonGroupCorrections$TaxonGroup[i],times=length(erroneousTaxa$`Matched concept`)),
@@ -125,18 +139,28 @@ We store the results in a new file
 #write_csv(taxaTaxonGroupCorrections, "taxa_taxon_group_corrections.csv")
 ```
 
-# No genus
-We first load the data and check uniqueness of taxa
 
+# No taxon
+We first load the data and check uniqueness of taxa
 ```{r, message= F, warning=FALSE}
 taxonGroupForGeni <- read_csv("../Intermediate Data/taxon_group_for_unassigned_geni.csv")
+# check what we will actually change
+x<-eva[which(eva$Genus%in%taxonGroupForGeni$Genus),c(1,3,6,12)]
+# these are all species with apparently no taxon
+# check for sure
+y<-eva[eva$`Taxon group`=="Unknown", c(1,3,6,12)]
+# check difference and similarity two datasets just created
+comparedf(y,x)
+setdiff(y,x)
+# which taxa are in our dataset
 unique(taxonGroupForGeni$TaxonGroup)
 ```
+
 Check all taxa that need to be assigned and save to file.
 
 First create empty dataset.
 
-Then 
+Then we compute the names of all species for which the genus did not have a taxon and later assign it based on our dataset
 ```{r, message= F, warning=FALSE}
 # Compute all taxa which need to be assigned to a taxon group and store the result to file
 taxaTaxonGroupAssignments <- data.frame(`Matched concept` = character(0), TaxonGroup = character(0))
@@ -144,7 +168,7 @@ taxaTaxonGroupAssignments <- data.frame(`Matched concept` = character(0), TaxonG
 for(i in seq(1,length(taxonGroupForGeni$Genus))) {
   # Select all geni equal to the ones in the dataset
   selection <- eva$Genus == taxonGroupForGeni$Genus[i]
-  # Take unique names for all existing geni in eva
+  # Take names of all species of a specific genus that did not have the taxon yet
   taxaToBeAssigned <- unique(eva$`Matched concept`[selection])
   # Add all taxa which need to be assigned to the final result
   taxaTaxonGroupAssignments <- add_row(taxaTaxonGroupAssignments,
