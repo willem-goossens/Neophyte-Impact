@@ -27,7 +27,7 @@ library(modEvA)
 # Eva Data
 We load the data
 ```{r , message=FALSE, warning=FALSE}
-fast <- F
+fast <- T
 if(fast) {
   eva <- read_delim("../EVA Data/onePromilleEva.csv", "\t")
 } else {
@@ -51,7 +51,9 @@ We update the taxa data
 ```{r, warning=F, message=FALSE}
 # Update taxon group for some species where it was specified incorrectly
 taxonGroupCorrections <- read_csv("../Intermediate Data/taxa_taxon_group_corrections.csv")
+# What is the location of the species in eva that are specified incorrectly
 index <- eva$`Matched concept` %in% taxonGroupCorrections$Matched.concept
+# Change to correct for each species
 eva$`Taxon group`[index] <- taxonGroupCorrections$NewTaxonGroup[match(eva$`Matched concept`[index], taxonGroupCorrections$Matched.concept)]
 
 # Update taxon group for species that did not have one in EVA
@@ -59,9 +61,13 @@ taxonGroupAssignments <- read_csv("../Intermediate Data/taxa_taxon_group_assignm
 index <- eva$`Matched concept` %in% taxonGroupAssignments$Matched.concept
 eva$`Taxon group`[index] <- taxonGroupAssignments$TaxonGroup[match(eva$`Matched concept`[index], taxonGroupAssignments$Matched.concept)]
 
-# Not looked at yet
+# Some taxon names seem incorrect
 taxonNameCorrections <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv")
+# give the species name from taxon name corrections to eva in the species column
+# to lower makes sure all data is written without capitals
+# match gives vector with position of argument eva in taxonNameCorrections, and does this for the total length of eva
 eva$species <- taxonNameCorrections$species[match(tolower(eva$`Matched concept`), tolower(taxonNameCorrections$Matched.concept))]
+# some data of species is.na, we assign for these the values of the matched concept
 eva$species[is.na(eva$species)] <- eva$`Matched concept`[is.na(eva$species)] # fix problem with plant not present in neophyte file from irena (only a handful of plant observations in EVA)
 ```
 
@@ -89,29 +95,38 @@ numberOfPlotsWithoutPlotSize <- sum(plotsWithoutPlotSize)
 
 # Plot sizes too large
 tooLargePlots <- header$`Relevé area (m²)` > 1000
-numberOfTooLargePlots <- sum(sort(header$`Relevé area (m²)`, decreasing = T)>1000)
+numberOfTooLargePlots<- sum(tooLargePlots, na.rm=T)
 
 # Plots without coordinates
 plotsWithoutLocation <- is.na(header$Latitude) | is.na(header$Longitude)
 numberOfPlotsWithoutLocation <- sum(plotsWithoutLocation)
+
 # Check whether the amount of observation plots correspond
+# This is the data made in 3_Region_check (here we also removed all data without coordinates)
 plotsRegionAssignments <- read_csv("../Intermediate Data/plot_to_region_assignment.csv")
+# Error message if the two are not the same
 if( sum(header$PlotObservationID[!plotsWithoutLocation] != plotsRegionAssignments$PlotObservationID) > 0) {
   message("Error: plotsRegionAssignments expected to contain the same plots as contained in header data.")
 }
+
 # Count number of plots unassigned
+# create logical vector of header length
 plotsWithoutRegionAssignment <- vector(mode = "logical", length = length(header$PlotObservationID))
+# make true when the plot has no region, taking into consideration that some plots have no coordinates
 plotsWithoutRegionAssignment[!plotsWithoutLocation] <- is.na(plotsRegionAssignments$Region)
 numberOfPlotsWithoutRegionAssignment = sum(plotsWithoutRegionAssignment)
 
 # Remove only Presence/ Absence data and NA data
 namesForPresenceAbsence <- c("Presence/Absence", "Presentie/Absentie", NA)
+# logical vector with length header 
 plotsWithPresenceAbsenceOnly <- header$`Cover abundance scale` %in% namesForPresenceAbsence
 numberOfPlotsWithoutCoverInformation <- sum(plotsWithPresenceAbsenceOnly)
 
+# sum all plots to be removed
 allPlotsToBeRemoved <- plotsWithoutPlotSize | tooLargePlots | plotsWithoutLocation | plotsWithPresenceAbsenceOnly | plotsWithoutRegionAssignment
 totalNumberRemoved <- sum(allPlotsToBeRemoved)
 ```
+
 `r numberOfPlotsWithoutPlotSize` of the plots do not contain a size, `r numberOfTooLargePlots` were larger than 1000m² and therefore most likely no plots, `r numberOfPlotsWithoutLocation` of the plots do not have a location, `r numberOfPlotsWithoutRegionAssignment` cannot be assigned to one of the neophyte regions and `r numberOfPlotsWithoutCoverInformation` of the plots do not contain cover data. All these plots (`r totalNumberRemoved`) are removed:
 ```{r}
 header <- header[!allPlotsToBeRemoved,]
@@ -135,7 +150,9 @@ After filtering `r length(header$PlotObservationID)` plots remain.
 # EIVE
 Reading in the EIVE data and explore data by boxplotting the moisture (M), nitrogen (N), pH (R), light (L) and temperature (T) variables.
 ```{r, message=F}
+# 08 contains the indicator values for position and width
 eive <- read_delim("../EIVE Data/EIVE_Paper_1.0_SM_08.csv", ",")
+# data contains n --> number of sources, nw--> niche width and ''--> value
 
 par(mfrow = c(1,1))
 boxplot(eive$`EIVEres-M`, xlab="M")
@@ -143,18 +160,22 @@ boxplot(eive$`EIVEres-N`, xlab="N")
 boxplot(eive$`EIVEres-R`, xlab="R")
 boxplot(eive$`EIVEres-L`, xlab="L")
 boxplot(eive$`EIVEres-T`, xlab="T")
+par(mfrow=c(1,1))
 ```
 
 The EIVE values are OK balanced with some outliers. No extreme skewness to be expected for the average indicator values at the plot level.
 
 Extend eva with columns from EIVE.
 ```{r}
+# match gives position of species in eva in eive
+# positions
 eva$EIVEresM <- eive$`EIVEres-M`[match(eva$species, eive$TaxonConcept)]
 eva$EIVEresN <- eive$`EIVEres-N`[match(eva$species, eive$TaxonConcept)]
 eva$EIVEresR <- eive$`EIVEres-R`[match(eva$species, eive$TaxonConcept)]
 eva$EIVEresL <- eive$`EIVEres-L`[match(eva$species, eive$TaxonConcept)]
 eva$EIVEresT <- eive$`EIVEres-T`[match(eva$species, eive$TaxonConcept)]
 
+# niche widths
 eva$EIVEnwM <- eive$`EIVEres-M.nw3`[match(eva$species, eive$TaxonConcept)]
 eva$EIVEnwN <- eive$`EIVEres-N.nw3`[match(eva$species, eive$TaxonConcept)]
 eva$EIVEnwR <- eive$`EIVEres-R.nw3`[match(eva$species, eive$TaxonConcept)]
@@ -169,6 +190,7 @@ numberOfPlantsInEvaFoundInEive <- sum(!(is.na(eva$EIVEresM) |
 percentEvaInEive<- numberOfPlantsInEvaFoundInEive/length(eva$PlotObservationID)
 ```
 
+
 `r numberOfPlantsInEvaFoundInEive` of the `r length(eva$PlotObservationID)` plant observations in Eva have indicator values in EIVE.
 
 
@@ -176,12 +198,21 @@ TODO: how to handle niche width and number of original EIVs in EIVE to improve t
 
 # DIV
 Reading in the disturbance indicator values en plotting severity and frequency.
-```{r, messagge=F}
+```{r, messagge=F, warning=F}
 div <- read_delim("../Disturbance Data/disturbance_indicator_values.csv", ",")
 
 par(mfrow = c(1,1))
-boxplot(div$Disturbance.Severity)
-boxplot(div$Disturbance.Frequency)
+# Relatively balanced
+boxplot(div$Disturbance.Severity, xlab="Severity")
+boxplot(div$Disturbance.Frequency, xlab="Frequency")
+# more skewed (check with hist)
+boxplot(div$Mowing.Frequency, xlab="Mowing fr")
+hist(div$Mowing.Frequency, xlab="Mowing fr")
+boxplot(div$Grazing.Pressure, xlab="Grazing Pr")
+boxplot(div$Soil.Disturbance, xlab="Soil dist")
+# oke balanced still
+hist(div$Grazing.Pressure, xlab="Grazing Pr")
+hist(div$Soil.Disturbance, xlab="Soil dist")
 ```
 
 
@@ -196,7 +227,8 @@ eva$Mowing.Frequency <- div$Mowing.Frequency[match(eva$species, div$species)]
 eva$Soil.Disturbance <- div$Soil.Disturbance[match(eva$species, div$species)]
 
 numberOfPlantsInEvaFoundInDiv <- sum(!is.na(eva$Disturbance.Severity))
-percentEvaInDiv<- numberOfPlantsInEvaFoundInDiv/length(eva$PlotObservationID)
+percentEvaInDiv<- numberOfPlantsInEvaFoundInDiv/length(unique(eva$species))
+length(!is.na(unique((eva$Disturbance.Frequency))))/length(!is.na(unique(eva$species)))
 ```
 
 `r numberOfPlantsInEvaFoundInDiv` of the `r length(eva$PlotObservationID)` plant observations in Eva have disturbance indicator value.
@@ -265,12 +297,24 @@ aggregatedEva <- eva |>
     
     DistSeverity = mean(Disturbance.Severity, na.rm = T),
     DistFrequency = mean(Disturbance.Frequency, na.rm = T),
-
+    Grazing.Pressure=mean(Grazing.Pressure, na.rm=T),
+    Mowing.Frequency= mean(Mowing.Frequency, na.rm=T),
+    Soil.Disturbance=mean(Soil.Disturbance, na.rm=T),
+    
+    # I would not go for this, it is just replicating 1 fr the length of the cover values
     DistSeverity.cnw = cNWwmean(Disturbance.Severity, `Cover %`, rep(1,length(`Cover %`))),
     DistFrequency.cnw = cNWwmean(Disturbance.Frequency, `Cover %`, rep(1,length(`Cover %`))),
+    #Grazing.Pressure.cnw = cNWwmean(Grazing.Pressure, `Cover %`, rep(1,length(`Cover %`))),
+    #Mowing.Frequency.cnw = cNWwmean(Mowing.Frequency, `Cover %`, rep(1,length(`Cover %`))),
+    #Soil.Disturbance.c,w = cNWwmean(Soil.Disturbance, `Cover %`, rep(1,length(`Cover %`))),
     
-    logDistSeverity = mean(log(Disturbance.Severity + 1/2*min(div$Disturbance.Severity[div$Disturbance.Severity>0])), na.rm = T),
-    logDistFrequency = mean(log(Disturbance.Frequency + 1/2*min(div$Disturbance.Frequency[div$Disturbance.Frequency>0])), na.rm = T)
+    logDistSeverity = mean(log(Disturbance.Severity), na.rm=T),
+    logDistFrequency = mean(log(Disturbance.Frequency), na.rm = T),
+    logGrazing.Pressure=mean(log(Grazing.Pressure), na.rm=T),
+    logMowingFrequency=mean(log(Mowing.Frequency), na.rm=T),
+    logSoil.Disturbance=mean(log(Soil.Disturbance), na.rm=T)
+    #logDistSeverity = mean(log(Disturbance.Severity + 1/2*min(div$Disturbance.Severity[div$Disturbance.Severity>0])), na.rm = T),
+    #logDistFrequency = mean(log(Disturbance.Frequency + 1/2*min(div$Disturbance.Frequency[div$Disturbance.Frequency>0])), na.rm = T)
     )
 ```
 
@@ -295,10 +339,14 @@ highDiversityPlotsToBeRemoved <- c(842839, 843192, 842921) # plots published by 
 highDiversityDatasets <- unique(highDiversityPlots$Dataset)
 # Look when SR is high for more than two plots in a dataset and obtain their observation ID
 for(dataset in highDiversityDatasets) {
+  # take all plots for a specific dataset
   plotsInDataset <- highDiversityPlots[highDiversityPlots$Dataset == dataset,]
+  # take per amount of SR the frequency this specific SR is present
   multiplicityOfRichnessOccurrence <- as.data.frame(table(plotsInDataset$numberOfVascularPlantSpecies))
+  # take all times the same SR is present multiple times in a plot
   multiplicityOfRichnessOccurrence <- multiplicityOfRichnessOccurrence[multiplicityOfRichnessOccurrence$Freq >= 2,] # we want to remove only the plots which > 100 species and suspiciously frequent in the database
   for(richness in multiplicityOfRichnessOccurrence$Var1) {
+    # take the index of all plots in the dataset with this species richness
     plotsToBeRemoved <- plotsInDataset[plotsInDataset$numberOfVascularPlantSpecies == richness,]
     highDiversityPlotsToBeRemoved <- append(highDiversityPlotsToBeRemoved, plotsToBeRemoved$PlotObservationID)
   }
@@ -306,9 +354,13 @@ for(dataset in highDiversityDatasets) {
 
 
 numberOfHighDiversityPlotsToBeRemoved <- length(highDiversityPlotsToBeRemoved)
+# remove the too high diversiy plots from the dataset
 fullPlotData <- fullPlotData[!(fullPlotData$PlotObservationID %in% highDiversityPlotsToBeRemoved),]
 
+# make a new highdiversityplots dataset for all true diverse plots (according to the method)
 highDiversityPlots <- fullPlotData[fullPlotData$numberOfVascularPlantSpecies > 100,]
+# plot to have an idea how the SR is distributed
+hist(fullPlotData$numberOfVascularPlantSpecies)
 #write_csv(highDiversityPlots, "highDiversityPlots.csv")
 ```
 
@@ -321,12 +373,15 @@ Filtering out plots for which some of the indicator values could not be estimate
 fullPlotDataNas <- is.na(fullPlotData)
 # Get the plot observations
 plotsForWhichNotAllIndicatorValuesWereEstimated <- fullPlotDataNas[,1]
+# 35 is number of vascular plants
 for(i in 35:dim(fullPlotDataNas)[2]) {
   plotsForWhichNotAllIndicatorValuesWereEstimated <- plotsForWhichNotAllIndicatorValuesWereEstimated | fullPlotDataNas[,i]
 }
 numberOfPlotsWithMissingIndicatorValues <- sum(plotsForWhichNotAllIndicatorValuesWereEstimated)
+# remove the plots without an indivator value
 fullPlotData <- fullPlotData[!plotsForWhichNotAllIndicatorValuesWereEstimated,]
 
+# remove the removed plots also from eva, header and aggregated eva
 aggregatedEva <- aggregatedEva[aggregatedEva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 header <- header[header$PlotObservationID %in% fullPlotData$PlotObservationID,]
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
