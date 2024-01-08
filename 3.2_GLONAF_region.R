@@ -22,7 +22,7 @@ library(arsenal)
 header <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_header.csv", "\t")
 fast <- T
 if(fast) {
-  header <- header[runif(length(header$PlotObservationID)) > 0.99,]
+  header <- header[runif(length(header$PlotObservationID)) > 0.9999,]
 }
 
 header <- header[!(is.na(header$Latitude) | is.na(header$Longitude)),]
@@ -42,9 +42,9 @@ glonafRegions<- newGlonaf
 all.equal(sort(glonafRegionList$OBJIDsic), sort(glonafRegions$OBJIDsic))
 newGlonaf<- left_join(newGlonaf, glonafRegionList, by= "OBJIDsic")
 
-plot(st_geometry(glonafRegions), reset=F)
-plot(st_geometry(glonafRegions[24,]), col="red", add=T)
-plot(st_geometry(plotLocations), add=T)
+#(st_geometry(glonafRegions), reset=F)
+#plot(st_geometry(glonafRegions[24,]), col="red", add=T)
+#plot(st_geometry(plotLocations), add=T)
 
 ###### joined ######
 sf_use_s2(T)
@@ -80,37 +80,38 @@ all.equal(joinedData$PlotObservationID, plotLocations$PlotObservationID)
 
 ##### NOT ASSIGNED #####
 ###### original #####
-distanceThreshold <- set_units(10000,m)
+#distanceThreshold <- set_units(10000,m)
 
-remainingPlots <- plotLocations[is.na(joinedData$code),]
+#remainingPlots <- plotLocations[is.na(joinedData$code),]
+#remainingPlots<- remainingPlots[, c("PlotObservationID","Country", "geometry")]
 
 # Compute bounding boxes for the regions, this allows to decide faster, if a plot is outside the distanceThreshold from a region
-boundingBoxes <- glonafRegions
+#boundingBoxes <- glonafRegions
 
-for(i in 1:length(boundingBoxes$OBJIDsic)) {
-  boundingBoxes$geometry[i] <- st_as_sfc(st_bbox(boundingBoxes$geometry[i]))
-}
+#for(i in 1:length(boundingBoxes$OBJIDsic)) {
+#  boundingBoxes$geometry[i] <- st_as_sfc(st_bbox(boundingBoxes$geometry[i]))
+#}
 
-remainingPlots$code <- NA
-remainingPlots$Distance <- -1
+#remainingPlots$code <- NA
+#remainingPlots$Distance <- -1
 
 #begin<-Sys.time()  
 #for(i in 1:length(remainingPlots$PlotObservationID)) {
 #  region <- NA
 #  distance <- set_units(1000000,m)
-  
-#  for(j in 1:length(glonafRegions$OBJIDsic)) {
+#
+#for(j in 1:length(glonafRegions$OBJIDsic)) {
 #    distBoundingBox <- st_distance(boundingBoxes[j,], remainingPlots[i,]) #Calculate the distance
 #   # Only if the distance to the bounding box is smalle than distanceThreshold we need to compute the real distance to the region
 #   if(distBoundingBox < distanceThreshold){
 #     dist <- st_distance(glonafRegions[j,], remainingPlots[i,])
-#      if(dist < distanceThreshold & dist < distance) {
-#       region <- glonafRegions$OBJIDsic[j]
+#     if(dist < distanceThreshold & dist < distance) {
+#             region <- glonafRegions$OBJIDsic[j]
 #       distance <- dist
 #     }
 #   }
 # }
-  # Print the progress
+# Print the progress
 #  message(i/length(remainingPlots$PlotObservationID)*100, "% ", remainingPlots$Country[i], " ", region)
 #  remainingPlots$code[i] <- region
 # remainingPlots$Distance[i] <- distance
@@ -142,6 +143,9 @@ distanceThreshold <- set_units(10000,m)
 
 remainingPlots <- plotLocations[is.na(joinedData$code),]
 
+# make smaller to make calculation quicker
+remainingPlots<- remainingPlots[, c("PlotObservationID","Country", "geometry")]
+
 # Compute bounding boxes for the regions, this allows to decide faster, if a plot is outside the distanceThreshold from a region
 boundingBoxes <- glonafRegions
 
@@ -152,13 +156,9 @@ for(i in 1:length(boundingBoxes$OBJIDsic)) {
 remainingPlots$code <- NA
 remainingPlots$Distance <- -1
 
-remainingPlots <- plotLocations[is.na(joinedData$code),]
-remainingPlots$code <- NA
-remainingPlots$Distance <- -1
-
 length(remainingPlots$PlotObservationID)
 begin<-Sys.time() 
-remainingPlots[,35:36]<-foreach(i = 1:length(remainingPlots$PlotObservationID), .combine='rbind', .packages=c("dplyr","mgcv", "sf","units")) %dopar% {
+remainingPlots[,4:5]<-foreach(i = 1:length(remainingPlots$PlotObservationID), .combine='rbind', .packages=c("dplyr","mgcv", "sf","units")) %dopar% {
   region <- NA
   distance <- set_units(1000000,m)
   
@@ -181,17 +181,31 @@ remainingPlots[,35:36]<-foreach(i = 1:length(remainingPlots$PlotObservationID), 
 end<-Sys.time()
 round(end-begin, 2)  
 
+remainingPlots$tdwg4_name<- NA
+for (i in 1: length(unique(glonafRegionList$OBJIDsic))) {
+  index<- unique(glonafRegionList$OBJIDsic)[i]
+  remainingPlots$tdwg4_name[remainingPlots$code==index]<- glonafRegionList$tdwg4_name[glonafRegionList$OBJIDsic== index]
+}
+
+remainingPlots
 #print(setdiff(remainingPlots$code, remainingPlots2$code))
-sf_use_s2(T)
-st_distance(boundingBoxes[1:85,], remainingPlots[30,])
 
 parallel::stopCluster(cl = my.cluster)
 
 # merge the plots which lie within a region with those which are in proximity and write the result to file
-allPlotsWithRegion <- joinedData[,c("PlotObservationID", "code", "Country")]
+allPlotsWithRegion <- joinedData[,c("PlotObservationID", "tdwg4_name", "Country")]
 remainingPlots$code<- as.character(remainingPlots$code)
-allPlotsWithRegion[is.na(allPlotsWithRegion$code),] <- remainingPlots[,c("PlotObservationID", "code", "Country")]
+allPlotsWithRegion[is.na(allPlotsWithRegion$tdwg4_name),] <- remainingPlots[,c("PlotObservationID", "tdwg4_name", "Country")]
+any(is.na(allPlotsWithRegion$tdwg4_name))
 
+all.equal(sum(is.na(allPlotsWithRegion$tdwg4_name)), sum(is.na(remainingPlots$tdwg4_name)))
+
+colnames(allPlotsWithRegion)<- c("PlotObservationID", "Region", "Country", "geometry")
+
+#comparedf(st_drop_geometry(remainingPlots), st_drop_geometry(remainingPlots2))
+
+###### assign #####
+#write.csv(allPlotsWithRegion,"allPlotsWithRegion_small.csv")
 
 compareCountryLabelWithRegion <- function(country, region) {
   message("Number of plots in region: ", sum(allPlotsWithRegion$Region == region, na.rm = T))
@@ -203,15 +217,8 @@ compareCountryLabelWithRegion("Albania", "Albania")
 compareCountryLabelWithRegion("Austria", "Austria")
 compareCountryLabelWithRegion("Netherlands", "Netherlands")
 compareCountryLabelWithRegion("Italy", "Italy")
-compareCountryLabelWithRegion("Italy", "Sicily")
+compareCountryLabelWithRegion("Sicily", "Sicily")
 compareCountryLabelWithRegion("Italy", "Sardinia")
 
-##### PLOT ####
-
-#Check eg Denmark
-plot(st_geometry(glonafRegions[glonafRegions$OBJIDsic=="828",]), reset=F)
-plot(st_geometry(x), add=T)
-plot(st_geometry(boundingBoxes))
-
-plot(st_geometry(glonafRegions), reset=F)
-plot(st_geometry(x), add=T)
+unique(allPlotsWithRegion$Region)
+unique(allPlotsWithRegion$Country)
