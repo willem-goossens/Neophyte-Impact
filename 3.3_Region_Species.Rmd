@@ -9,7 +9,7 @@ output: html_document
 rm(list=ls())
 ```
 
-```{r}
+```{r, message=F}
 library(readr)
 library(tidyr)
 library(dplyr)
