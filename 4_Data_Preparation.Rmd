@@ -399,6 +399,7 @@ boxplot(fullPlotData$numberOfVascularPlantSpecies)
 As expected the count data on species richness looks quite skewed. Hence, we will need to use a poisson glm.
 
 ```{r}
+# Square root
 boxplot(fullPlotData$DistSeverity.sqrt)
 boxplot(fullPlotData$DistFrequency.sqrt)
 boxplot(fullPlotData$EIVEresM.sqrt)
@@ -406,9 +407,77 @@ boxplot(fullPlotData$EIVEresN.sqrt)
 boxplot(fullPlotData$EIVEresR.sqrt)
 boxplot(fullPlotData$EIVEresL.sqrt)
 boxplot(fullPlotData$EIVEresT.sqrt)
+
+# nw
+#boxplot(fullPlotData$DistSeverity.nw)
+#boxplot(fullPlotData$DistFrequency.nw)
+boxplot(fullPlotData$EIVEresM.nw)
+boxplot(fullPlotData$EIVEresN.nw)
+boxplot(fullPlotData$EIVEresR.nw)
+boxplot(fullPlotData$EIVEresL.nw)
+boxplot(fullPlotData$EIVEresT.nw)
+
+# cnw
+boxplot(fullPlotData$DistSeverity.cnw)
+boxplot(fullPlotData$DistFrequency.cnw)
+boxplot(fullPlotData$EIVEresM.cnw)
+boxplot(fullPlotData$EIVEresN.cnw)
+boxplot(fullPlotData$EIVEresR.cnw)
+boxplot(fullPlotData$EIVEresL.cnw)
+boxplot(fullPlotData$EIVEresT.cnw)
+
+# mean
+boxplot(fullPlotData$DistSeverity)
+boxplot(fullPlotData$DistFrequency)
+boxplot(fullPlotData$EIVEresM)
+boxplot(fullPlotData$EIVEresN)
+boxplot(fullPlotData$EIVEresR)
+boxplot(fullPlotData$EIVEresL)
+boxplot(fullPlotData$EIVEresT)
 ```
 
-The distribution of the EIVE predictors look symmetrical. However, the disturbance indicators are heavily skewed. Hence, they need to be transformed. Because there are zeros in the data we choos a root transoformation. Trying different powers we found that the 4th root worked best:
+The distribution of the EIVE predictors look symmetrical. However, the disturbance indicators are heavily skewed. Hence, they need to be transformed. Because there are zeros in the data we choose a root transoformation. Trying different powers we found that the 4th root worked best:
+
+As histogram, is easier for me to see distribution
+```{r}
+# Square root
+hist(fullPlotData$DistSeverity.sqrt)
+hist(fullPlotData$DistFrequency.sqrt)
+hist(fullPlotData$EIVEresM.sqrt)
+hist(fullPlotData$EIVEresN.sqrt)
+hist(fullPlotData$EIVEresR.sqrt)
+hist(fullPlotData$EIVEresL.sqrt)
+hist(fullPlotData$EIVEresT.sqrt)
+
+# nw
+#hist(fullPlotData$DistSeverity.nw)
+#hist(fullPlotData$DistFrequency.nw)
+hist(fullPlotData$EIVEresM.nw)
+hist(fullPlotData$EIVEresN.nw)
+hist(fullPlotData$EIVEresR.nw)
+hist(fullPlotData$EIVEresL.nw)
+hist(fullPlotData$EIVEresT.nw)
+
+# cnw
+hist(fullPlotData$DistSeverity.cnw)
+hist(fullPlotData$DistFrequency.cnw)
+hist(fullPlotData$EIVEresM.cnw)
+hist(fullPlotData$EIVEresN.cnw)
+hist(fullPlotData$EIVEresR.cnw)
+hist(fullPlotData$EIVEresL.cnw)
+hist(fullPlotData$EIVEresT.cnw)
+
+# mean
+hist(fullPlotData$DistSeverity)
+hist(fullPlotData$DistFrequency)
+hist(fullPlotData$EIVEresM)
+hist(fullPlotData$EIVEresN)
+hist(fullPlotData$EIVEresR)
+hist(fullPlotData$EIVEresL)
+hist(fullPlotData$EIVEresT)
+```
+
+
 
 ```{r}
 fullPlotData$transformedDisturbanceSeverity.sqrt <- fullPlotData$DistSeverity.sqrt^(1/4)
@@ -418,9 +487,11 @@ fullPlotData$transformedDisturbanceFrequency <- fullPlotData$DistFrequency^(1/4)
 fullPlotData$transformedDisturbanceSeverity.cnw <- fullPlotData$DistSeverity.cnw^(1/4)
 fullPlotData$transformedDisturbanceFrequency.cnw <- fullPlotData$DistFrequency.cnw^(1/4)
 
-par(mfrow = c(1,2))
+par(mfrow = c(2,2))
 boxplot(fullPlotData$transformedDisturbanceSeverity.sqrt)
 boxplot(fullPlotData$transformedDisturbanceFrequency.sqrt)
+boxplot(fullPlotData$DistSeverity.sqrt) # imo even better distributed...
+boxplot(fullPlotData$DistFrequency.sqrt)
 ```
 
 After transformation with log(x + eps) the disturbance indicator values are much better centered. However, the transformation function is a bit arbitrary and there are still outliers which cause difficulties with analysis as can be seen by fitting a straight forward model:
@@ -447,7 +518,7 @@ We can see that the residuals of this model are in a reasonable range and hence 
 
 ## Check individual country data
 ```{r}
-dataFromGermany <- fullPlotData[fullPlotData$Region == "Germany",]
+dataFromGermany <- fullPlotData[fullPlotData$Region == "Netherlands",]
 dataFromGermany$Dataset <- as.factor(as.character(dataFromGermany$Dataset))
 par(mfrow = c(1,1))
 boxplot(numberOfVascularPlantSpecies ~ Dataset, data = dataFromGermany)
@@ -458,10 +529,12 @@ Looking at different datasets from a similar region exhibits quite large differe
 
 # Write CSV
 ```{r}
+# Make sure all plot data is in eva
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
 #write_csv(fullPlotData, "fullPlotData.csv")
 
+# Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 #write_csv(eva, "fullPlotEva.csv")
 ```
@@ -487,13 +560,20 @@ for(i in 1:length(uniqueSpecies)) {
 ```
 
 Determine which plant species have more than 10 plots with cover > 50% and cover < 1% for analysis:
-```{r}
+```{r, message=F}
+# Load data previously made with the number of plots per species across the dataset
 plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv")
+# Get the names of the species which have at least 20 plots (since we want 10 smaller and 10 bigger)
 candidatesForCoverClassAnalysis <- plotsPerSpecies$names[plotsPerSpecies$numberOfPlots >= 20]
 
+# create empty vector
 taxaForCoverClassAnalysis <- c()
+# run for all candidates
 for(taxon in candidatesForCoverClassAnalysis) {
+  # if the sum of all species with a cover of 50% for a species and less than one each are more than 10 
+  # && makes sure to only look at the second if it is already T
   if(sum(eva$species == taxon & eva$`Cover %` >= 50) > 10 && sum(eva$species == taxon & eva$`Cover %` < 1) > 10) {
+    # write the species name to the list
     taxaForCoverClassAnalysis <- append(taxaForCoverClassAnalysis, c(taxon))
   }
 }
