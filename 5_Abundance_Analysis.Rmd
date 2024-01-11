@@ -18,18 +18,22 @@ Subsequently we load the required packages.
 library(readr)
 library(dplyr)
 library(ggplot2)
+library(arsenal)
+library(doParallel)
 ```
 
 This script analyses whether neophytes are more dominant and frequent than native plants or not.
 ```{r, warnings=F, message=F}
+# Eva data for which plots are available and after correcting for incorrect or weird plot observations
 eva <- read_csv("fullPlotEva.csv")
 ```
 
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it.
 ```{r, warnings=F, message=F}
+# header like data, filtered and appended with EIVE and DIV
 fullPlotData <- read_csv("fullPlotData.csv")
 
-fast <- F
+fast <- T
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
@@ -37,11 +41,15 @@ if(fast) {
 ```
 
 Load the neophyte definitions:
-```{r}
+```{r, message=F}
+# Data on which species are neophytes
 neophyteDefinitions <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv")
+# Assign these names to the eva list
 neophyteNames <- neophyteDefinitions$species[neophyteDefinitions$statusEurope == "neo"]
 neophyteNames <- neophyteNames[neophyteNames %in% eva$species]
 ```
+
+
 # Cover distribution
 Compute which species has which cover distribution in eva:
 ```{r}
@@ -54,7 +62,18 @@ uniqueSpecies <- unique(reducedEva$species)
 # Make new dataframe to store in the obtained data. 
 speciesDominance <- data.frame(names = character(), coverMedian = numeric(), coverMean = numeric(), var = numeric(), numberOfPlots = integer(), neophyte = logical())
 
-for(i in 1:length(uniqueSpecies)) {
+parallel::detectCores()
+n.cores <- parallel::detectCores() - 2
+my.cluster <- parallel::makeCluster(
+  n.cores, 
+  type = "PSOCK"
+)
+print(my.cluster)
+doParallel::registerDoParallel(cl = my.cluster)
+foreach::getDoParRegistered()
+foreach::getDoParWorkers()
+
+speciesDominance<-foreach(i= 1:length(uniqueSpecies), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
   # Get dataset for each unique species
   tmp <- reducedEva[reducedEva$species == uniqueSpecies[i],]
   # Make ID a factor
@@ -66,13 +85,14 @@ for(i in 1:length(uniqueSpecies)) {
     # Get the summary (median and mean at place 3 and 4) for when the species is present
     sum <- summary(tmp$cover)
     speciesDominance <- 
-      add_row(speciesDominance, names = uniqueSpecies[i], coverMedian = sum[[3]], coverMean = sum[[4]], var = var(tmp$cover), numberOfPlots = length(tmp$PlotObservationID), neophyte = (uniqueSpecies[i] %in% neophyteNames))
-  }
-  
-  if(i %% 1000 == 0) {
-    message(i)
+      c(names = uniqueSpecies[i], coverMedian = sum[[3]], coverMean = sum[[4]], var = var(tmp$cover), numberOfPlots = length(tmp$PlotObservationID), neophyte = (uniqueSpecies[i] %in% neophyteNames))
   }
 }
+
+speciesDominance<- as.data.frame(speciesDominance)
+row.names(speciesDominance)<- c(1:length(speciesDominance$names))
+parallel::stopCluster(cl = my.cluster)
+speciesDominance$neophyte<- as.logical(speciesDominance$neophyte)
 ```
 
 We also analyse which species are significantly negative / positive when compared to the distribution of the native species. We do this for all plants.
