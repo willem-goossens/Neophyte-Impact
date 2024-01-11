@@ -92,7 +92,13 @@ speciesDominance<-foreach(i= 1:length(uniqueSpecies), .combine='rbind', .package
 speciesDominance<- as.data.frame(speciesDominance)
 row.names(speciesDominance)<- c(1:length(speciesDominance$names))
 parallel::stopCluster(cl = my.cluster)
+summary(speciesDominance)
 speciesDominance$neophyte<- as.logical(speciesDominance$neophyte)
+as.numeric(speciesDominance[,2])
+speciesDominance[,2]<- as.numeric(speciesDominance[,2])
+speciesDominance[,3]<- as.numeric(speciesDominance[,3])
+speciesDominance[,4]<- as.numeric(speciesDominance[,4])
+speciesDominance[,5]<- as.numeric(speciesDominance[,5])
 ```
 
 We also analyse which species are significantly negative / positive when compared to the distribution of the native species. We do this for all plants.
