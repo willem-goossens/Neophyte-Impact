@@ -426,6 +426,9 @@ Analyse whether the frequency distributions of native and neophyte plants are si
 ```{r, message=F}
 # Load in the file containing the number of plots per species
 plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv")
+
+plotsPerSpecies2 <- read_csv("../Intermediate Data/plotsPerSpeciesInEuropeAfterFiltering.csv")
+
 # Only keep when there are at least 50 plots
 plotsPerSpecies <- plotsPerSpecies[plotsPerSpecies$numberOfPlots >= 50,]
 # Give neophyte names
@@ -451,7 +454,7 @@ p<- ggplot(plotsPerSpecies, mapping = aes(x= neophyte, y = log10(numberOfPlots),
                geom = "point", aes(group= neophyte), size=3)+
   theme_classic()+
   scale_x_discrete(labels= c("Native", "Neophyte"))+theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=12) )+
-  labs(subtitle= "Welch t-test   p<0.0001")+  theme(plot.subtitle=element_text(size=12))+ 
+  labs(subtitle= "Welch t-test   p<0.0145")+  theme(plot.subtitle=element_text(size=12))+ 
    annotate("text", x = 1, y = max(log10(plotsPerSpecies$numberOfPlots[!plotsPerSpecies$neophyte])), label = "a", size = 4, vjust = -0.5, hjust = 0.5) +
   annotate("text", x = 2, y = max(log10(plotsPerSpecies$numberOfPlots[plotsPerSpecies$neophyte])), label = "b", size = 4, vjust = -0.5, hjust = 0.5)+
     annotate("text", x=1, y=5.5, label= paste("n=",nNAT), vjust = -0.5, hjust = 0.5, size=4)+
