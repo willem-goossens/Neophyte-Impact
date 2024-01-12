@@ -33,7 +33,7 @@ Load filtered Data containing the richness and indicator values for each plot. I
 # header like data, filtered and appended with EIVE and DIV
 fullPlotData <- read_csv("fullPlotData.csv")
 
-fast <- T
+fast <- F
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
@@ -73,6 +73,7 @@ doParallel::registerDoParallel(cl = my.cluster)
 foreach::getDoParRegistered()
 foreach::getDoParWorkers()
 
+begin<- Sys.time()
 speciesDominance<-foreach(i= 1:length(uniqueSpecies), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
   # Get dataset for each unique species
   tmp <- reducedEva[reducedEva$species == uniqueSpecies[i],]
@@ -88,13 +89,14 @@ speciesDominance<-foreach(i= 1:length(uniqueSpecies), .combine='rbind', .package
       c(names = uniqueSpecies[i], coverMedian = sum[[3]], coverMean = sum[[4]], var = var(tmp$cover), numberOfPlots = length(tmp$PlotObservationID), neophyte = (uniqueSpecies[i] %in% neophyteNames))
   }
 }
+end<- Sys.time()
+round(end-begin)
+
 
 speciesDominance<- as.data.frame(speciesDominance)
 row.names(speciesDominance)<- c(1:length(speciesDominance$names))
 parallel::stopCluster(cl = my.cluster)
-summary(speciesDominance)
 speciesDominance$neophyte<- as.logical(speciesDominance$neophyte)
-as.numeric(speciesDominance[,2])
 speciesDominance[,2]<- as.numeric(speciesDominance[,2])
 speciesDominance[,3]<- as.numeric(speciesDominance[,3])
 speciesDominance[,4]<- as.numeric(speciesDominance[,4])
@@ -103,7 +105,7 @@ speciesDominance[,5]<- as.numeric(speciesDominance[,5])
 
 We also analyse which species are significantly negative / positive when compared to the distribution of the native species. We do this for all plants.
 ```{r}
-# Get the quantile values of all native plant species.
+# Get the quantile values of all native plant species.Cutoff values at 0.01 and 0.05 chances (both upper and lower limit)
 quantiles <- quantile(speciesDominance$coverMean[!speciesDominance$neophyte], probs = c(0, 0.01, 0.05, 0.95, 0.99, 1))
 
 # Assign each species to a class
@@ -112,7 +114,7 @@ speciesDominance$significantCoverMean <- as.factor(cut(speciesDominance$coverMea
 
 Store the results in file for co-authors / publication.
 ```{r}
-#write_csv(speciesDominance, "speciesDominance.csv")
+write_csv(speciesDominance, "speciesDominance.csv")
 ```
 
 
