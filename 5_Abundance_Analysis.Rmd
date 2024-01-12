@@ -33,7 +33,7 @@ Load filtered Data containing the richness and indicator values for each plot. I
 # header like data, filtered and appended with EIVE and DIV
 fullPlotData <- read_csv("fullPlotData.csv")
 
-fast <- F
+fast <- T
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
@@ -114,21 +114,32 @@ speciesDominance$significantCoverMean <- as.factor(cut(speciesDominance$coverMea
 
 Store the results in file for co-authors / publication.
 ```{r}
-write_csv(speciesDominance, "speciesDominance.csv")
+#write_csv(speciesDominance, "speciesDominance.csv")
 ```
 
 
 Finally, visualize the distribution of positive and negative plants for native plants and neophytes:
 ```{r}
+# Read full document
 speciesDominance <- read_csv("speciesDominance.csv")
 
-ggplot(speciesDominance, mapping = aes(x = log(coverMean), after_stat(density), colour = neophyte)) + geom_freqpoly(binwidth = 0.1)
+# compare with previously made document
+speciesDominance2<-read_csv("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Willem R/speciesDominance.csv")
+comparedf(speciesDominance, speciesDominance2)
+all.equal(speciesDominance,speciesDominance2)
 
+# plot frequency
+ggplot(speciesDominance, mapping = aes(x = log10(coverMean), after_stat(density), colour = neophyte)) + geom_freqpoly(binwidth = 0.1)
+
+# count number of native and alien species
 nNAT<- sum(!speciesDominance$neophyte)
 nNEO<- sum(speciesDominance$neophyte)
 
+# plot for their alien status the log10 of the mean cover
 p<-ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(coverMean), colour = neophyte)) + 
+  # create violin plot with x axis no title and y 
   geom_violin() + ylab("Mean cover when present (%)") + xlab(NULL)+
+  # colour coding
   scale_colour_manual(values=c("#27cf6a", "#cf274e"), 
                     name="Legend",
                     breaks=c(FALSE, TRUE),
@@ -146,8 +157,237 @@ p<-ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(coverMean), col
   annotate("text", x=2, y=2.2, label= paste("n=",nNEO), vjust = -0.5, hjust = 0.5, size=4)
 p
 
-ggsave("Dominance.jpeg", p )
+#ggsave("Dominance.jpeg", p )
 
+```
+
+
+```{r}
+topdominant<- speciesDominance[order(speciesDominance$coverMean, decreasing=T),]
+topdominantneophytes<- topdominant[topdominant$neophyte,]
+namesTDN<- topdominantneophytes$names
+writeClipboard(namesTDN)
+# chat GPT cultivation status (quick check, has to be improved and checked)
+# Create a data frame with species names and cultivated status
+# Species and cultivated status matrix (totally wrong...)
+species_matrix <- matrix(c(
+    "Oryza sativa", "cultivated",
+    "Reynoutria x bohemica", "not cultivated",
+    "Zea mays", "cultivated",
+    "Ceratochloa carinata", "not cultivated",
+    "Bidens aurea", "not cultivated",
+    "Reynoutria sachalinensis", "not cultivated",
+    "Lycium barbarum", "not cultivated",
+    "Arctotheca calendula", "not cultivated",
+    "Solanum tuberosum", "cultivated",
+    "Sporobolus vaginiflorus", "not cultivated",
+    "Rosa rugosa", "not cultivated",
+    "Elaeagnus commutata", "not cultivated",
+    "Reynoutria japonica", "not cultivated",
+    "Carpobrotus acinaciformis", "not cultivated",
+    "Pinus contorta", "not cultivated",
+    "Citrus x aurantium", "cultivated",
+    "Populus x canadensis", "not cultivated",
+    "Baccharis halimifolia", "not cultivated",
+    "Erigeron karvinskianus", "not cultivated",
+    "Vicia faba", "cultivated",
+    "Tradescantia fluminensis", "not cultivated",
+    "Acacia saligna", "not cultivated",
+    "Vaccinium macrocarpon", "not cultivated",
+    "Impatiens balfourii", "not cultivated",
+    "Paspalum distichum", "not cultivated",
+    "Picea sitchensis", "not cultivated",
+    "Larix kaempferi", "not cultivated",
+    "Lemna minuta", "not cultivated",
+    "Helianthus tuberosus", "not cultivated",
+    "Amaranthus tamariscinus", "not cultivated",
+    "Paspalum vaginatum", "not cultivated",
+    "Oxalis latifolia", "not cultivated",
+    "Amaranthus crispus", "not cultivated",
+    "Lolium x boucheanum", "not cultivated",
+    "Elodea canadensis", "not cultivated",
+    "Amaranthus muricatus", "not cultivated",
+    "Cyperus squarrosus", "not cultivated",
+    "Populus balsamifera", "not cultivated",
+    "Populus carolinensis", "not cultivated",
+    "Cortaderia selloana", "not cultivated",
+    "Acorus calamus", "not cultivated",
+    "Rudbeckia laciniata", "not cultivated",
+    "Elodea nuttallii", "not cultivated",
+    "Azolla filiculoides", "not cultivated",
+    "Iva xanthiifolia", "not cultivated",
+    "Sporobolus indicus", "not cultivated",
+    "Asclepias syriaca", "not cultivated",
+    "Grindelia squarrosa", "not cultivated",
+    "Elaeagnus angustifolia", "not cultivated",
+    "Pinus radiata", "not cultivated",
+    "Fraxinus americana", "not cultivated",
+    "Epilobium brachycarpum", "not cultivated",
+    "Setaria faberi", "not cultivated",
+    "Mimulus guttatus", "not cultivated",
+    "Impatiens glandulifera", "not cultivated",
+    "Amorpha fruticosa", "not cultivated",
+    "Paspalum dilatatum", "not cultivated",
+    "Robinia pseudoacacia", "not cultivated",
+    "Panicum dichotomiflorum", "not cultivated",
+    "Claytonia perfoliata", "not cultivated",
+    "Symphoricarpos albus", "not cultivated",
+    "Oxalis pes-caprae", "not cultivated",
+    "Panicum capillare", "not cultivated",
+    "Lupinus polyphyllus", "not cultivated",
+    "Bidens connata", "not cultivated",
+    "Ailanthus altissima", "not cultivated",
+    "Spartina x townsendii", "not cultivated",
+    "Echinochloa colonum", "not cultivated",
+    "Carpobrotus edulis", "not cultivated",
+    "Platanus hispanica", "not cultivated",
+    "Symphyotrichum lanceolatum", "not cultivated",
+    "Stenotaphrum secundatum", "not cultivated",
+    "Solidago canadensis", "not cultivated",
+    "Pseudotsuga menziesii", "not cultivated",
+    "Caragana arborescens", "not cultivated",
+    "Eleusine tristachya", "not cultivated",
+    "Eleusine indica", "not cultivated",
+    "Ulmus pumila", "not cultivated",
+    "Symphyotrichum novi-belgii aggr.", "not cultivated",
+    "Solidago gigantea", "not cultivated",
+    "Amaranthus viridis", "not cultivated",
+    "Parthenocissus quinquefolia", "not cultivated",
+    "Ceratochloa cathartica", "not cultivated",
+    "Ambrosia psilostachya", "not cultivated",
+    "Helianthus annuus", "not cultivated",
+    "Cucurbita pepo", "not cultivated",
+    "Lonicera japonica", "not cultivated",
+    "Euphorbia maculata", "not cultivated",
+    "Echinochloa oryzoides", "not cultivated",
+    "Opuntia stricta", "not cultivated",
+    "Galinsoga parviflora", "not cultivated",
+    "Buddleja davidii", "not cultivated",
+    "Parthenocissus inserta", "not cultivated",
+    "Cotula coronopifolia", "not cultivated",
+    "Cyperus eragrostis", "not cultivated",
+    "Artemisia verlotiorum", "not cultivated",
+    "Cornus sericea", "not cultivated",
+    "Lindernia dubia", "not cultivated",
+    "Sorghum halepense", "not cultivated",
+    "Digitaria ciliaris", "not cultivated",
+    "Amaranthus deflexus", "not cultivated",
+    "Ambrosia artemisiifolia", "not cultivated",
+    "Paspalum distichum subsp. distichum", "not cultivated",
+    "Lepidium didymum", "not cultivated",
+    "Xanthium orientale subsp. riparium", "not cultivated",
+    "Amaranthus blitoides", "not cultivated",
+    "Oplismenus hirtellus subsp. undulatifolius", "not cultivated",
+    "Amaranthus hybridus", "not cultivated",
+    "Echinocystis lobata", "not cultivated",
+    "Crocosmia x crocosmiiflora", "not cultivated",
+    "Gleditsia triacanthos", "not cultivated",
+    "Mirabilis jalapa", "not cultivated",
+    "Galinsoga quadriradiata", "not cultivated",
+    "Impatiens parviflora", "not cultivated",
+    "Oenothera glazioviana", "not cultivated",
+    "Cenchrus longispinus", "not cultivated",
+    "Fraxinus pennsylvanica", "not cultivated",
+    "Panicum miliaceum", "not cultivated",
+    "Prunus armeniaca", "not cultivated",
+    "Oxalis", "not cultivated",
+    "Dysphania ambrosioides", "not cultivated",
+    "Quercus rubra", "not cultivated",
+    "Juncus tenuis", "not cultivated",
+    "Xanthium orientale subsp. italicum", "not cultivated",
+    "Opuntia ficus-indica", "not cultivated",
+    "Datura stramonium", "not cultivated",
+    "Euphorbia serpens", "not cultivated",
+    "Tsuga heterophylla", "not cultivated",
+    "Agave americana", "not cultivated",
+    "Amelanchier spicata", "not cultivated",
+    "Nicotiana glauca", "not cultivated",
+    "Acer negundo", "not cultivated",
+    "Juglans nigra", "not cultivated",
+    "Phacelia tanacetifolia", "not cultivated",
+    "Amaranthus powellii", "not cultivated",
+    "Pinus strobus", "not cultivated",
+    "Oenothera fallax", "not cultivated",
+    "Amaranthus retroflexus", "not cultivated",
+    "Aronia x prunifolia", "not cultivated",
+    "Bidens frondosa", "not cultivated",
+    "Xanthium orientale", "not cultivated",
+    "Cenchrus spinifex", "not cultivated",
+    "Euphorbia prostrata", "not cultivated",
+    "Erigeron floribundus", "not cultivated",
+    "Symphyotrichum squamatum", "not cultivated",
+    "Xanthium spinosum" , "not cultivated",
+    "Symphyotrichum novi-belgii", "not cultivated",
+    "Elsholtzia ciliata", "not cultivated",
+    "Amaranthus albus", "cultivated",
+    "Matricaria discoidea", "not cultivated",
+    "Veronica peregrina", "not cultivated",
+    "Solanum chenopodioides", "not cultivated",
+    "Oxalis dillenii", "not cultivated",
+    "Lepidium virginicum", "not cultivated",
+    "Prunus serotina", "not cultivated",
+    "Morus nigra", "not cultivated",
+    "Oxalis corniculata", "not cultivated",
+    "Senecio inaequidens", "not cultivated",
+    "Epilobium brunnescens", "not cultivated",
+    "Erigeron bonariensis", "not cultivated",
+    "Helianthus lenticularis", "not cultivated",
+    "Commelina communis", "not cultivated",
+    "Potentilla indica", "not cultivated",
+    "Ligustrum lucidum", "not cultivated",
+    "Oenothera oakesiana", "not cultivated",
+    "Erigeron sumatrensis", "not cultivated",
+    "Lycopersicon esculentum", "cultivated",
+    "Acalypha virginica", "not cultivated",
+    "Amaranthus cruentus", "cultivated",
+    "Bidens vulgata", "not cultivated",
+    "Physocarpus opulifolius", "not cultivated",
+    "Pittosporum tobira", "not cultivated",
+    "Phytolacca americana", "not cultivated",
+    "Cyperus sharonensis", "not cultivated",
+    "Prunus cerasus", "not cultivated",
+    "Veronica persica", "not cultivated",
+    "Oenothera stucchii", "not cultivated",
+    "Erigeron annuus subsp. annuus", "not cultivated",
+    "Datura stramonium subsp. stramonium", "not cultivated",
+    "Oenothera suaveolens", "not cultivated",
+    "Euphorbia polygonifolia", "not cultivated",
+    "Xanthium", "not cultivated",
+    "Amelanchier lamarckii", "not cultivated",
+    "Solanum linnaeanum", "not cultivated",
+    "Erigeron canadensis", "not cultivated",
+    "Galanthus elwesii", "not cultivated",
+    "Erigeron annuus", "not cultivated",
+    "Lepidium densiflorum", "not cultivated",
+    "Oxalis fontana", "not cultivated",
+    "Oenothera biennis", "not cultivated",
+    "Morus alba", "not cultivated",
+    "Cephalaria syriaca", "not cultivated",
+    "Oxalis stricta", "not cultivated",
+    "Cuscuta campestris", "not cultivated",
+    "Mahonia aquifolium", "not cultivated",
+    "Erechtites hieraciifolius", "not cultivated",
+    "Oenothera parviflora", "not cultivated",
+    "Erigeron annuus subsp. septentrionalis", "not cultivated",
+    "Hordeum jubatum", "not cultivated",
+    "Oenothera rubricaulis", "not cultivated",
+    "Hemerocallis fulva", "not cultivated",
+    "Epilobium ciliatum", "not cultivated",
+    "Bromus danthoniae", "not cultivated",
+    "Oenothera biennis aggr.", "not cultivated",
+    "Epilobium ciliatum subsp. adenocaulon", "not cultivated",
+    "Symphyotrichum laeve", "not cultivated",
+    "Oenothera", "not cultivated",
+    "Sisyrinchium septentrionale", "not cultivated"
+), ncol = 2, byrow = TRUE)
+species_matrix<- as.data.frame(species_matrix)
+colnames(species_matrix)<- c("names","status")
+
+# join
+topdominantneophytes<- left_join(topdominantneophytes, species_matrix)
+
+# count number of cultivated species
+topdominantneophytes[topdominantneophytes$status=="cultivated",]
 ```
 
 
@@ -157,12 +397,14 @@ Assess, whether the dominance distribution of native plants and neophytes is sig
 var.test(log10(coverMean) ~ neophyte, speciesDominance, alternative = "two.sided")
 # Not significantly different (but small p values--> Welch probably better e.g. https://doi.org/10.5334/irsp.82)
 
-# Perform Welch t Test
+# Perform Welch t Test --> check whether the values are significantly different from each other
+# test assumes normal distribution with unequal variances --> assumed better even when equal
 stat.test<-t.test(log10(coverMean) ~ neophyte, speciesDominance)
 stat.test
 
 # Kolmogorov-Smirnov test 
-ks.test(log10(speciesDominance$coverMean[speciesDominance$neophyte]), log10(speciesDominance$coverMean[!speciesDominance$neophyte]))
+# non-parametrical
+ks.test(log10(speciesDominance$coverMean[speciesDominance$neophyte]),log10(speciesDominance$coverMean[!speciesDominance$neophyte]))
 
 # Wilcox test
 wilcox.test(log10(coverMean) ~ neophyte, speciesDominance)
@@ -177,29 +419,26 @@ neophyteDominance[match(min(neophyteDominance$coverMean), neophyteDominance$cove
 
 nativeDominance[match(max(nativeDominance$coverMean), nativeDominance$coverMean),]
 neophyteDominance[match(max(neophyteDominance$coverMean), neophyteDominance$coverMean),]
-
-write.table(neophyteDominance %>%
-    arrange(desc(coverMean)) %>%
-    slice(1:20), "clipboard" )
-
 ```
 
 # Frequency
 Analyse whether the frequency distributions of native and neophyte plants are significantly different:
-```{r}
+```{r, message=F}
 # Load in the file containing the number of plots per species
 plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv")
-# Only keep when there are at least 10 plots
-plotsPerSpecies <- plotsPerSpecies[plotsPerSpecies$numberOfPlots > 10,]
+# Only keep when there are at least 50 plots
+plotsPerSpecies <- plotsPerSpecies[plotsPerSpecies$numberOfPlots >= 50,]
 # Give neophyte names
 plotsPerSpecies$neophyte <- plotsPerSpecies$names %in% neophyteNames
 
+# frequency
+ggplot(plotsPerSpecies, mapping = aes(x = log10(numberOfPlots), after_stat(density), colour = neophyte)) + geom_freqpoly(binwidth = .5)
 
-ggplot(plotsPerSpecies, mapping = aes(x = log(numberOfPlots), after_stat(density), colour = neophyte)) + geom_freqpoly(binwidth = .5)
-
+# count number of natives and neophytes
 nNEO<- sum(plotsPerSpecies$neophyte)
 nNAT<- sum(!plotsPerSpecies$neophyte)
 
+# plot frequency
 p<- ggplot(plotsPerSpecies, mapping = aes(x= neophyte, y = log10(numberOfPlots), colour = neophyte)) + 
    geom_violin() +
   ylab("log10(number of occurences)") + xlab(NULL)+
