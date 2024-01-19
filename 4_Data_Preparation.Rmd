@@ -539,6 +539,32 @@ fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 #write_csv(eva, "fullPlotEva.csv")
+library(readxl)
+eva<- read.csv("fullPlotEva.csv")
+species<- unique(eva$species)
+eva2<- eva[,c("PlotObservationID","species")]
+fullPlotData<- read.csv("fullPlotData.csv")
+fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
+library(dplyr)
+eva_country<- left_join(eva2, fullPlot2)
+
+species_country<- eva_country |> group_by(Region) |> summarise(species= unique(species))
+```
+
+
+```{r}
+# File for Irena
+# Read eva
+eva<- read.csv("fullPlotEva.csv")
+eva2<- eva[,c("PlotObservationID","species")]
+# Read Header
+fullPlotData<- read.csv("fullPlotData.csv")
+fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
+# Join and summarise
+eva_country<- left_join(eva2, fullPlot2)
+species_country<- eva_country |> group_by(Region) |> summarise(species= unique(species))
+# Write
+write.csv(species_country,"country_species.csv")
 ```
 
 # Species occurence
@@ -581,6 +607,7 @@ round(end-begin)
 
 parallel::stopCluster(cl = my.cluster)
 
+plotsPerSpecies<- read.csv("plotsPerSpeciesInEurope.csv")
 #write_csv(plotsPerSpecies, "plotsPerSpeciesInEurope.csv")
 ```
 
