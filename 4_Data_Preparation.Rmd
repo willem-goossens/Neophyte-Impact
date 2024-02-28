@@ -564,7 +564,7 @@ fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 eva_country<- left_join(eva2, fullPlot2)
 species_country<- eva_country |> group_by(Region) |> summarise(species= unique(species))
 # Write
-write.csv(species_country,"country_species.csv")
+#write.csv(species_country,"country_species.csv")
 ```
 
 # Species occurence
