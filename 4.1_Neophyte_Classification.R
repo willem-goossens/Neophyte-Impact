@@ -130,70 +130,83 @@ length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="intra
 length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"]))
 
 # Summarise again now only number and region in order to see how the data varies in European countries
-country_neophyte<- eva_country_neophyte |> group_by(Region, Neophyte) |> summarise(n=n())
+country_neophyte<- eva_country_neophyte |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
 table(country_neophyte['Neophyte'])
 
 ##### 4 MAP ####
 ###### 4.1 MED regions #####
+# We load the Med regions and give correct CRS
 medRegions <- read_sf("../Europe-regions-shapefiles-2023", "Emed_regions")
 medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
 
-tm_shape(medRegions) +tm_fill()
 
-
-Europe<- merge(country, medRegions, by= c("Region"="Region"))
-Europe<- Europe[Europe$Neophyte=="extra",]
-Europe_GG<- fortify(Europe)
-ggplot()+
-  geom_sf(data= Europe_GG)
-
-  geom_sf(aes(fill = Neophyte)) +
-  scale_fill_manual(values = c("extra" = "red", "other" = "blue"), name = "Neophyte") +
-  labs(title = "Neophyte Distribution in European Regions") +
+###### 4.2 absolute #####
+# We extract the data for only the extra EU species and map this
+country_extra<- country_neophyte[country_neophyte$Neophyte=="extra",]
+Europe<- left_join(medRegions,country_extra,  by= c("Region"="Region"))
+extra_EU<- ggplot()+
+  geom_sf(data= Europe, aes(fill= n))+
+  scale_fill_viridis_c(option = "magma",begin = 0.1)+
+  labs(title = "Extra-European Neophyte Distribution in European Regions") +
   theme_minimal()
+ggsave(extra_EU, file="extra_EU.png", bg="white")
+
+# We extract the data for only the intra EU species and map this
+country_intra<- country_neophyte[country_neophyte$Neophyte=="intra",]
+Europe_in<- left_join(medRegions,country_intra,  by= c("Region"="Region"))
+intra_EU<- ggplot()+
+  geom_sf(data= Europe_in, aes(fill= n))+
+  scale_fill_viridis_c(option = "magma",begin = 0.1)+
+  labs(title = "Intra-European Neophyte Distribution in European Regions") +
+  theme_minimal()
+ggsave(intra_EU, file="intra_EU.png", bg="white")
+
+# We extract the data for only the native EU species and map this
+country_native<- country_neophyte[country_neophyte$Neophyte=="native",]
+Europe_nt<- left_join(medRegions,country_native,  by= c("Region"="Region"))
+native_EU<-ggplot()+
+  geom_sf(data= Europe_nt, aes(fill= n))+
+  scale_fill_viridis_c(option = "magma",begin = 0.1)+
+  labs(title = "Native Distribution in European Regions") +
+  theme_minimal()
+ggsave(native_EU, file="native_EU.png", bg="white")
 
 
+###### 4.2 relative #####
+# Group by region and calculate the relative proportions of all species
+country_neophyte_relative <- eva_country_neophyte %>%
+  distinct(Region, Neophyte, species) %>%  
+  group_by(Region, Neophyte) %>%
+  summarise(n = n_distinct(species)) %>%
+  group_by(Region) %>%
+  mutate(relative_proportion = n / sum(n))
 
-Europe<- st_combine(Europe)
+# We extract the data for only the extra EU species and map this
+country_extra_rel<- country_neophyte_relative[country_neophyte_relative$Neophyte=="extra",]
+Europe<- left_join(medRegions,country_extra_rel,  by= c("Region"="Region"))
+extra_EU_rel<- ggplot()+
+  geom_sf(data= Europe, aes(fill= relative_proportion))+
+  scale_fill_viridis_c(option = "magma",begin = 0.1)+
+  labs(title = "Extra-European Neophyte Distribution in European Regions") +
+  theme_minimal()
+ggsave(extra_EU_rel, file="extra_EU_rel.png", bg="white")
 
+# We extract the data for only the intra EU species and map this
+country_intra_rel<- country_neophyte_relative[country_neophyte_relative$Neophyte=="intra",]
+Europe_intra<- left_join(medRegions,country_intra_rel,  by= c("Region"="Region"))
+intra_EU_rel<- ggplot()+
+  geom_sf(data= Europe_intra, aes(fill= relative_proportion))+
+  scale_fill_viridis_c(option = "magma",begin = 0.1)+
+  labs(title = "Intra-European Neophyte Distribution in European Regions") +
+  theme_minimal()
+ggsave(intra_EU_rel, file="intra_EU_rel.png", bg="white")
 
-Europe_GG<- fortify(Europe)
-ggplot()+
-  geom_sf(data=Europe_GG)
-
-allPlotsWithRegion[(is.na(allPlotsWithRegion$Region)),]
-
-
-world_map <- map_data("world")
-
-Europe<- st_combine(medRegions)
-Europe_Plots<- fortify(plotLocations)
-
-Europe_GG<- fortify(Europe)
-ggplot()+
-  geom_sf(data=Europe_GG)+
-  geom_sf(data= Europe_Plots, color="red", size=0.5)
-
-allPlotsWithRegion[(is.na(allPlotsWithRegion$Region)),]# List of European countries
-european_countries <- c(
-  "Albania", "Andorra", "Austria", "Belarus", "Belgium", "Bosnia and Herzegovina",
-  "Bulgaria", "Croatia", "Cyprus", "Czech Republic", "Denmark", "Estonia",
-  "Finland", "France", "Germany", "Gibraltar", "Greece", "Hungary", "Iceland",
-  "Ireland", "Italy", "Kosovo", "Latvia", "Liechtenstein", "Lithuania", "Luxembourg",
-  "Macedonia", "Malta", "Moldova", "Monaco", "Montenegro", "Netherlands",  "Poland","Norway",
-  "Portugal", "Romania", "San Marino", "Serbia", "Slovakia", "Slovenia", "Sweden","Spain", "Switzerland", "Ukraine", "United Kingdom", "Turkey"
-)
-
-# Subset the data for European countries
-europe_map <- subset(world_map, region %in% european_countries)
-
-# Highlight France and Spain
-highlighted_countries <- c("France", "Spain")
-
-# Create a basic map
-ggplot(europe_map, aes(x = long, y = lat, group = group)) +
-  geom_polygon(fill = "lightgrey", color = "black") +
-  geom_polygon(data = subset(europe_map, region %in% highlighted_countries),
-               fill = "darkgrey", color = "black") +
-  theme_void() 
-  
+# We extract the data for only the native species and map this
+country_native_rel<- country_neophyte_relative[country_neophyte_relative$Neophyte=="native",]
+Europe_native<- left_join(medRegions,country_native_rel,  by= c("Region"="Region"))
+native_EU_rel<- ggplot()+
+  geom_sf(data= Europe_native, aes(fill= relative_proportion))+
+  scale_fill_viridis_c(option = "magma",begin = 0.1)+
+  labs(title = "Native Distribution in European Regions") +
+  theme_minimal()
+ggsave(native_EU_rel, file="native_EU_rel.png", bg="white")
