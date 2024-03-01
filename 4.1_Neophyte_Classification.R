@@ -210,3 +210,30 @@ native_EU_rel<- ggplot()+
   labs(title = "Native Distribution in European Regions") +
   theme_minimal()
 ggsave(native_EU_rel, file="native_EU_rel.png", bg="white")
+
+#### 5 CHECK GLONAF ####
+glonafRegions <- read_sf("../GloNAF_Shapefile", "regions2")
+glonafRegions <- st_transform(glonafRegions, CRS("+proj=longlat +datum=WGS84"))
+
+glonafRegionList<- read.csv("../GloNAF_Shapefile/Region_GloNAF_vanKleunenetal2018Ecology.csv")
+glonafRegionList<- glonafRegionList[glonafRegionList$tdwg1_name=="Europe", ]  
+newGlonaf<- subset(glonafRegions, glonafRegions$OBJIDsic %in% glonafRegionList$OBJIDsic)
+glonafRegions<- newGlonaf
+all.equal(sort(glonafRegionList$OBJIDsic), sort(glonafRegions$OBJIDsic))
+newGlonaf<- left_join(newGlonaf, glonafRegionList, by= "OBJIDsic")
+
+glonafSpecies<-readxl::read_excel('../GloNAF_Shapefile/Taxon_x_List_GloNAF_vanKleunenetal2018Ecology.xlsx')
+glonafSpecies<- glonafSpecies[, c("standardized_name", "region_id")]
+glonafSpecies <- glonafSpecies[glonafSpecies$region_id %in% glonafRegionList$region_id, ]
+
+glonafSpecies <- left_join(glonafSpecies,glonafRegionList, by="region_id")
+glonafSpecies<- glonafSpecies[, c("standardized_name","region_id","tdwg4_name")]
+names(glonafSpecies)[names(glonafSpecies) == 'tdwg4_name'] <- 'Region'
+sort(unique(glonafSpecies$Region))
+sort(unique(eva_country_neophyte$Region))
+
+correctCountries<- data.frame(Med=c("Rf.NW", "Rf.N","Rf.E", "Rf.C","Rf.S", "Luxemburg","Bosnia.Herzegovina", "Italy" ,"Czech.Republic", "Greece", "France", "Spain", 
+                                    "Portugal" , "Moldavia"), 
+                              WF=c("Northwest European Russia", "North European Russia", "East European Russia", "Central European Russia", "South European Russia", 
+                                   "Luxembourg", "Bosnia and Herzegovina", "Italy excl. Sardinia and Sicily", "Czech Republic", "Greece excl. Crete and East Aegean",
+                                   "France incl. Channel Islands and Monaco excl. Corse","Spain mainland", "Portugal mainland", "Moldova"))
