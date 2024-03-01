@@ -22,15 +22,17 @@ library(modEvA)
 library(lubridate)
 library(visreg)
 library(ggplot2)
+library(parallel)
+library(doParallel)
 ```
 
 Load data
-```{r}
+```{r, message=F}
 # Data from header with the EIVE and DIV data
 fullPlotData <- read_csv("fullPlotData.csv")
 fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
 
-fast <- T
+fast <- F
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
 }
@@ -39,7 +41,8 @@ if(fast) {
 # Explore correlations
 Checking for correlation among predictor variables:
 ```{r}
-correlation <- cor(fullPlotData[,51:62])
+# take normal DIV
+correlation <- cor(fullPlotData[,c(51:55, 63:67)])
 correlation[correlation < 0.7] <- 0
 correlation
 ```
@@ -48,10 +51,11 @@ The following variables are all highly correlated: DistSeverity, DistSeverityHer
 
 Checking again, whether any of the predictors we plan to use are highly correlated shows that they are not:
 ```{r}
-correlation <- cor(fullPlotData[,append(51:55, 71:72)])
+correlation <- cor(fullPlotData[,append(51:55, 77:78)])
 correlation[correlation < 0.7] <- 0
 correlation
 ```
+
 # Base Model
 ## Straight line
 Fitting a straight forward model to the data excluding the outliers:
@@ -73,6 +77,26 @@ plot(glm1)
 aicGlm1 <- AIC(glm1)
 dsquaredGlm1 <- (glm1$null.deviance-glm1$deviance)/glm1$null.deviance
 dsquaredGlm1
+
+glm1.1 <- glm(numberOfVascularPlantSpecies ~ 
+                    log(Area) + 
+                    EIVEresM.sqrt + I(EIVEresM.sqrt^2) + 
+                    EIVEresN.sqrt + I(EIVEresN.sqrt^2) + 
+                    EIVEresR.sqrt + I(EIVEresR.sqrt^2) + 
+                    EIVEresL.sqrt + I(EIVEresL.sqrt^2) + 
+                    EIVEresT.sqrt + I(EIVEresT.sqrt^2) +
+                    DistSeverity + I(DistSeverity^2) +
+                    Soil.Disturbance + I(Soil.Disturbance^2) +
+                    Grazing.Pressure + I(Grazing.Pressure^2)+
+                    Mowing.Frequency + I(Mowing.Frequency^2)
+                    , family=poisson, fullPlotData)
+
+summary(glm1.1)
+par(mfrow = c(2,2))
+plot(glm1.1)
+aicGlm1.1 <- AIC(glm1.1)
+dsquaredGlm1.1 <- (glm1.1$null.deviance-glm1.1$deviance)/glm1.1$null.deviance
+dsquaredGlm1.1
 ```
 The residual plots look much better than before log transfroming the disturbance data and excluding the outliers. Hence, we test for overdispersion:
 
@@ -96,9 +120,30 @@ glm2 <- glm(numberOfVascularPlantSpecies ~
 
 summary(glm2)
 par(mfrow = c(2,2))
+aicGlm2 <- AIC(glm2)
 plot(glm2)
 dsquaredGlm2 <- (glm2$null.deviance-glm2$deviance)/glm2$null.deviance
 dsquaredGlm2
+
+glm1.2 <- glm(numberOfVascularPlantSpecies ~ 
+                    log(Area) + 
+                    EIVEresM.sqrt + I(EIVEresM.sqrt^2) + 
+                    EIVEresN.sqrt + I(EIVEresN.sqrt^2) + 
+                    EIVEresR.sqrt + I(EIVEresR.sqrt^2) + 
+                    EIVEresL.sqrt + I(EIVEresL.sqrt^2) + 
+                    EIVEresT.sqrt + I(EIVEresT.sqrt^2) +
+                    DistSeverity + I(DistSeverity^2) +
+                    Soil.Disturbance + I(Soil.Disturbance^2) +
+                    Grazing.Pressure + I(Grazing.Pressure^2)+
+                    Mowing.Frequency + I(Mowing.Frequency^2)
+                    , family=quasipoisson, fullPlotData)
+summary(glm1.2)
+par(mfrow = c(2,2))
+plot(glm1.2)
+aicGlm1.2 <- AIC(glm1.2)
+dsquaredGlm1.2 <- (glm1.2$null.deviance-glm1.2$deviance)/glm1.2$null.deviance
+dsquaredGlm1.2
+
 ```
 
 We next try fitting a GAM instead of a glm and treating Dataset as a random factor.
@@ -123,12 +168,52 @@ aicGam0 <- AIC(gam0)
 
 dsquaredGam0 <- Dsquared(obs = fullPlotData$numberOfVascularPlantSpecies, pred = fitted(gam0), family = "poisson")
 dsquaredGam0
+
+
+gam0.1 <- bam(numberOfVascularPlantSpecies ~ 
+              log(Area) + 
+              s(EIVEresM.sqrt, bs = 'tp') +
+              s(EIVEresN.sqrt, bs = 'tp') +
+              s(EIVEresR.sqrt, bs = 'tp') +
+              s(EIVEresL.sqrt, bs = 'tp') +
+              s(EIVEresT.sqrt, bs = 'tp') +
+              s(DistSeverity, bs = 'tp') +
+              s(DistFrequency, bs = 'tp'),
+            family = poisson(link = log), 
+            data = fullPlotData, 
+            method = 'fREML',
+            discrete=TRUE,
+            nthreads=4)
+
+
+AIC(glm1, gam0, gam0.1)
+gam0.1 <- bam(numberOfVascularPlantSpecies ~ 
+              log(Area) + 
+              s(EIVEresM.sqrt, bs = 'tp') +
+              s(EIVEresN.sqrt, bs = 'tp') +
+              s(EIVEresR.sqrt, bs = 'tp') +
+              s(EIVEresL.sqrt, bs = 'tp') +
+              s(EIVEresT.sqrt, bs = 'tp') +
+              s(DistSeverity, bs = 'tp') +
+              s(Soil.Disturbance, bs = 'tp')+
+              s(Grazing.Pressure, bs = 'tp')+
+              s(Mowing.Frequency, bs = 'tp'), 
+            family = poisson(link = log), 
+            data = fullPlotData, 
+            method = 'fREML',
+            discrete=TRUE,
+            nthreads=4)
+aicGam0 <- AIC(gam0)
+
+dsquaredGam0.1 <- Dsquared(obs = fullPlotData$numberOfVascularPlantSpecies, pred = fitted(gam0.1), family = "poisson")
+dsquaredGam0.1
 ```
 
 The AIC for the gam is `r aicGam0` while the AIC for the poisson link glm was `r aicGlm1`. This is a huge improvement. The models are comparable in complexity (poisson link, log size etc.) apart from replacing the use of quadratic indicator terms with smoothing terms. Hence, the GAM clearly outperforms the GLM.
 
 We next add the Dataset as random factor and correct for spatial autocorrelation by adding a 2D smoothing term for Latitude / Longitude.
 ```{r}
+begin<- Sys.time()
 gam2 <- bam(numberOfVascularPlantSpecies ~ 
               log(Area) + 
               s(EIVEresM.sqrt, bs = 'tp') +
@@ -142,8 +227,10 @@ gam2 <- bam(numberOfVascularPlantSpecies ~
             family = poisson(link = log), 
             data = fullPlotData, 
             method = 'fREML',
-            discrete=TRUE,
+            discrete=T,
             nthreads=4)
+end<- Sys.time()
+round(end-begin)
 
 summary(gam2)
 dsquaredGam2 <- Dsquared(obs = fullPlotData$numberOfVascularPlantSpecies, pred = fitted(gam2), family = "poisson")
@@ -170,6 +257,29 @@ summary(gam3)
 
 dsquaredGam3 <- Dsquared(obs = fullPlotData$numberOfVascularPlantSpecies, pred = fitted(gam3), family = "poisson")
 dsquaredGam3
+
+gam3.1 <- bam(numberOfVascularPlantSpecies ~ 
+              log(Area) + 
+              s(EIVEresM.sqrt, bs = 'tp') +
+              s(EIVEresN.sqrt, bs = 'tp') +
+              s(EIVEresR.sqrt, bs = 'tp') +
+              s(EIVEresL.sqrt, bs = 'tp') +
+              s(EIVEresT.sqrt, bs = 'tp') +
+              s(Soil.Disturbance, bs = 'tp')+
+              s(Grazing.Pressure, bs = 'tp')+
+              s(Mowing.Frequency, bs = 'tp') +
+              s(Latitude, Longitude, bs = 'tp') +
+              s(Dataset, bs = 're'), 
+            family = poisson(link = log), 
+            data = fullPlotData, 
+            method = 'fREML', 
+            discrete=TRUE,
+            nthreads=4)
+
+summary(gam3.1)
+
+dsquaredGam3.1 <- Dsquared(obs = fullPlotData$numberOfVascularPlantSpecies, pred = fitted(gam3.1), family = "poisson")
+dsquaredGam3.1
 ```
 
 Finally, we compare the different weighting schemes for computing the average indicator values per plot:
