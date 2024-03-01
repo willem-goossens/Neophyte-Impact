@@ -25,8 +25,10 @@ if(fast) {
   header <- header[runif(length(header$PlotObservationID)) > 0.9999,]
 }
 
+# Remove data without long or lat
 header <- header[!(is.na(header$Latitude) | is.na(header$Longitude)),]
 
+# Make spatial feature (with crs WGS84)
 plotLocations <- st_as_sf(header, coords = c("Longitude","Latitude"), remove = FALSE)
 st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 
