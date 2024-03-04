@@ -1,7 +1,6 @@
 rm(list=ls())
 
 ##### 1 LOAD ####
-install.packages("tmap", repos = c("https://r-tmap.r-universe.dev", "https://cloud.r-project.org"))
 library(tmap)   
 library(leaflet) 
 library(readr)
@@ -110,7 +109,7 @@ others_not_neophyte<- c("Delphinium obcordatum")
 extra_EU<- neophyteNames[!(neophyteNames %in% c(Turkey_not_neophyte, Georgia_not_neophye, others_not_neophyte))]
 # These are all neophytes that are extra-European
 # We now retrieve the six species that have to be checked
-all<- c(intra_EU, neophyteNames)
+all<- c(intra_EU, extra_EU)
 not_defined<-setdiff(all, neophyteNamesEU)
 # For now, we will just exclude these from our dataset
 eva_country_neophyte<- eva_country_neophyte[!(eva_country_neophyte$species %in% not_defined),]
@@ -212,28 +211,68 @@ native_EU_rel<- ggplot()+
 ggsave(native_EU_rel, file="native_EU_rel.png", bg="white")
 
 #### 5 CHECK GLONAF ####
+###### 5.1 Regions and List #####
+# Region shapefile
 glonafRegions <- read_sf("../GloNAF_Shapefile", "regions2")
+# Make WGS84
 glonafRegions <- st_transform(glonafRegions, CRS("+proj=longlat +datum=WGS84"))
 
+# Read list all regions
 glonafRegionList<- read.csv("../GloNAF_Shapefile/Region_GloNAF_vanKleunenetal2018Ecology.csv")
+# Subset to Europe
 glonafRegionList<- glonafRegionList[glonafRegionList$tdwg1_name=="Europe", ]  
+
+# Subset Regions to only those where the ID matches one of the regions in Europe
 newGlonaf<- subset(glonafRegions, glonafRegions$OBJIDsic %in% glonafRegionList$OBJIDsic)
 glonafRegions<- newGlonaf
+# Check whether we have the same number ID in both datasets
 all.equal(sort(glonafRegionList$OBJIDsic), sort(glonafRegions$OBJIDsic))
+# Merge 
 newGlonaf<- left_join(newGlonaf, glonafRegionList, by= "OBJIDsic")
 
-glonafSpecies<-readxl::read_excel('../GloNAF_Shapefile/Taxon_x_List_GloNAF_vanKleunenetal2018Ecology.xlsx')
-glonafSpecies<- glonafSpecies[, c("standardized_name", "region_id")]
-glonafSpecies <- glonafSpecies[glonafSpecies$region_id %in% glonafRegionList$region_id, ]
 
+
+
+###### 5.2 Species ######
+# Read in species
+glonafSpecies<-readxl::read_excel('../GloNAF_Shapefile/Taxon_x_List_GloNAF_vanKleunenetal2018Ecology.xlsx')
+# Downsize for ease later
+glonafSpecies<- glonafSpecies[, c("standardized_name", "region_id")]
+# Only Species present in places with region id
+glonafSpecies <- glonafSpecies[glonafSpecies$region_id %in% glonafRegionList$region_id, ]
+# Check 
+all.equal(sort(unique(glonafSpecies$region_id)), sort(glonafRegionList$region_id))
+
+# Combine Species with Region list
 glonafSpecies <- left_join(glonafSpecies,glonafRegionList, by="region_id")
 glonafSpecies<- glonafSpecies[, c("standardized_name","region_id","tdwg4_name")]
 names(glonafSpecies)[names(glonafSpecies) == 'tdwg4_name'] <- 'Region'
-sort(unique(glonafSpecies$Region))
-sort(unique(eva_country_neophyte$Region))
 
-correctCountries<- data.frame(Med=c("Rf.NW", "Rf.N","Rf.E", "Rf.C","Rf.S", "Luxemburg","Bosnia.Herzegovina", "Italy" ,"Czech.Republic", "Greece", "France", "Spain", 
-                                    "Portugal" , "Moldavia"), 
-                              WF=c("Northwest European Russia", "North European Russia", "East European Russia", "Central European Russia", "South European Russia", 
-                                   "Luxembourg", "Bosnia and Herzegovina", "Italy excl. Sardinia and Sicily", "Czech Republic", "Greece excl. Crete and East Aegean",
-                                   "France incl. Channel Islands and Monaco excl. Corse","Spain mainland", "Portugal mainland", "Moldova"))
+# To be able to compare GLONAF and our data, we check the names
+setdiff(unique(glonafSpecies$Region), unique(eva_country_neophyte$Region))
+setdiff(unique(eva_country_neophyte$Region), unique(glonafSpecies$Region))
+
+# We will take the names of GLONAF for this check-up
+correctCountries<- data.frame(Med=c("Rf.NW", "Rf.N","Rf.E", "Rf.C","Rf.S","Rf.K", "Rf.CS","Luxemburg","Bosnia.Herzegovina", "Italy" ,"Czech.Republic", "Greece", "France", 
+                                  "Moldavia", "Republic.of.Ireland", "United.Kingdom", "Corsica", "Sicily", "Sardinia", 
+                                    "Spain mainland", "Portugal mainland", "Faroes"), 
+                              WF=c("Northwest European Russia", "North European Russia", "East European Russia", "Central European Russia", 
+                                   "South European Russia", "Kalingrad Region","Russian Caucasia",
+                                   "Luxembourg", "Bosnia and Herzegovina", "Italy", "Czech Republic", "Greece",
+                                   "France", "Moldova", "Ireland","Great Britain", "Corse", 
+                                   "Sicilia", "Sardegna", "Spain", "Portugal", "F?royar"))
+
+# Change our names: first take the index
+index <- eva_country_neophyte$Region %in% correctCountries$Med
+# Change to correct for each Region
+eva_country_neophyte$Region[index] <- correctCountries$WF[match(eva_country_neophyte$Region[index],correctCountries$Med)]
+# Quite some countries are not present in GLONAF, we will just check countries we have
+setdiff(unique(eva_country_neophyte$Region), unique(glonafSpecies$Region))
+
+# Get names of regions
+glonafRegionNames<- unique(glonafSpecies$Region)
+MEDRegionNames <- unique(eva_country_neophyte$Region)
+
+# Subset datasets to be able to compare them
+glonafSpecies<- glonafSpecies[glonafSpecies$Region %in% MEDRegionNames,]
+medSpecies<- eva_country_neophyte[eva_country_neophyte$Region %in% glonafRegionNames,]
