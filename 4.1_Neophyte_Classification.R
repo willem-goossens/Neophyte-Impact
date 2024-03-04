@@ -66,7 +66,6 @@ eva_country_neophyte <- eva_country_neophyte[!(eva_country_neophyte$species %in%
 
 
 
-
 #### 3 ANALYSIS ####
 ###### 3.1 intra-EU ######
 # Take names all intra-EU species --> also possible (setdiff(neophyteNamesEU, neophyteNames))
@@ -115,6 +114,7 @@ not_defined<-setdiff(all, neophyteNamesEU)
 eva_country_neophyte<- eva_country_neophyte[!(eva_country_neophyte$species %in% not_defined),]
 
 
+
 ###### 3.2 re-classify ######
 # We now reclassify the data of eva_country to the newest version, where all species from the old file (extra-EU) are categorised as extra
 # The rest of the species are considered intra-EU neophytes
@@ -131,6 +131,14 @@ length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="nativ
 # Summarise again now only number and region in order to see how the data varies in European countries
 country_neophyte<- eva_country_neophyte |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
 table(country_neophyte['Neophyte'])
+
+###### 3.3 Save #####
+species_country_status<- eva_country_neophyte |> group_by(Region, species, Neophyte) |> summarise(n=n())
+species_country_status<- species_country_status[,-4]
+write.csv(species_country_status,"species_country_status.csv", row.names = FALSE)
+
+remove<- c(not_defined, exclude)
+write.csv(remove, "not_defined.csv", row.names=FALSE)
 
 ##### 4 MAP ####
 ###### 4.1 MED regions #####
@@ -322,5 +330,3 @@ length(which(EUROPE %in% intra_EU))
 length(which(NOT_EU %in% intra_EU))
 NOT_EU[NOT_EU %in% intra_EU]
 # Again quite some, after checking 10 species (7%), only one was not found native to Europe
-
-
