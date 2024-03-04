@@ -118,9 +118,9 @@ eva_country_neophyte<- eva_country_neophyte[!(eva_country_neophyte$species %in% 
 ###### 3.2 re-classify ######
 # We now reclassify the data of eva_country to the newest version, where all species from the old file (extra-EU) are categorised as extra
 # The rest of the species are considered intra-EU neophytes
-eva_country_neophyte$Neophyte[eva_country_neophyte$species %in% extra_EU] <- "extra"
-eva_country_neophyte$Neophyte[eva_country_neophyte$species %in% intra_EU] <- "intra"
 eva_country_neophyte$Neophyte[is.na(eva_country_neophyte$Neophyte)] <- "native"
+eva_country_neophyte$Neophyte[eva_country_neophyte$species %in% extra_EU] <- "extra"
+eva_country_neophyte$Neophyte[eva_country_neophyte$Neophyte=="neo"]<- "intra"
 unique(eva_country_neophyte$Neophyte)
 
 # Check number of intra and extra European species and all natives
@@ -276,3 +276,51 @@ MEDRegionNames <- unique(eva_country_neophyte$Region)
 # Subset datasets to be able to compare them
 glonafSpecies<- glonafSpecies[glonafSpecies$Region %in% MEDRegionNames,]
 medSpecies<- eva_country_neophyte[eva_country_neophyte$Region %in% glonafRegionNames,]
+
+# Take only neophytes
+medSpecies <- medSpecies[(medSpecies$Neophyte=="extra"|medSpecies$Neophyte=="intra"), ]
+# Take only all unique combinations of Region, species and definition.
+medUnique<- medSpecies |> group_by(Region, species, Neophyte) |> summarise(n=n())
+
+###### 5.3 Compare #####
+# Get all species from GLONAF that are in our database
+species_not_MED<- data_frame(country= c(), notMed=c())
+species_not_glonaf<- data_frame(country= c(), notGlonaf= c())
+for (i in glonafRegionNames){
+  notMed<- setdiff(glonafSpecies$standardized_name[glonafSpecies$Region==i][glonafSpecies$standardized_name[glonafSpecies$Region==i] %in% eva_country_neophyte$species[eva_country_neophyte$Region==i]], medUnique$species[medUnique$Region==i])
+  notGlonaf<- setdiff(medUnique$species[medUnique$Region==i],glonafSpecies$standardized_name[glonafSpecies$Region==i][glonafSpecies$standardized_name[glonafSpecies$Region==i] %in% eva_country_neophyte$species[eva_country_neophyte$Region==i]])
+  notGlonaf<- cbind(rep(i, times=length(notGlonaf)), notGlonaf)
+  notMed<-  cbind(rep(i, times=length(notMed)), notMed)
+  species_not_MED<- rbind(species_not_MED,notMed)
+  species_not_glonaf<- rbind(species_not_glonaf, notGlonaf)
+}
+
+# Quite some species are defined as alien in our database while this is not true in Glonaf (2407 species over 41 countries)
+# Maybe worse is that quite some species are not defined as alien in our database but yes in Glonaf (1606 species over 41 countries)
+# Randomly checking some species from the latter case against KEW and CABI gives more trust to our own classification
+
+###### 5.4 Origin #####
+# Now we will check the origin using the data of Zhang et al 2023
+native<-read.csv("../Neophyte Assignments/wf_dat.csv")
+# Remove all _ and make spaces
+native$sp_tpl <-gsub("_"," ",native$sp_tpl)
+
+# We make a vector of all unique species in Europe
+EUROPE<- unique(native$sp_tpl[native$botanical_continent=="EUROPE"])
+NOT_EU<- unique(native$sp_tpl[!native$botanical_continent=="EUROPE"])
+  
+# We check how much and which species are present in Europe but were defined as from extra European origin
+length(which(EUROPE %in% extra_EU))
+EUROPE[EUROPE %in% extra_EU]
+# These are quite some... I took about 10 random species (5%) and searched their native range, all of which are from extra European origin
+
+# Check how many do come from other continents
+length(which(NOT_EU %in% extra_EU))
+
+# Check how many intra european species are found in the dataset
+length(which(EUROPE %in% intra_EU))
+length(which(NOT_EU %in% intra_EU))
+NOT_EU[NOT_EU %in% intra_EU]
+# Again quite some, after checking 10 species (7%), only one was not found native to Europe
+
+
