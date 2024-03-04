@@ -25,18 +25,20 @@ fullPlotData<- read.csv("../Willem R/fullPlotData.csv")
 # We also checked for Australasia, but this is only Australia, hence, we can only keep the Europe part of the dataset for our analysis
 head(native)
 unique(native$botanical_continent)
-EUnative<- native[native$botanical_continent=="EUROPE",]
+native<- native[native$botanical_continent=="EUROPE",]
 
 # Same for neophytes
 head(neophyte)
 unique(neophyte$botanical_continent)
-EUneo<- neophyte[neophyte$botanical_continent=="EUROPE",]
+neophyte<- neophyte[neophyte$botanical_continent=="EUROPE",]
 
 # Check the countries of the Zang data against our data
-WF_regions<-unique(EUnative$geo_entity)
+WF_regions<-unique(native$geo_entity)
 MED_regions<-unique(fullPlotData$Region)
-GLONAF_regions<- unique(EUneo$geo_entity)
+GLONAF_regions<- unique(neophyte$geo_entity)
 
+length(unique(neophyte$sp_tpl[neophyte$geo_entity=="Albania"]))
+length(unique(glonafSpecies$standardized_name[glonafSpecies$Region=="Albania"]))
 # Correct countries for the two datasets
 correctCountries<- data.frame(Med=c("Rf.NW", "Rf.N","Rf.E", "Rf.C","Rf.S", "Luxemburg","Bosnia.Herzegovina", "Italy" ,"Czech.Republic", "Greece", "France", "Spain", 
                                     "Portugal" , "Moldavia"), 
