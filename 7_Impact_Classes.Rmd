@@ -376,6 +376,7 @@ result<-(aov(rank(diversity_impact) ~ neophyte + cover_class, dataToPlot[dataToP
 summary(result)
 TukeyHSD(result, which= "cover_class")
 ```
+
 # Dominant
 ```{r}
 var.test(dominant ~ neophyte, coverClassImpactForCandidates[coverClassImpactForCandidates$log=="3",], alternative = "two.sided")
