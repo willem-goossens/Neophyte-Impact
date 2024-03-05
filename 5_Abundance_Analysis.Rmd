@@ -460,7 +460,7 @@ p<- ggplot(plotsPerSpecies, mapping = aes(x= neophyte, y = log10(numberOfPlots),
     annotate("text", x=1, y=5.5, label= paste("n=",nNAT), vjust = -0.5, hjust = 0.5, size=4)+
   annotate("text", x=2, y=5.5, label= paste("n=",nNEO), vjust = -0.5, hjust = 0.5, size=4)
 p
-ggsave("Frequency.jpeg", p )
+#ggsave("Frequency.jpeg", p )
 
 
 summary(log10(plotsPerSpecies$numberOfPlots[!plotsPerSpecies$neophyte]))
