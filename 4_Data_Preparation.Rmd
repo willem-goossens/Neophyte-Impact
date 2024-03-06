@@ -379,13 +379,16 @@ aggregatedEva <- eva |>
     )
 end<- Sys.time()
 round(end-begin)
+
+eva|> group_by(PlotObservationID) |> summarise(n= mean(log(eva$Disturbance.Severity), na.rm=T))
 ```
 
 
 Join the result with the header data:
 ```{r}
-fullPlotData<- subset(header, select= c(PlotObservationID, Country,Longitude, Latitude, Region, Dataset))
+fullPlotData<- subset(header, select= c(PlotObservationID, Country,Longitude, Latitude, Region, Dataset, `Relevé area (m²)`))
 fullPlotData <- full_join(fullPlotData, aggregatedEva, by = "PlotObservationID")
+names(fullPlotData)[names(fullPlotData) == 'Relevé area (m²)'] <- 'Area'
 ```
 
 ## 3.2 Filter SR
@@ -486,8 +489,15 @@ As expected the count data on species richness looks quite skewed. Hence, we wil
 boxplot(fullPlotData$DistSeverity.sqrt)
 boxplot(fullPlotData$DistFrequency.sqrt)
 boxplot(fullPlotData$Grazing.Pressure.sqrt)
-boxplot(fullPlotData$MowingFrequency.sqrt)
+boxplot(fullPlotData$Mowing.Frequency.sqrt)
 boxplot(fullPlotData$Soil.Disturbance.sqrt)
+
+hist(fullPlotData$DistSeverity.sqrt)
+hist(fullPlotData$DistFrequency.sqrt)
+hist(fullPlotData$Grazing.Pressure.sqrt)
+hist(fullPlotData$Mowing.Frequency.sqrt)
+hist(fullPlotData$Soil.Disturbance.sqrt)
+
 boxplot(fullPlotData$EIVEresM.sqrt)
 boxplot(fullPlotData$EIVEresN.sqrt)
 boxplot(fullPlotData$EIVEresR.sqrt)
@@ -510,82 +520,46 @@ boxplot(fullPlotData$EIVEresT.cnw)
 
 # mean
 boxplot(fullPlotData$Grazing.Pressure)
-boxplot(fullPlotData$MowingFrequency)
+boxplot(fullPlotData$Mowing.Frequency)
 boxplot(fullPlotData$Soil.Disturbance)
 boxplot(fullPlotData$DistSeverity)
 boxplot(fullPlotData$DistFrequency)
-boxplot(fullPlotData$EIVEresM)
-boxplot(fullPlotData$EIVEresN)
-boxplot(fullPlotData$EIVEresR)
-boxplot(fullPlotData$EIVEresL)
-boxplot(fullPlotData$EIVEresT)
+boxplot(fullPlotData$EIVEresM) # Looks good
+boxplot(fullPlotData$EIVEresN) # Looks good
+boxplot(fullPlotData$EIVEresR) # Looks good
+boxplot(fullPlotData$EIVEresL) # Looks good
+boxplot(fullPlotData$EIVEresT) # Looks good
 
 #Log mean
-boxplot(fullPlotData$LogGrazing.Pressure)
-summary(fullPlotData$logDistFrequency)
-boxplot(fullPlotData$LogMowingFrequency)
-boxplot(fullPlotData$LogSoil.Disturbance)
-boxplot(fullPlotData$LogDistSeverity)
-boxplot(fullPlotData$LogDistFrequency)
+boxplot(fullPlotData$logMowingFrequency)
+boxplot(fullPlotData$logGrazing.Pressure)
+boxplot(fullPlotData$logSoil.Disturbance)
+boxplot(fullPlotData$logDistSeverity)
+boxplot(fullPlotData$logDistFrequency)
+
+hist(fullPlotData$logMowingFrequency)
+hist(fullPlotData$logGrazing.Pressure)
+hist(fullPlotData$logSoil.Disturbance)
+hist(fullPlotData$logDistSeverity)
+hist(fullPlotData$logDistFrequency)
 ```
 
 The distribution of the EIVE predictors look symmetrical. However, the disturbance indicators are heavily skewed. Hence, they need to be transformed. Because there are zeros in the data we choose a root transoformation. Trying different powers we found that the 4th root worked best:
-
-As histogram, is easier for me to see distribution
-```{r}
-# Square root
-hist(fullPlotData$DistSeverity.sqrt)
-hist(fullPlotData$DistFrequency.sqrt)
-hist(fullPlotData$EIVEresM.sqrt)
-hist(fullPlotData$EIVEresN.sqrt)
-hist(fullPlotData$EIVEresR.sqrt)
-hist(fullPlotData$EIVEresL.sqrt)
-hist(fullPlotData$EIVEresT.sqrt)
-
-# nw
-#hist(fullPlotData$DistSeverity.nw)
-#hist(fullPlotData$DistFrequency.nw)
-hist(fullPlotData$EIVEresM.nw)
-hist(fullPlotData$EIVEresN.nw)
-hist(fullPlotData$EIVEresR.nw)
-hist(fullPlotData$EIVEresL.nw)
-hist(fullPlotData$EIVEresT.nw)
-
-# cnw
-hist(fullPlotData$DistSeverity.cnw)
-hist(fullPlotData$DistFrequency.cnw)
-hist(fullPlotData$EIVEresM.cnw)
-hist(fullPlotData$EIVEresN.cnw)
-hist(fullPlotData$EIVEresR.cnw)
-hist(fullPlotData$EIVEresL.cnw)
-hist(fullPlotData$EIVEresT.cnw)
-
-# mean
-hist(fullPlotData$DistSeverity)
-hist(fullPlotData$DistFrequency)
-hist(fullPlotData$EIVEresM)
-hist(fullPlotData$EIVEresN)
-hist(fullPlotData$EIVEresR)
-hist(fullPlotData$EIVEresL)
-hist(fullPlotData$EIVEresT)
-```
-
-
 
 ```{r}
 fullPlotData$transformedDisturbanceSeverity.sqrt <- fullPlotData$DistSeverity.sqrt^(1/4)
 fullPlotData$transformedDisturbanceFrequency.sqrt <- fullPlotData$DistFrequency.sqrt^(1/4)
 fullPlotData$transformedDisturbanceSeverity <- fullPlotData$DistSeverity^(1/4)
 fullPlotData$transformedDisturbanceFrequency <- fullPlotData$DistFrequency^(1/4)
-fullPlotData$transformedDisturbanceSeverity.cnw <- fullPlotData$DistSeverity.cnw^(1/4)
-fullPlotData$transformedDisturbanceFrequency.cnw <- fullPlotData$DistFrequency.cnw^(1/4)
 
 par(mfrow = c(2,2))
 boxplot(fullPlotData$transformedDisturbanceSeverity.sqrt)
 boxplot(fullPlotData$transformedDisturbanceFrequency.sqrt)
 boxplot(fullPlotData$DistSeverity.sqrt) # imo even better distributed...
 boxplot(fullPlotData$DistFrequency.sqrt)
+par(mfrow = c(1,1))
 ```
+
 
 After transformation with log(x + eps) the disturbance indicator values are much better centered. However, the transformation function is a bit arbitrary and there are still outliers which cause difficulties with analysis as can be seen by fitting a straight forward model:
 
@@ -599,12 +573,12 @@ glm0 <- glm(numberOfVascularPlantSpecies ~
                     EIVEresR.sqrt + I(EIVEresR.sqrt^2) + 
                     EIVEresL.sqrt + I(EIVEresL.sqrt^2) + 
                     EIVEresT.sqrt + I(EIVEresT.sqrt^2) +
-                    transformedDisturbanceSeverity.sqrt + I(transformedDisturbanceSeverity.sqrt^2) +
-                    transformedDisturbanceFrequency.sqrt + I(transformedDisturbanceFrequency.sqrt^2)
-                    , family=poisson, fullPlotData)
+                    DistSeverity.sqrt + I(DistSeverity.sqrt^2) +
+                    DistFrequency.sqrt + I(DistFrequency.sqrt^2)
+                  , family=poisson, fullPlotData)
 
 summary(glm0)
-par(mfrow = c(2,2))
+par(mfrow = c(1,1))
 plot(glm0)
 ```
 We can see that the residuals of this model are in a reasonable range and hence the model fits reasonably well to the data.
