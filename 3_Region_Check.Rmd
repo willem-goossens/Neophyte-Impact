@@ -22,6 +22,7 @@ library(sp)
 library(units)
 library(lwgeom)
 library(arsenal)
+library(doParallel)
 ```
 
 
@@ -79,7 +80,7 @@ Not all data was assigned to a region, check percentage of plots not assigned. W
 First we compute the distances to a bounding box, which facilitates the calculations. If the plot is within the threshold distance to the box, we compute the real distance for every region untill we obtain the smallest distance. This data is stored in region, together with the distance.
 ```{r}
 # Percentage not assigned
-percentNotAssignedPlots <- sum(is.na(joinedData$Region))/length(joinedData$Region)*100
+percentNotAssignedPlots <- sum(is.na(joinedData$Region))/length(joinedData$PlotObservationID)*100
 percentNotAssignedPlots
 
 # For the remaining plots we assign them to the closest region which is no more than 10 km away. Else we ignore the data.
@@ -200,10 +201,10 @@ sum(is.na(allPlotsWithRegion$Region))
 We make the dataset a normal dataframe (remove the geometry) and save the dataset
 ```{r}
 st_geometry(allPlotsWithRegion) <- NULL
-write_csv(allPlotsWithRegion[,1:2], "plot_to_region_assignment_small.csv")
+#write_csv(allPlotsWithRegion[,1:2], "plot_to_region_assignment_small.csv")
 
 #check whether my 'plot to region' is different than the one from Christian
-myPlot<- read.csv("plot_to_region_assignment.csv")
+#myPlot<- read.csv("plot_to_region_assignment.csv")
 hisPlot<- read_csv("../Intermediate Data/plot_to_region_assignment.csv")
 comparedf(hisPlot, myPlot)
 ```
@@ -240,11 +241,10 @@ We now plot for a region
 # Which regions are there?
 sort(medRegions$Region)
 
-allPlotsWithRegion<- read.csv("plot_to_region_assignment_small.csv")
+#allPlotsWithRegion<- read.csv("plot_to_region_assignment_small.csv")
 
 # Code for plotting the plots and regions
-regionToLookAt <- ("Turkey") # With this line you can select which region to plot
-regionShape <- medRegions[medRegions$Region == "Rf.E" | medRegions$Region ==  "Rf.N" | medRegions$Region ==  "Rf.E" | medRegions$Region ==  "Rf.C"| medRegions$Region ==  "Rf.S"| medRegions$Region ==  "Rf.K"| medRegions$Region == "Rf.A",]
+regionToLookAt <- ("France") # With this line you can select which region to plot
 regionShape<- medRegions[medRegions$Region==regionToLookAt,]
 boundingBox <- boundingBoxes$geometry[match(regionToLookAt, medRegions$Region)]
 plotsInRegion <- plotLocations[allPlotsWithRegion$Region == regionToLookAt & runif(length(header$Country)) > 0,] # Here you can reduce the number of plots shown
@@ -263,7 +263,8 @@ ggplot() +
 Plot Europe with plots
 ```{r}
 Europe<- st_combine(medRegions)
-Europe_Plots<- fortify(plotLocations)
+
+Europe_Plots<- fortify(allPlotsWithRegion[!is.na(allPlotsWithRegion$Region),])
 
 Europe_GG<- fortify(Europe)
 ggplot()+
