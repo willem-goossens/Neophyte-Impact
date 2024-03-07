@@ -132,10 +132,36 @@ length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="nativ
 country_neophyte<- eva_country_neophyte |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
 table(country_neophyte['Neophyte'])
 
-###### 3.3 Save #####
+# Check whether some intra_EU species are native in other regions
+native_names<-unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])
+sum(native_names %in% intra_EU)
+
+###### 3.3 native SR #####
+aggregatedEVA <- eva_country_neophyte |>  group_by(PlotObservationID, Neophyte) |>  summarise(numberOfVascularPlantSpecies = n())
+
+# Only native SR is relevant here (does not make sense to look at the influence of alien species on alien species)
+nativeSR <- aggregatedEVA[aggregatedEVA$Neophyte=="native",]
+nativeSR <- subset(nativeSR, select= -c(Neophyte))
+names(nativeSR)[names(nativeSR)=="numberOfVascularPlantSpecies"]<- "nativeSR"
+
+# Are there some plots that do not have any native SR
+fullPlotData[!(fullPlotData$PlotObservationID %in% nativeSR$PlotObservationID),]
+
+# Count number of plots with alien species
+plots_with_intra <- sum(aggregatedEVA$Neophyte=="intra")
+plots_with_extra <- sum(aggregatedEVA$Neophyte=="extra")
+
+# Join native SR with data
+fullPlotData<- left_join(fullPlotData, nativeSR, by="PlotObservationID")
+fullPlotData <- fullPlotData |> relocate(nativeSR, .after = numberOfVascularPlantSpecies)
+
+
+###### 3.4 Save #####
 species_country_status<- eva_country_neophyte |> group_by(Region, species, Neophyte) |> summarise(n=n())
 species_country_status<- species_country_status[,-4]
 write.csv(species_country_status,"species_country_status.csv", row.names = FALSE)
+
+write.csv(fullPlotData, "fullPlotData.csv", row.names=F)
 
 remove<- c(not_defined, exclude)
 write.csv(remove, "not_defined.csv", row.names=FALSE)
