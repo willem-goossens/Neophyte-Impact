@@ -154,7 +154,7 @@ plots_with_extra <- sum(aggregatedEVA$Neophyte=="extra")
 # Join native SR with data
 fullPlotData<- left_join(fullPlotData, nativeSR, by="PlotObservationID")
 fullPlotData <- fullPlotData |> relocate(nativeSR, .after = numberOfVascularPlantSpecies)
-
+fullPlotData$nativeSR[is.na(fullPlotData$nativeSR)] <- 0
 
 ###### 3.4 Save #####
 species_country_status<- eva_country_neophyte |> group_by(Region, species, Neophyte) |> summarise(n=n())
