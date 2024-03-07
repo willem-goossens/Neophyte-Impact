@@ -380,7 +380,6 @@ aggregatedEva <- eva |>
 end<- Sys.time()
 round(end-begin)
 
-eva|> group_by(PlotObservationID) |> summarise(n= mean(log(eva$Disturbance.Severity), na.rm=T))
 ```
 
 
@@ -477,12 +476,14 @@ eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 `r numberOfPlotsWithMissingIndicatorValues` of the plots were removed because not all indicator values could be estimated.
 
 # 4 PLOT
+## 4.1 SR
 ```{r}
 par(mfrow=c(1,1))
 boxplot(fullPlotData$numberOfVascularPlantSpecies)
 ```
 
 
+## 4.2 IVs
 As expected the count data on species richness looks quite skewed. Hence, we will need to use a poisson glm/ gam
 ```{r}
 # Square root
@@ -546,6 +547,7 @@ hist(fullPlotData$logDistFrequency)
 
 The distribution of the EIVE predictors look symmetrical. However, the disturbance indicators are heavily skewed. Hence, they need to be transformed. Because there are zeros in the data we choose a root transoformation. Trying different powers we found that the 4th root worked best:
 
+## 4.3 Transform
 ```{r}
 fullPlotData$transformedDisturbanceSeverity.sqrt <- fullPlotData$DistSeverity.sqrt^(1/4)
 fullPlotData$transformedDisturbanceFrequency.sqrt <- fullPlotData$DistFrequency.sqrt^(1/4)
@@ -563,7 +565,7 @@ par(mfrow = c(1,1))
 
 After transformation with log(x + eps) the disturbance indicator values are much better centered. However, the transformation function is a bit arbitrary and there are still outliers which cause difficulties with analysis as can be seen by fitting a straight forward model:
 
-# Base model test
+# 5 BASE MODEL
 Note that this is not the final Base Model, rather we will use this to check the assumptions made.
 ```{r}
 glm0 <- glm(numberOfVascularPlantSpecies ~ 
@@ -578,14 +580,14 @@ glm0 <- glm(numberOfVascularPlantSpecies ~
                   , family=poisson, fullPlotData)
 
 summary(glm0)
-par(mfrow = c(1,1))
 plot(glm0)
 ```
+
 We can see that the residuals of this model are in a reasonable range and hence the model fits reasonably well to the data.
 
-## Check individual country data
+
 ```{r}
-dataFromGermany <- fullPlotData[fullPlotData$Region == "Netherlands",]
+dataFromGermany <- fullPlotData[fullPlotData$Region == "Germany",]
 dataFromGermany$Dataset <- as.factor(as.character(dataFromGermany$Dataset))
 par(mfrow = c(1,1))
 boxplot(numberOfVascularPlantSpecies ~ Dataset, data = dataFromGermany)
@@ -594,7 +596,8 @@ boxplot(log(fullPlotData$Area))
 
 Looking at different datasets from a similar region exhibits quite large differences in terms of species richness. It will most likely make sense to include Dataset as a random factor. The log transformed size of the plots is very symmetrical. This looks good.
 
-# Write CSV
+# 6 EXPORT
+## 6.1 EVA + HEAD
 ```{r}
 # Make sure all plot data is in eva
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
@@ -604,35 +607,26 @@ fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 #write_csv(eva, "fullPlotEva.csv")
-library(readxl)
-eva<- read.csv("fullPlotEva.csv")
-species<- unique(eva$species)
-eva2<- eva[,c("PlotObservationID","species")]
-fullPlotData<- read.csv("fullPlotData.csv")
-fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
-library(dplyr)
-eva_country<- left_join(eva2, fullPlot2)
-
-species_country<- eva_country |> group_by(Region) |> summarise(species= unique(species))
 ```
 
 
+## 6.2 Check neophytes
 ```{r}
 # File for Irena
-# Read eva
-eva<- read.csv("fullPlotEva.csv")
+# Eva
 eva2<- eva[,c("PlotObservationID","species")]
-# Read Header
-fullPlotData<- read.csv("fullPlotData.csv")
+# Header
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 # Join and summarise
 eva_country<- left_join(eva2, fullPlot2)
 species_country<- eva_country |> group_by(Region) |> summarise(species= unique(species))
-# Write
+
 #write.csv(species_country,"country_species.csv")
 ```
 
-# Species occurence
+
+# 7 FREQUENCY
+## 7.1 Analysis
 Compute which species occurs how often in eva:
 ```{r}
 # For speed optimization we extract only the necessary information from EVA
@@ -643,6 +637,7 @@ uniqueSpecies <- unique(reducedEva$species)
 # Empty dataset
 plotsPerSpecies <- data.frame(names = character(), numberOfPlots = integer())
 
+# Prepare parallel
 parallel::detectCores()
 n.cores <- parallel::detectCores() - 2
 my.cluster <- parallel::makeCluster(
@@ -656,7 +651,6 @@ foreach::getDoParWorkers()
 
 
 # Count in how many plots a species occurs
-
 begin<- Sys.time()
 plotsPerSpecies<-foreach(i= 1:length(uniqueSpecies), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
   tmp <- reducedEva$PlotObservationID[reducedEva$species == uniqueSpecies[i]]
@@ -671,15 +665,15 @@ end<- Sys.time()
 round(end-begin)
 
 parallel::stopCluster(cl = my.cluster)
-
-plotsPerSpecies<- read.csv("plotsPerSpeciesInEurope.csv")
 #write_csv(plotsPerSpecies, "plotsPerSpeciesInEurope.csv")
 ```
 
+## 7.2 Downsample
 Determine which plant species have more than 10 plots with cover > 50% and cover < 1% for analysis:
 ```{r, message=F}
 # Load data previously made with the number of plots per species across the dataset
-plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv")
+
+# plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv")
 
 parallel::detectCores()
 n.cores <- parallel::detectCores() - 2
@@ -700,7 +694,7 @@ taxaForCoverClassAnalysis <- c()
 # run for all candidates
 begin<- Sys.time()
 taxaForCoverAnalysis<- foreach(i= 1: length(candidatesForCoverClassAnalysis), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar%  {
-  # if the sum of all species with a cover of 50% for a species and less than one each are more than 10 
+  # if the sum of all species with a cover of 50% for a species and less than 1% each are more than 10 
   # && makes sure to only look at the second if it is already T
   taxon<- candidatesForCoverClassAnalysis[i]
   if(sum(eva$species == taxon & eva$`Cover %` >= 50) > 10 && sum(eva$species == taxon & eva$`Cover %` < 1) > 10) {
