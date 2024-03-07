@@ -379,7 +379,6 @@ aggregatedEva <- eva |>
     )
 end<- Sys.time()
 round(end-begin)
-
 ```
 
 
@@ -711,4 +710,4 @@ parallel::stopCluster(cl = my.cluster)
 
 # To Do
 TODO: how to handle niche width and number of original EIVs in EIVE to improve the estimation of the EIVE value in EVA?
-TODO also calculate richness without neophytes?
+TODO: also calculate richness without neophytes?
