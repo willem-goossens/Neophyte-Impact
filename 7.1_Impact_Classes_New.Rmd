@@ -36,12 +36,13 @@ Load filtered Data containing the richness and indicator values for each plot. I
 ```{r}
 fullPlotData <- read_csv("fullPlotData.csv")
 
-fast <- T
+fast <- F
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 ```
+
 
 ## 1.2 Neophyte
 Load the neophyte definitions:
@@ -241,8 +242,8 @@ for(i in start:end) {
   if(i %% 100 == 0) {
     fileName <- paste("coverClassImpactForCandidates", start, "_", i, ".csv", sep = "")
     #write_csv(coverClassImpactForCandidates, fileName)
+    }
   }
-}
 }
 end<- Sys.time()
 round(end-begin)
@@ -255,6 +256,7 @@ coverClass1<- coverClassImpactForCandidates
 fileName <- paste("coverClassImpactForCandidates", start, "_", end, ".csv", sep = "")
 #write_csv(coverClassImpactForCandidates, fileName)
 ```
+
 
 ## 2.5 Run all
 ```{r}
