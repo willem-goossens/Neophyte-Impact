@@ -343,7 +343,9 @@ gam10 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method =
 gam11 <- bam(model2,family = quasipoisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 summary(gam10)
+plot(gam10)
 summary(gam11)
+plot(gam11)
 ```
 
 
