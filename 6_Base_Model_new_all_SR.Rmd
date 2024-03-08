@@ -53,6 +53,14 @@ correlation[correlation < 0.7 & correlation> -0.7] <- 0
 
 The following variables are all highly correlated: DistFrequency and EIVEresL. We therefore decided to only keep the overall disturbance severity and frequency in the model and remove the other correlated variables. DistFrequencyHerblayer and DistSeveretityHerblayer are only estimated for a subset of the habitats and hence should not be used for all habitats as we are doing. This is why we also removed this variable from the predictors.
 
+Check assumptions quasipoisson
+```{r}
+mean(fullPlotData$numberOfVascularPlantSpecies)
+var(fullPlotData$numberOfVascularPlantSpecies)
+```
+
+
+
 # 2 MODEL
 ## 2.1 Distribution
 We chose to include light instead of dist frequency
@@ -327,6 +335,15 @@ summary(gam9)
 summary(gam10)
 
 AIC(gam8, gam9, gam10)
+```
+
+## 3.5 Final check
+```{r}
+gam10 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam11 <- bam(model2,family = quasipoisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+
+summary(gam10)
+summary(gam11)
 ```
 
 
