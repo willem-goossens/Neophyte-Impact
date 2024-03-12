@@ -341,6 +341,7 @@ Compute for how many plant species the measure was computed and how many are neo
 #sum(coverClassImpactForCandidates$log=="2" & coverClassImpactForCandidates$neophyte)
 #sum(coverClassImpactForCandidates$log=="3" & !coverClassImpactForCandidates$neophyte)
 ```
+
 ## Compare inter-class
 Compute the two factor ANOVA for neophyte and cover_class to assess whether neophytes are significantly worse for plant species richness than native plants.
 ```{r}
