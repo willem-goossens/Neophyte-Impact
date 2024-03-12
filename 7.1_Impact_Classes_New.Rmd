@@ -276,7 +276,7 @@ dataToPlot <- coverClassImpactForCandidates |>
 summarizedData <- dataToPlot |>  group_by(status, cover_class, log)|> 
   summarise(n=n(), mean= mean(diversity_impact, na.rm=T),sd = sd(diversity_impact, na.rm=T), ci= qt(p=1-0.05/2, df=n-1)*sd/sqrt(n))
 ```
-# 2.7 Significance
+## 2.7 Significance
 Compare the different classes using Whelch t-test (mean), Wilcoxon test (mean) and F-test (variance):
 ```{r}
 # Split dataset between neophyte and native species
@@ -349,7 +349,7 @@ p<- ggplot(summarizedData[summarizedData$log=="3",], aes(x=cover_class, y=mean, 
   
 p
 
-ggsave("RR_Cover_Class.jpeg", p)
+ggsave("RR_Cover_Class.jpeg", p, width = 25, height = 15, units = "cm")
 
 # R but as barplot
 p<- ggplot(summarizedData[summarizedData$log=="3",], aes(x=cover_class, y=mean,   fill=status)) + 
@@ -365,18 +365,28 @@ p<- ggplot(summarizedData[summarizedData$log=="3",], aes(x=cover_class, y=mean, 
   theme_classic()+ geom_hline(yintercept = 0, linetype="longdash")+ 
   theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=14) ,axis.title.x=element_text(size=14))+
   theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
-  
-  
-  scale_x_discrete(labels = c('0%\n(absent)','[0%-1%]\n(very low)','[1% - 10%]\n(low) ', '[10%-50%]\n(middle)', '[50%-100%]\n(high)')) +
-  scale_fill_manual(values=c("#27cf6a", "#cf274e"), 
-                    name="Status in Europe",
-                    breaks=c(FALSE, TRUE),
-                    labels=c("native species", "neophytes"))+ 
-  theme_classic()+geom_hline(yintercept = 0, linetype="longdash") +
-  theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=14) ,axis.title.x=element_text(size=14))+
-  theme(legend.text= element_text(size=12), legend.title =element_text(size=14), legend.position = "bottom")
 p
 
-ggsave("RR_Cover_Class_Barplot.jpeg", p)
+#ggsave("RR_Cover_Class_Barplot.jpeg", p)
 ```
 
+
+# 4 FURTHER
+## 4.1 Dominant
+Which species are most dominant
+```{r}
+dominant <- coverClassImpactForCandidates[order(coverClassImpactForCandidates$dominant),]
+# Only response ratio
+dominant<- dominant[dominant$log=="3",]
+# Take top 100
+dominant <- dominant[1:100,]
+print(dominant)
+# Count species in the top
+sum(dominant$status=="intra")
+sum(dominant$status=="extra")
+sum(dominant$status=="native")
+dominant$taxa[dominant$status=="intra"]
+
+# Check countries species
+eva_country_neophyte[eva_country_neophyte$species=="Euphorbia cyparissias" & eva_country_neophyte$Neophyte=="intra",]
+```
