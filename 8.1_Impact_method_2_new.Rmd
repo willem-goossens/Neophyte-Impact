@@ -1,0 +1,342 @@
+---
+title: "Impact with base model for new classification"
+author: "Willem Goossens"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# 1 START
+
+## 1.1 General
+```{r, echo=FALSE}
+rm(list=ls())
+```
+
+
+Load packages
+```{r, warnings=F, message=F}
+library(readr)
+library(dplyr)
+library(mgcv)
+library(modEvA)
+library(ggplot2)
+library(doParallel)
+library(foreach)
+```
+
+
+Here we set some parameters that are useful in the script
+```{r}
+correctArea<- F
+```
+
+
+## 1.2 Packages
+Load eva and plot data
+```{r, warnings=F, message=F}
+eva <- read_csv("fullPlotEva.csv")
+fullPlotData <- read_csv("fullPlotData.csv")
+```
+
+
+Downsample by a factor of 100 if fast is selected
+```{r}
+fast <- T
+if(fast) {
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.95,]
+  eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
+}
+```
+
+
+## 1.3 Neophyte
+Load the neophyte definitions:
+```{r, message=F}
+# Data on which species are neophytes
+species_country_status<- read_csv("species_country_status.csv")
+
+# Assign these names to the eva list
+extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
+intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
+```
+
+
+Remove species that are not defined or to be excluded
+```{r, warnings=F}
+remove<- read_csv("not_defined.csv",show_col_types = FALSE)
+remove<- as.vector(unlist(remove))
+eva<- eva[!(eva$species %in% remove),]
+```
+
+
+Assign classification to species
+```{r}
+# Only observation ID and Region
+fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
+# Right join to keep only species present in fullplot (otherwise a lot of NAs)
+eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
+rm(list=c("fullPlot2"))
+# Join eva and classification
+eva_country_neophyte<- left_join(eva, species_country_status, by= c("Region"= "Region", "species"= "species"))
+eva<- eva_country_neophyte
+# Look at how much from every type are present
+x<- as.data.frame(table(eva_country_neophyte$Neophyte))
+```
+
+
+## 1.4 Reduce
+Reduce EVA to a smaller dataset to accelerate computations.  
+Count the number of plots in which the species in the dataset exist.
+```{r}
+if(fast) {
+  reducedEva <- eva |> select(PlotObservationID, species, `Cover %`, Neophyte)
+
+  uniqueSpecies <- unique(reducedEva$species)
+  
+  # Empty dataset
+
+  # Prepare parallel
+  parallel::detectCores()
+  n.cores <- parallel::detectCores() - 2
+  my.cluster <- parallel::makeCluster(
+    n.cores, 
+    type = "PSOCK"
+  )
+  print(my.cluster)
+  doParallel::registerDoParallel(cl = my.cluster)
+  foreach::getDoParRegistered()
+  foreach::getDoParWorkers()
+
+  plotsPerNatives <- data.frame(names = character(), numberOfPlots = integer(), Neophyte= character())
+  reducedNative<- reducedEva[reducedEva$Neophyte=="native",]
+  uniqueNatives <- unique(reducedNative$species)
+
+  # Count in how many plots a native species occurs
+  begin<- Sys.time()
+plotsPerNatives<-foreach(i= 1:length(uniqueNatives), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
+   tmp <- reducedNative$PlotObservationID[reducedNative$species == uniqueNatives[i]]
+    names=uniqueNatives[i]
+    numberOfPlots= length(unique(tmp))
+    plotsPerNatives[i,]<- c(names, numberOfPlots,Neophyte= "native")
+}
+  plotsPerNatives<- as.data.frame(plotsPerNatives)
+  plotsPerNatives<-setNames(plotsPerNatives, c("names", "numberOfPlots"))
+  row.names(plotsPerNatives)<- c(1: length(uniqueNatives))
+  
+  end<- Sys.time()
+  round(end-begin)
+
+  plotsPerIntra <- data.frame(names = character(), numberOfPlots = integer(), Neophyte= character())
+  reducedNative<- reducedEva[reducedEva$Neophyte=="intra",]
+  uniqueIntra <- unique(reducedNative$species)
+
+  # Count in how many plots an intra European species occurs
+  begin<- Sys.time()
+plotsPerIntra<-foreach(i= 1:length(uniqueIntra), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
+   tmp <- reducedNative$PlotObservationID[reducedNative$species == uniqueIntra[i]]
+    names=uniqueIntra[i]
+    numberOfPlots= length(unique(tmp))
+    plotsPerIntra[i,]<- c(names, numberOfPlots, Neophyte="intra")
+}
+  plotsPerIntra<- as.data.frame(plotsPerIntra)
+  plotsPerIntra<-setNames(plotsPerIntra, c("names", "numberOfPlots"))
+  row.names(plotsPerIntra)<- c(1: length(uniqueIntra))
+  
+  plotsPerExtra <- data.frame(names = character(), numberOfPlots = integer(), Neophyte= character())
+  reducedNative<- reducedEva[reducedEva$Neophyte=="extra",]
+  uniqueExtra <- unique(reducedNative$species)
+
+  # Count in how many plots an extra European species occurs
+  begin<- Sys.time()
+plotsPerExtra<-foreach(i= 1:length(uniqueExtra), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
+   tmp <- reducedNative$PlotObservationID[reducedNative$species == uniqueExtra[i]]
+    names=uniqueExtra[i]
+    numberOfPlots= length(unique(tmp))
+    plotsPerExtra[i,]<- c(names, numberOfPlots, Neophyte= "extra")
+}
+  plotsPerExtra<- as.data.frame(plotsPerExtra)
+  plotsPerExtra<-setNames(plotsPerExtra, c("names", "numberOfPlots"))
+  row.names(plotsPerExtra)<- c(1: length(uniqueExtra))
+  
+  parallel::stopCluster(cl = my.cluster)
+} else {
+  plotsPerSpecies2 <- read_csv("plotsPerSpeciesInEurope.csv")
+}
+
+plotsPerSpecies<- rbind(plotsPerNatives, plotsPerIntra, plotsPerExtra)
+plotsPerSpecies$numberOfPlots <- as.numeric(plotsPerSpecies$numberOfPlots)
+colnames(plotsPerSpecies)[3]<- "Neophyte"
+```
+
+
+## 1.5 Select
+We want all species that are present in at least 50 plots, we order this set from highest to lowest and subsequently make a function to compute the total cover of the species across all sites.
+```{r}
+# determine which plant species should be computed
+minimumNumberOfPlots<- 50
+allPlants <- plotsPerSpecies[plotsPerSpecies$numberOfPlots >= minimumNumberOfPlots,]
+allPlants <- allPlants[order(-allPlants$numberOfPlots),]
+
+allPlants$names[(allPlants$names[allPlants$Neophyte=="native"] %in% allPlants$names[allPlants$Neophyte=="intra"])]
+
+computeSpeciesCover <- function(name, species, cover) {
+  result <- sum(cover[species==name]) # we use the sum here, since otherwise the total cover / species cover cannot reach one.
+  if(is.na(result)) {
+    0
+  } else {
+    result
+  }
+}
+```
+
+
+Test the function
+```{r, warnings=F, message=F}
+# Tests of the above function
+computeSpeciesCover("nonExistentPlant", c("plant1", "plant2"), c(1,2)) # If the plant is not present 0 is returned.
+computeSpeciesCover("plant1", c("plant1", "plant2"), c(1,2)) # If the is present the right value is returned
+computeSpeciesCover("plant2", c("plant1", "plant2"), c(1,2))
+computeSpeciesCover("plant2", c("plant1", "plant2", "plant2"), c(1,2,3)) # If the plant is present multiple times the sum is returned
+
+reducedEva <- eva[,c("PlotObservationID", "species", "Cover %", "Neophyte")]
+```
+
+
+# 2 ANALYSIS
+## 2.1 Function
+```{r}
+# The name of the first species
+plantName = allPlants$names[1]
+plantStatus= allPlants$Neophyte[1]
+
+
+# Function to compute the impact for each species, so we only need the plant name as input
+computePlantImpact <- function(plantName, plantStatus) {
+  
+  # Copy dataset temporarily to be able to make changes
+  tmpFullPlotData <- fullPlotData
+  
+  # Get the indices of the plant in the eva dataset
+  indexOfPlant <- eva$species == plantName & eva$Neophyte== plantStatus
+  
+  # The majority of the time is spent in computing the cover classes. 
+  # We select only the rows containing the species first because this is much faster than doing it for all plots.
+  # We make the dataset smaller (only those plots where the species is present), group the data per plot and compute the total cover (all species) and cover of the species we are highlighting now
+  plotsWherePlantOccurs <- reducedEva[reducedEva$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant],] |>
+    group_by(PlotObservationID) |>
+    summarise(totalCover = sum(`Cover %`), 
+              speciesCover = computeSpeciesCover(plantName, species, `Cover %`))
+  
+  
+  # Because the cover class was only computed for plots containing the species we need to assign 0% class to the remaining plots.
+  # Join the computed cover plots with the full data
+  tmpFullPlotData <- left_join(tmpFullPlotData, plotsWherePlantOccurs, by = "PlotObservationID")
+  # Identify all plots where the species investigated occurs
+  tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant]
+  
+  # If species is not present:
+  # Make 1 total cover and 0 species cover
+  tmpFullPlotData$totalCover[is.na(tmpFullPlotData$totalCover)] <- 1.0
+  tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
+  
+  # Exclude all plots which have 0 total cover
+  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover > 0,] 
+  
+  # Do SR - 1 for all plots in which the species is present
+  tmpFullPlotData$numberOfVascularPlantSpecies <- tmpFullPlotData$numberOfVascularPlantSpecies - tmpFullPlotData$plantOccurs
+  
+  # Correct area: if true we calculate the area that is reserved for the other plant species. 
+  if(correctArea) {
+    tmpFullPlotData$Area <- tmpFullPlotData$Area*(1.0 - tmpFullPlotData$speciesCover/tmpFullPlotData$totalCover)
+  }
+  
+  # There is a numerical problem in the bam function if we provide empty plots...
+  # This should normally not be possible (as we did data screening) but I will check again
+  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$numberOfVascularPlantSpecies > 0 & tmpFullPlotData$Area > 0,]
+  
+  # Make dataset a factor to add it as a random variable
+  tmpFullPlotData$Dataset <- as.factor(tmpFullPlotData$Dataset)
+  
+  # Count number of plots in which the species is present
+  sum(tmpFullPlotData$plantOccurs)
+  
+  # Base model
+  model<-  numberOfVascularPlantSpecies ~ 
+              s(log(Area),bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Soil.Disturbance.sqrt, bs = 'tp')+
+              s(Grazing.Pressure.sqrt, bs = 'tp')+
+              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(Latitude, Longitude, bs = 'tp') +
+              s(Dataset, bs = 're')+
+              plantOccurs
+
+base <- bam(model,family = poisson, data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+  
+  
+  
+  # Get summary from model
+  baseModel <- summary(base)
+  summary(base)
+  
+  # Make a dataframe to add the residuals to
+  res <- data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer(), Neophyte= character())
+  
+  res <- add_row(res, taxa = plantName, Estimate = baseModel$p.table[2,1], StdErr = baseModel$p.table[2,2], zValue = baseModel$p.table[2,3], pr = baseModel$p.table[2,4], numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), Neophyte= allPlants$Neophyte[i])
+  res
+}
+```
+
+
+
+## 2.2 Impact
+Use foreach to speed up computations
+```{r}
+# prepare parallel
+n.cores<- parallel::detectCores()-2 
+my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK" )
+print(my.cluster)
+doParallel::registerDoParallel(cl = my.cluster)
+foreach::getDoParRegistered()
+foreach::getDoParWorkers()
+
+# run for all and time
+begin<-Sys.time()
+x<- foreach(i= 1:length(allPlants$names), .combine = "rbind", .packages = c("dplyr","mgcv")) %dopar% {
+  res <- computePlantImpact(allPlants$names[i], allPlants$Neophyte[i])
+}
+end<-Sys.time()
+round(end-begin, 2)
+
+parallel::stopCluster(cl = my.cluster)
+```
+
+
+## 2.3 Significance
+```{r}
+result<-(aov(rank(Estimate) ~ Neophyte, x))
+summary(result)
+TukeyHSD(result, which= "status")
+```
+
+
+
+# 3 PLOT
+```{r}
+ggplot(x, aes(x=Neophyte, y= Estimate, color=Neophyte))+geom_violin()+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= Neophyte), size=3)+
+  scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
+                    name="Legend",
+                    breaks=c("native", "intra","extra"),
+                    labels=c("native species", "intra European neophyte", "extra European neophyte"))+
+  theme_classic()+ 
+  theme(legend.position = "bottom")+theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
+
+```
+
