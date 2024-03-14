@@ -24,6 +24,7 @@ library(mgcv)
 library(modEvA)
 library(doParallel)
 library(arsenal)
+library(pracma)
 ```
 
 
@@ -239,7 +240,7 @@ boxplot(div$Grazing.Pressure, xlab="Grazing Pr")
 boxplot(div$Soil.Disturbance, xlab="Soil dist")
 # oke balanced still
 hist(div$Grazing.Pressure, xlab="Grazing Pr")
-hist(div$Soil.Disturbance, xlab="Soil dist")
+hist(nthroot(div$Soil.Disturbance, 1), xlab="Soil dist")
 ```
 
 
@@ -708,6 +709,18 @@ parallel::stopCluster(cl = my.cluster)
 #write_csv(data.frame(taxa = taxaForCoverClassAnalysis), "taxaForCoverClassAnalysis.csv")
 ```
 
-# To Do
+# 8 LATER
+```{r}
+test<- read.csv("fullPlotData.csv")
+
+hist(test$DistSeverity)
+hist(sqrt(sqrt(test$DistFrequency)))
+hist((test$Soil.Disturbance.sqrt))
+```
+
+
+
+
+# 9 To Do
 TODO: how to handle niche width and number of original EIVs in EIVE to improve the estimation of the EIVE value in EVA?
 TODO: also calculate richness without neophytes?
