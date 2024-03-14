@@ -43,7 +43,7 @@ Downsample by a factor of 100 if fast is selected
 ```{r}
 fast <- T
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.95,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.90,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 ```
@@ -166,6 +166,7 @@ plotsPerExtra<-foreach(i= 1:length(uniqueExtra), .combine='rbind', .packages=c("
 plotsPerSpecies<- rbind(plotsPerNatives, plotsPerIntra, plotsPerExtra)
 plotsPerSpecies$numberOfPlots <- as.numeric(plotsPerSpecies$numberOfPlots)
 colnames(plotsPerSpecies)[3]<- "Neophyte"
+#write.csv(plotsPerSpecies, 'plotsPerSpecies_new2.csv')
 ```
 
 
@@ -177,7 +178,7 @@ minimumNumberOfPlots<- 50
 allPlants <- plotsPerSpecies[plotsPerSpecies$numberOfPlots >= minimumNumberOfPlots,]
 allPlants <- allPlants[order(-allPlants$numberOfPlots),]
 
-allPlants$names[(allPlants$names[allPlants$Neophyte=="native"] %in% allPlants$names[allPlants$Neophyte=="intra"])]
+#allPlants$names[(allPlants$names[allPlants$Neophyte=="native"] %in% allPlants$names[allPlants$Neophyte=="intra"])]
 
 computeSpeciesCover <- function(name, species, cover) {
   result <- sum(cover[species==name]) # we use the sum here, since otherwise the total cover / species cover cannot reach one.
