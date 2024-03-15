@@ -709,6 +709,17 @@ parallel::stopCluster(cl = my.cluster)
 #write_csv(data.frame(taxa = taxaForCoverClassAnalysis), "taxaForCoverClassAnalysis.csv")
 ```
 
+## 7.3 new method
+```{r}
+plotsPerSpecies <- read_csv("speciesDominance_new_categorization_10.csv", show_col_types = FALSE)
+
+taxa_new<- plotsPerSpecies[plotsPerSpecies$numberOfPlots >50,]
+
+write_csv(data.frame(taxa = taxa_new), "taxa_new.csv")
+```
+
+
+
 # 8 LATER
 ```{r}
 test<- read.csv("fullPlotData.csv")
