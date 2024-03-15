@@ -11,6 +11,7 @@ Based on the best model as determined in the baseModelExploration.qmd we assess 
 We first clean the environment.
 ```{r, echo=T}
 rm(list=ls())
+gc()
 ```
 
 We load the required packages
@@ -36,9 +37,9 @@ Load filtered Data containing the richness and indicator values for each plot. I
 ```{r}
 fullPlotData <- read_csv("fullPlotData.csv",show_col_types = FALSE)
 
-fast <- F
+fast <- T
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.0,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 ```
@@ -89,8 +90,8 @@ First, we read the list of species which are present in at least 10 sites at the
 
 We then make a function to compute the mean if the species is present and test this quickly.
 ```{r}
-taxaForCoverClassAnalysis = read_csv("taxaForCoverClassAnalysis.csv", show_col_types = FALSE)$taxa
-length(taxaForCoverClassAnalysis)
+taxaForCoverClassAnalysis = read_csv("taxa_new.csv", show_col_types = FALSE)
+length(taxaForCoverClassAnalysis$taxa.names)
 
 
 # Return average cover if plant is present multiple times
@@ -131,7 +132,8 @@ model<-  numberOfVascularPlantSpecies ~
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
 
-baseModel <- bam(model,family = quasipoisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+baseModel <- bam(model,family = quasipoisson, data = fullPlotData,  
+                 method = 'fREML',  discrete=TRUE, nthreads=4)
 ```
 
 
@@ -212,9 +214,8 @@ computePlantImpact <- function(plantName, status) {
 ```
 
 
-
-## 2.5 Run all
 ```{r}
+## 2.5 Run all
 # Get the impact
 # Make new dataframe
 coverClassImpactForCandidates <- data.frame(taxa = character(), log = logical(),
@@ -223,38 +224,83 @@ coverClassImpactForCandidates <- data.frame(taxa = character(), log = logical(),
 
 # All species which are deemed good to analyse based on criteria
 start <- 1
-taxaForCoverClassAnalysis<- taxaForCoverClassAnalysis[taxaForCoverClassAnalysis %in% eva$species]
-end <- length(taxaForCoverClassAnalysis)
+taxaForCoverClassAnalysis<- taxaForCoverClassAnalysis[(taxaForCoverClassAnalysis$taxa.names %in% eva$species),]
+end<- length(taxaForCoverClassAnalysis$taxa.names)
+
 #if(!is.na(params$start) && params$start != "NA") { start <- params$start}
 #if(!is.na(params$end) && params$end != "NA") { end <- params$end}
 
 begin<- Sys.time()
 # Run for all species
-for(i in start:end) {
-  x<- unique(eva$Neophyte[eva$species %in% taxaForCoverClassAnalysis[i]])
-  for (j in 1:length(x)) {
-  # Take previously made function and store temporarily in res
-  res <- computePlantImpact(taxaForCoverClassAnalysis[i], x[j])
-  # Enlarge the final dataframe
-  coverClassImpactForCandidates <- rbind(coverClassImpactForCandidates, res)
-  
-  # If we have run for 100 species (the remainder of division by 100 is 0), we store the file already
-  if(i %% 100 == 0) {
-    fileName <- paste("coverClassImpactForCandidates", start, "_", i, ".csv", sep = "")
-    #write_csv(coverClassImpactForCandidates, fileName)
+for (i in start:end) {
+    # Take previously made function and store temporarily in res
+    res <- computePlantImpact(taxaForCoverClassAnalysis$taxa.names[i], taxaForCoverClassAnalysis$taxa.neophyte[i])
+    # Enlarge the final dataframe
+    coverClassImpactForCandidates <- rbind(coverClassImpactForCandidates, res)
+    
+    # If we have run for 100 species (the remainder of division by 100 is 0), we store the file already
+    if(i %% 100 == 0) {
+      fileName <- paste("coverClassImpactForCandidates", start, "_", i, ".csv", sep = "")
+      #write_csv(coverClassImpactForCandidates, fileName)
     }
-  }
 }
 end<- Sys.time()
 round(end-begin)
 
 # Check for loop
-taxaForCoverClassAnalysis[!((taxaForCoverClassAnalysis[(taxaForCoverClassAnalysis %in% eva$species[eva$Neophyte== "native"])]) %in% (unique(coverClassImpactForCandidates$taxa[coverClassImpactForCandidates$status=="native"])))]
+#taxaForCoverClassAnalysis[!((taxaForCoverClassAnalysis[(taxaForCoverClassAnalysis %in% eva$species[eva$Neophyte== "native"])]) %in% (unique(coverClassImpactForCandidates$taxa[coverClassImpactForCandidates$status=="native"])))]
 
 coverClass1<- coverClassImpactForCandidates
 
 fileName <- paste("coverClassImpactForCandidates_new_all.csv")
-write_csv(coverClassImpactForCandidates, fileName)
+#write_csv(coverClassImpactForCandidates, fileName)
+```
+
+
+
+
+
+## 2.5 Run all
+```{r}
+# Get the impact
+# Make new dataframe
+
+# All species which are deemed good to analyse based on criteria
+start <- 1
+taxaForCoverClassAnalysis<- taxaForCoverClassAnalysis[(taxaForCoverClassAnalysis$taxa.names %in% eva$species),]
+end<- length(taxaForCoverClassAnalysis$taxa.names)
+
+# Prepare parallel
+parallel::detectCores()
+n.cores <- parallel::detectCores() - 8
+my.cluster <- parallel::makeCluster(
+  n.cores, 
+  type = "PSOCK"
+)
+print(my.cluster)
+doParallel::registerDoParallel(cl = my.cluster)
+foreach::getDoParRegistered()
+foreach::getDoParWorkers()
+
+
+
+begin<- Sys.time()
+# Run for all species
+impact <- foreach(i=start:end, .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
+ res<-  computePlantImpact(taxaForCoverClassAnalysis$taxa.names[i], taxaForCoverClassAnalysis$taxa.neophyte[i])
+}  
+
+
+end<- Sys.time()
+round(end-begin)
+
+# Check for loop
+#taxaForCoverClassAnalysis[!((taxaForCoverClassAnalysis[(taxaForCoverClassAnalysis %in% eva$species[eva$Neophyte== "native"])]) %in% (unique(coverClassImpactForCandidates$taxa[coverClassImpactForCandidates$status=="native"])))]
+
+coverClassImpactForCandidates <- impact
+
+#fileName <- paste("coverClassImpactForCandidates_new_all.csv")
+#write_csv(coverClassImpactForCandidates, fileName)
 ```
 
 ## 2.6 Synthesis
@@ -293,6 +339,14 @@ result<-(aov(rank(diversity_impact) ~ status * cover_class, dataToPlot[dataToPlo
 summary(result)
 TukeyHSD(result, which= "cover_class")
 TukeyHSD(result, which= "status")
+```
+
+## 2.8 Save
+```{r}
+
+#fileName <- paste("coverClassImpactForCandidates_new_all_100%.csv")
+#write_csv(coverClassImpactForCandidates, fileName)
+
 ```
 
 
@@ -338,7 +392,7 @@ p<- ggplot(summarizedData[summarizedData$log=="3",], aes(x=cover_class, y=mean, 
   geom_point(position=position_dodge(0.2))+ylab("Impact of Plant Species on Plant Diversity") + 
   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=position_dodge(0.2), linewidth=1)+
   xlab("Cover Class") +
-  scale_x_discrete(labels = c('0% (absent)','[0%-1%]','[1% - 10%]', '[10%-50%]', '[50%-100%]')) +scale_y_continuous(limits = c(-0.25, 0.25))+
+  scale_x_discrete(labels = c('0% (absent)','[0%-1%]','[1% - 10%]', '[10%-50%]', '[50%-100%]')) +scale_y_continuous(limits = c(-0.25, 0.30))+
   scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
                     name="Legend",
                     breaks=c("native", "intra","extra"),
