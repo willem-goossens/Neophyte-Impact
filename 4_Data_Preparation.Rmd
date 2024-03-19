@@ -10,6 +10,7 @@ output: html_document
 We first clean the environment
 ```{r, echo=T}
 rm(list=ls())
+gc()
 ```
 
 We load the required libraries
@@ -44,35 +45,44 @@ We remove the rows without observations.
 # Count the number of rows with NA values
 numberOfRowsWithoutPlotID <- sum(is.na(eva$PlotObservationID))
 # Check rows with NA
-eva[which(is.na(eva$PlotObservationID)),]
+# eva[which(is.na(eva$PlotObservationID)),]
 # Filter out all rows which don't have a plot ID
 eva <- eva[!is.na(eva$PlotObservationID),]
 # Count number of plots in eva before data removal
 originalPlotNumberEva<- length(unique(eva$PlotObservationID))
 ```
 
+
 We update the taxa data
 ```{r, warning=F, message=FALSE}
 # Update taxon group for some species where it was specified incorrectly
 taxonGroupCorrections <- read_csv("../Intermediate Data/taxa_taxon_group_corrections.csv")
+
 # What is the location of the species in eva that are specified incorrectly
 index <- eva$`Matched concept` %in% taxonGroupCorrections$Matched.concept
+
 # Change to correct for each species
 eva$`Taxon group`[index] <- taxonGroupCorrections$NewTaxonGroup[match(eva$`Matched concept`[index], taxonGroupCorrections$Matched.concept)]
+
 
 # Update taxon group for species that did not have one in EVA
 taxonGroupAssignments <- read_csv("../Intermediate Data/taxa_taxon_group_assignments.csv")
 index <- eva$`Matched concept` %in% taxonGroupAssignments$Matched.concept
 eva$`Taxon group`[index] <- taxonGroupAssignments$TaxonGroup[match(eva$`Matched concept`[index], taxonGroupAssignments$Matched.concept)]
 
+
 # Some taxon names seem incorrect
 taxonNameCorrections <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv")
+
 # give the species name from taxon name corrections to eva in the species column
 # to lower makes sure all data is written without capitals
 # match gives vector with position of argument eva in taxonNameCorrections, and does this for the total length of eva
 eva$species <- taxonNameCorrections$species[match(tolower(eva$`Matched concept`), tolower(taxonNameCorrections$Matched.concept))]
+
 # some data of species is.na, we assign for these the values of the matched concept
-eva$species[is.na(eva$species)] <- eva$`Matched concept`[is.na(eva$species)] # fix problem with plant not present in neophyte file from irena (only a handful of plant observations in EVA)
+eva$species[is.na(eva$species)] <- eva$`Matched concept`[is.na(eva$species)] 
+
+# fix problem with plant not present in neophyte file from irena (only a handful of plant observations in EVA)
 # In file Irena some write 'exclude'
 ```
 
@@ -231,6 +241,7 @@ par(mfrow = c(1,1))
 # Relatively balanced
 boxplot(div$Disturbance.Severity, xlab="Severity")
 boxplot(div$Disturbance.Frequency, xlab="Frequency")
+
 # more skewed (check with hist)
 boxplot(div$Mowing.Frequency, xlab="Mowing fr")
 hist(div$Mowing.Frequency, xlab="Mowing fr")
@@ -238,6 +249,7 @@ hist(div$Mowing.Frequency, xlab="Mowing fr")
 # check others
 boxplot(div$Grazing.Pressure, xlab="Grazing Pr")
 boxplot(div$Soil.Disturbance, xlab="Soil dist")
+
 # oke balanced still
 hist(div$Grazing.Pressure, xlab="Grazing Pr")
 hist(nthroot(div$Soil.Disturbance, 1), xlab="Soil dist")
@@ -385,10 +397,13 @@ round(end-begin)
 
 Join the result with the header data:
 ```{r}
-fullPlotData<- subset(header, select= c(PlotObservationID, Country,Longitude, Latitude, Region, Dataset, `Relevé area (m²)`))
+fullPlotData<- subset(header, select= c(PlotObservationID, Country,Longitude, Latitude, Region, Dataset, `Relevé area (m²)`,`Date of recording`))
 fullPlotData <- full_join(fullPlotData, aggregatedEva, by = "PlotObservationID")
 names(fullPlotData)[names(fullPlotData) == 'Relevé area (m²)'] <- 'Area'
+names(fullPlotData)[names(fullPlotData) == 'Date of recording'] <- 'Date'
 ```
+
+
 
 ## 3.2 Filter SR
 Check which plots are extremely species rich:
@@ -480,6 +495,7 @@ eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 ```{r}
 par(mfrow=c(1,1))
 boxplot(fullPlotData$numberOfVascularPlantSpecies)
+hist(fullPlotData$numberOfVascularPlantSpecies)
 ```
 
 
@@ -525,6 +541,14 @@ boxplot(fullPlotData$Mowing.Frequency)
 boxplot(fullPlotData$Soil.Disturbance)
 boxplot(fullPlotData$DistSeverity)
 boxplot(fullPlotData$DistFrequency)
+
+hist(fullPlotData$Grazing.Pressure)
+hist(fullPlotData$Mowing.Frequency)
+hist(fullPlotData$Soil.Disturbance)
+hist(fullPlotData$DistSeverity)
+hist(fullPlotData$DistFrequency)
+
+
 boxplot(fullPlotData$EIVEresM) # Looks good
 boxplot(fullPlotData$EIVEresN) # Looks good
 boxplot(fullPlotData$EIVEresR) # Looks good
@@ -549,17 +573,21 @@ The distribution of the EIVE predictors look symmetrical. However, the disturban
 
 ## 4.3 Transform
 ```{r}
-fullPlotData$transformedDisturbanceSeverity.sqrt <- fullPlotData$DistSeverity.sqrt^(1/4)
-fullPlotData$transformedDisturbanceFrequency.sqrt <- fullPlotData$DistFrequency.sqrt^(1/4)
-fullPlotData$transformedDisturbanceSeverity <- fullPlotData$DistSeverity^(1/4)
-fullPlotData$transformedDisturbanceFrequency <- fullPlotData$DistFrequency^(1/4)
+# originally 1/4
+fullPlotData$transformedDisturbanceSeverity.sqrt <- fullPlotData$DistSeverity.sqrt^(1/2)
+fullPlotData$transformedDisturbanceFrequency.sqrt <- fullPlotData$DistFrequency.sqrt^(1/2)
+fullPlotData$transformedDisturbanceSeverity <- fullPlotData$DistSeverity^(1/2)
+fullPlotData$transformedDisturbanceFrequency <- fullPlotData$DistFrequency^(1/2)
 
-par(mfrow = c(2,2))
-boxplot(fullPlotData$transformedDisturbanceSeverity.sqrt)
-boxplot(fullPlotData$transformedDisturbanceFrequency.sqrt)
-boxplot(fullPlotData$DistSeverity.sqrt) # imo even better distributed...
-boxplot(fullPlotData$DistFrequency.sqrt)
-par(mfrow = c(1,1))
+hist(fullPlotData$transformedDisturbanceSeverity.sqrt)
+hist(fullPlotData$DistSeverity.sqrt) # imo even better distributed...
+hist(fullPlotData$transformedDisturbanceFrequency.sqrt)
+hist(fullPlotData$DistFrequency.sqrt)
+
+hist(fullPlotData$transformedDisturbanceSeverity)
+hist(fullPlotData$DistSeverity) # imo even better distributed...
+hist(fullPlotData$transformedDisturbanceFrequency)
+hist(fullPlotData$DistFrequency)
 ```
 
 
@@ -570,13 +598,13 @@ Note that this is not the final Base Model, rather we will use this to check the
 ```{r}
 glm0 <- glm(numberOfVascularPlantSpecies ~ 
                     log(Area) + 
-                    EIVEresM.sqrt + I(EIVEresM.sqrt^2) + 
-                    EIVEresN.sqrt + I(EIVEresN.sqrt^2) + 
-                    EIVEresR.sqrt + I(EIVEresR.sqrt^2) + 
-                    EIVEresL.sqrt + I(EIVEresL.sqrt^2) + 
-                    EIVEresT.sqrt + I(EIVEresT.sqrt^2) +
-                    DistSeverity.sqrt + I(DistSeverity.sqrt^2) +
-                    DistFrequency.sqrt + I(DistFrequency.sqrt^2)
+                    EIVEresM + I(EIVEresM^2) + 
+                    EIVEresN + I(EIVEresN^2) + 
+                    EIVEresR + I(EIVEresR^2) + 
+                    EIVEresL + I(EIVEresL^2) + 
+                    EIVEresT + I(EIVEresT^2) +
+                    DistSeverity + I(DistSeverity^2) +
+                    DistFrequency + I(DistFrequency^2)
                   , family=poisson, fullPlotData)
 
 summary(glm0)
@@ -627,6 +655,7 @@ species_country<- eva_country |> group_by(Region) |> summarise(species= unique(s
 
 # 7 FREQUENCY
 ## 7.1 Analysis
+This has become wrong, as we have some intra-european neophytes that are present in one part and not in another 
 Compute which species occurs how often in eva:
 ```{r}
 # For speed optimization we extract only the necessary information from EVA
@@ -668,6 +697,7 @@ parallel::stopCluster(cl = my.cluster)
 #write_csv(plotsPerSpecies, "plotsPerSpeciesInEurope.csv")
 ```
 
+
 ## 7.2 Downsample
 Determine which plant species have more than 10 plots with cover > 50% and cover < 1% for analysis:
 ```{r, message=F}
@@ -706,7 +736,7 @@ end<- Sys.time()
 round(end-begin)
 
 parallel::stopCluster(cl = my.cluster)
-#write_csv(data.frame(taxa = taxaForCoverClassAnalysis), "taxaForCoverClassAnalysis.csv")
+##write_csv(data.frame(taxa = taxaForCoverClassAnalysis), "taxaForCoverClassAnalysis.csv")
 ```
 
 ## 7.3 new method
@@ -715,7 +745,7 @@ plotsPerSpecies <- read_csv("speciesDominance_new_categorization_10.csv", show_c
 
 taxa_new<- plotsPerSpecies[plotsPerSpecies$numberOfPlots >50,]
 
-write_csv(data.frame(taxa = taxa_new), "taxa_new.csv")
+#write_csv(data.frame(taxa = taxa_new), "taxa_new.csv")
 ```
 
 
@@ -727,6 +757,11 @@ test<- read.csv("fullPlotData.csv")
 hist(test$DistSeverity)
 hist(sqrt(sqrt(test$DistFrequency)))
 hist((test$Soil.Disturbance.sqrt))
+
+sum(taxonNameCorrections$statusEurope=="native")
+sum(taxonNameCorrections$statusEurope=="neo")
+sum(taxonNameCorrections$statusEurope=="arch")
+unique(taxonNameCorrections$species[taxonNameCorrections$statusEurope=="arch"])
 ```
 
 
