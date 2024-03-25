@@ -43,7 +43,7 @@ Downsample by a factor of 100 if fast is selected
 ```{r}
 fast <- T
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.90,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 ```
@@ -173,8 +173,8 @@ colnames(plotsPerSpecies)[3]<- "Neophyte"
 ## 1.5 Select
 We want all species that are present in at least 50 plots, we order this set from highest to lowest and subsequently make a function to compute the total cover of the species across all sites.
 ```{r}
-plotsPerSpecies<- read.csv('plotsPerSpecies_new2.csv')
-hist(plotsPerSpecies$numberOfPlots[plotsPerSpecies$numberOfPlots>1000])
+#plotsPerSpecies<- read.csv('plotsPerSpecies_new2.csv')
+#hist(plotsPerSpecies$numberOfPlots[plotsPerSpecies$numberOfPlots>1000])
 
 # determine which plant species should be computed
 minimumNumberOfPlots<- 50
@@ -283,15 +283,14 @@ computePlantImpact <- function(plantName, plantStatus) {
 base <- bam(model,family = quasipoisson, data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
   
   
-  
   # Get summary from model
   baseModel <- summary(base)
   summary(base)
   
   # Make a dataframe to add the residuals to
-  res <- data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer(), Neophyte= character())
+  res <- data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer(), Neophyte= character(), correlation= numeric())
   
-  res <- add_row(res, taxa = plantName, Estimate = baseModel$p.table[2,1], StdErr = baseModel$p.table[2,2], zValue = baseModel$p.table[2,3], pr = baseModel$p.table[2,4], numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), Neophyte= allPlants$Neophyte[i])
+  res <- add_row(res, taxa = plantName, Estimate = baseModel$p.table[2,1], StdErr = baseModel$p.table[2,2], zValue = baseModel$p.table[2,3], pr = baseModel$p.table[2,4], numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), Neophyte= plantStatus, correlation=  cor(tmpFullPlotData[,c(9,48)])[2,1])
   res
 }
 ```
@@ -302,7 +301,7 @@ base <- bam(model,family = quasipoisson, data = tmpFullPlotData,  method = 'fREM
 Use foreach to speed up computations
 ```{r}
 # prepare parallel
-n.cores<- parallel::detectCores()-2 
+n.cores<- parallel::detectCores()-6
 my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK" )
 print(my.cluster)
 doParallel::registerDoParallel(cl = my.cluster)
@@ -318,7 +317,7 @@ end<-Sys.time()
 round(end-begin, 2)
 
 parallel::stopCluster(cl = my.cluster)
-#write.csv(x, 'Impact2_new.csv')
+#write.csv(x, 'Impact2_new10%.csv')
 ```
 
 
@@ -341,10 +340,16 @@ p<-ggplot(x, aes(x=Neophyte, y= Estimate, color=Neophyte))+geom_violin()+
                     breaks=c("native", "intra","extra"),
                     labels=c("native species", "intra European neophyte", "extra European neophyte"))+
   theme_classic()+ 
-  theme(legend.position = "bottom")+theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
+  theme(legend.position = "bottom")+theme(legend.text= element_text(size=12), legend.title =element_text(size=14))+ 
+  annotate("text", x = 1, y = mean(x$Estimate[x$Neophyte=="extra"], na.rm=T), label = "a", size = 3.5, vjust = -1, hjust = 0.5) +
+  annotate("text", x = 2, y = mean(x$Estimate[x$Neophyte=="intra"], na.rm=T), label = "a", size = 3.5, vjust = -1, hjust = 0.5)+
+  annotate("text", x = 3, y = mean(x$Estimate[x$Neophyte=="native"], na.rm=T), label = "b", size = 3.5, vjust = -1, hjust = 0.5)+
+  annotate("text", x=1, y=0.8, label= paste("n=",length(x$Estimate[x=="extra"])), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=0.8, label= paste("n=",length(x$Estimate[x=="intra"])), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=0.8, label= paste("n=",length(x$Estimate[x=="native"])), vjust = -0.5, hjust = 0.5, size=3.5)
 p
 
-ggsave("Impact_base_model_new.jpeg", p, width = 25, height = 15, units = "cm")
+#ggsave("Impact_base_model_new.jpeg", p, width = 25, height = 15, units = "cm")
 
 ```
 

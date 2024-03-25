@@ -6,7 +6,6 @@ library(leaflet)
 library(readr)
 library(ggplot2)
 library(sf)
-#library(rgeos)
 library(sp)
 library(units)
 library(tibble)
@@ -41,7 +40,7 @@ eva_country_neophyte<- subset(eva_country_neophyte, select=-c(SeqID, FloraVegSpe
 neophyteDefEU<- (eva_country_neophyte[(!is.na(eva_country_neophyte$Neophyte)),])
 # Retrieve all names of all alien species to Europe
 neophyteNamesEU<- unique(neophyteDefEU$species)
-# In total, we have 1772 alien species in European countries
+#In total, we have 1772 alien species in European countries (before removing NA dates, after doing so 1686)
 
 # Check whether joining worked fine
 length(unique(neophyteDefEU$species[neophyteDefEU$Region=="Poland"]))
@@ -79,9 +78,11 @@ not_defined<-setdiff(all, neophyteNamesEU) # we checked other way around, is emp
 
 # Extra test to see where they can be found
 country_species_number<- eva_country_neophyte |> group_by(Region, species, Neophyte) |> summarise( n= n())
-print(country_species_number[country_species_number$species %in% not_defined, ], n= 48)
+print(country_species_number[country_species_number$species %in% not_defined, ], n= 79)
 # most species are found in Turkey --> in old one defined as extra-European but now included.
-print(neophyte[neophyte$species %in% not_defined,], n=48)
+test<- (neophyte[neophyte$species %in% not_defined,])
+test<- test[!(test$species=="Cephalophysis species"),]
+#write.csv(test, 'species_not_defined.csv', row.names=FALSE)
 # Citrus x limon everywhere alien
 # Cucumis melo everywhere alien
 # Cuscuta epilinum everywhere alien
@@ -110,9 +111,10 @@ extra_EU<- neophyteNames[!(neophyteNames %in% c(Turkey_not_neophyte, Georgia_not
 # We now retrieve the six species that have to be checked
 all<- c(intra_EU, extra_EU)
 not_defined<-setdiff(all, neophyteNamesEU)
+writeClipboard(not_defined)
+not_defined<- c(not_defined, "Cephalophysis species")
 # For now, we will just exclude these from our dataset
 eva_country_neophyte<- eva_country_neophyte[!(eva_country_neophyte$species %in% not_defined),]
-
 
 
 ###### 3.2 re-classify ######
@@ -124,9 +126,9 @@ eva_country_neophyte$Neophyte[eva_country_neophyte$Neophyte=="neo"]<- "intra"
 unique(eva_country_neophyte$Neophyte)
 
 # Check number of intra and extra European species and all natives
-length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="extra"]))
-length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="intra"]))
-length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"]))
+length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="extra"])) #803
+length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="intra"])) #883 (915 previously)
+length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])) #19323
 
 # Summarise again now only number and region in order to see how the data varies in European countries
 country_neophyte<- eva_country_neophyte |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
@@ -134,7 +136,7 @@ table(country_neophyte['Neophyte'])
 
 # Check whether some intra_EU species are native in other regions
 native_names<-unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])
-sum(native_names %in% intra_EU)
+sum(native_names %in% intra_EU) #818 (before around 848)
 
 ###### 3.3 native SR #####
 aggregatedEVA <- eva_country_neophyte |>  group_by(PlotObservationID, Neophyte) |>  summarise(numberOfVascularPlantSpecies = n())
@@ -159,12 +161,13 @@ fullPlotData$nativeSR[is.na(fullPlotData$nativeSR)] <- 0
 ###### 3.4 Save #####
 species_country_status<- eva_country_neophyte |> group_by(Region, species, Neophyte) |> summarise(n=n())
 species_country_status<- species_country_status[,-4]
-write.csv(species_country_status,"species_country_status.csv", row.names = FALSE)
+#write.csv(species_country_status,"species_country_status_new.csv", row.names = FALSE)
 
-write.csv(fullPlotData, "fullPlotData.csv", row.names=F)
+
+#write.csv(fullPlotData, "fullPlotData.csv", row.names=F)
 
 remove<- c(not_defined, exclude)
-write.csv(remove, "not_defined.csv", row.names=FALSE)
+#write.csv(remove, "not_defined.csv", row.names=FALSE)
 
 ##### 4 MAP ####
 ###### 4.1 MED regions #####

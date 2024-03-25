@@ -10,7 +10,6 @@ output: html_document
 We first clean the environment
 ```{r, echo=T}
 rm(list=ls())
-gc()
 ```
 
 We load the required libraries
@@ -392,13 +391,16 @@ aggregatedEva <- eva |>
     )
 end<- Sys.time()
 round(end-begin)
+
+#write_csv(aggregatedEva, "aggregatedEva.csv")
 ```
 
 
 Join the result with the header data:
 ```{r}
+aggregatedEva2<-read.csv("aggregatedEva.csv")
 fullPlotData<- subset(header, select= c(PlotObservationID, Country,Longitude, Latitude, Region, Dataset, `Relevé area (m²)`,`Date of recording`))
-fullPlotData <- full_join(fullPlotData, aggregatedEva, by = "PlotObservationID")
+fullPlotData <- full_join(fullPlotData, aggregatedEva2, by = "PlotObservationID")
 names(fullPlotData)[names(fullPlotData) == 'Relevé area (m²)'] <- 'Area'
 names(fullPlotData)[names(fullPlotData) == 'Date of recording'] <- 'Date'
 ```
@@ -454,8 +456,8 @@ Filtering out plots for which some of the indicator values could not be estimate
 fullPlotDataNas <- is.na(fullPlotData)
 # Get the plot observations
 plotsForWhichNotAllIndicatorValuesWereEstimated <- fullPlotDataNas[,1]
-# 7 is number of vascular plants
-for(i in 7:dim(fullPlotDataNas)[2]) {
+# 9 is number of vascular plants
+for(i in 9:dim(fullPlotDataNas)[2]) {
   plotsForWhichNotAllIndicatorValuesWereEstimated <- plotsForWhichNotAllIndicatorValuesWereEstimated | fullPlotDataNas[,i]
 }
 numberOfPlotsWithMissingIndicatorValues <- sum(plotsForWhichNotAllIndicatorValuesWereEstimated)
@@ -478,6 +480,14 @@ sum(test$n[(test$statusEurope=="arch")])/sum(test$n)
 # remove the plots without an indicator value
 fullPlotData <- fullPlotData[!plotsForWhichNotAllIndicatorValuesWereEstimated,]
 ```
+
+
+## 3.4 Filter date
+```{r}
+numberOfPlotsWithoutDate<-length(fullPlotData$PlotObservationID[is.na(fullPlotData$Date)])
+fullPlotData<- fullPlotData[!is.na(fullPlotData$Date),]
+```
+
 
 
 Remove all from data
@@ -739,11 +749,11 @@ parallel::stopCluster(cl = my.cluster)
 ##write_csv(data.frame(taxa = taxaForCoverClassAnalysis), "taxaForCoverClassAnalysis.csv")
 ```
 
-## 7.3 new method
+## 7.3 New method
 ```{r}
 plotsPerSpecies <- read_csv("speciesDominance_new_categorization_10.csv", show_col_types = FALSE)
 
-taxa_new<- plotsPerSpecies[plotsPerSpecies$numberOfPlots >50,]
+taxa_new<- plotsPerSpecies[plotsPerSpecies$numberOfPlots >=50,]
 
 #write_csv(data.frame(taxa = taxa_new), "taxa_new.csv")
 ```

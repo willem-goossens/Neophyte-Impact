@@ -39,7 +39,7 @@ fullPlotData <- read_csv("fullPlotData.csv",show_col_types = FALSE)
 
 fast <- T
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.0,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.90,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 ```
@@ -49,7 +49,7 @@ if(fast) {
 Load the neophyte definitions:
 ```{r, message=F}
 # Data on which species are neophytes
-species_country_status<- read_csv("species_country_status.csv")
+species_country_status<- read_csv("species_country_status_new.csv")
 
 # Assign these names to the eva list
 extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
@@ -113,7 +113,7 @@ computeSpeciesCover("plant2", c("plant1", "plant2", "plant2"), c(1,2, 3))
 
 
 ## 2.2 Base model
-We compute our base model with the best solution (see [rmarkdown link](6_Base_Model.Rmd)), which includes smoothers for all EIVE without weighting, smoothers for the sqrt transformed DIV, a smoother for log(area), a smoother for spatial autocorrelation and the dataset as a random effect. We use a poisson distribution with a log link function. 
+We compute our base model with the best solution (see [rmarkdown link](6_Base_Model.Rmd)), which includes smoothers for all EIVE without weighting, smoothers for the DIV, a smoother for log(area), a smoother for spatial autocorrelation and the dataset as a random effect. We use a poisson distribution with a log link function. 
 ```{r}
 # Make Dataset a factor
 fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
@@ -175,8 +175,8 @@ computePlantImpact <- function(plantName, status) {
   # We label them using breaks
   coverClassForPresent <- reducedEva[indexOfPlant,] |>
     group_by(PlotObservationID) |>
-    summarise(coverClass = cut(computeSpeciesCover(plantName, species, `Cover %`), breaks = c(-1, 0, 1, 10, 50, 101), labels = 
-                                 c("0%", "0%-1%", "1%-10%", "10%-50%", "50%-100%"), right = TRUE) )
+    summarise(coverClass = cut(computeSpeciesCover(plantName, species, `Cover %`), breaks = c(-1, 0, 1, 10, 30, 50, 70, 101), labels = 
+                                 c("0%", "0%-1%", "1%-10%", "10%-30%", "30%-50%","50%-70%,","70%-100%"), right = TRUE) )
   
   # Because the cover class was only computed for plots containing the species we need to assign 0% class to the remaining plots.
   tmpFullPlotData <- left_join(tmpFullPlotData, coverClassForPresent, by = "PlotObservationID")
@@ -214,13 +214,79 @@ computePlantImpact <- function(plantName, status) {
 ```
 
 
+
+## 2.4 Analysis
+Function calculating impact using a number of ways
+```{r}
+# Get Eva with plot, species and cover
+reducedEva <- eva[,c("PlotObservationID", "species", "Cover %", "Neophyte")]
+
+# Get a vector with the name of the plant to analyse
+plantName<- reducedEva$species[1]
+status<- reducedEva$Neophyte[1]
+
+# Function to calculate the impact for each species (stored in plantName)
+computePlantImpact2 <- function(plantName, status) {
+  
+  #Create a temporary copy of fullPlotData
+  tmpFullPlotData <- fullPlotData
+  
+  # Get the index of all observations of the species
+  indexOfPlant <- eva$species == plantName & eva$Neophyte== status
+  
+  # The majority of the time is spent in computing the cover classes. 
+  # We select only the rows containing the species first because this is much faster than doing it for all plots.
+  # We group these observations by plot observation ID
+  # We make a new variable calles coverClass for which we compute the mean cover per plot observation ID for the species under assessment.
+  # We label them using breaks
+  coverClassForPresent <- reducedEva[indexOfPlant,] |>
+    group_by(PlotObservationID) |>
+    summarise(coverClass = cut(computeSpeciesCover(plantName, species, `Cover %`), breaks = c(-1, 0, 1, 10, 30, 50, 70, 101), labels = 
+                                 c("0%", "0%-1%", "1%-10%", "10%-30%", "30%-50%","50%-70%,","70%-100%"), right = TRUE) )
+  
+  # Because the cover class was only computed for plots containing the species we need to assign 0% class to the remaining plots.
+  tmpFullPlotData <- left_join(tmpFullPlotData, coverClassForPresent, by = "PlotObservationID")
+  tmpFullPlotData$coverClass[is.na(tmpFullPlotData$coverClass)] <- "0%"
+  
+  # Get the mean RR per cover class
+  # We subtract the value for when the species is absent (as a baseline)
+  result <- tmpFullPlotData |> group_by(coverClass) |> summarise(meanRel = mean(relativRes), meanLogRel = mean(logRelativRes), meanRR= mean(RR))
+  result$meanRel <- result$meanRel - result$meanRel[1]
+  result$meanLogRel <- result$meanLogRel - result$meanLogRel[1]
+  result$meanRR<- result$meanRR-result$meanRR[1]
+
+
+  
+  # Make empty dataframe to store the results. We want to have the species name, mean residuals per cover, total number of plots. The log defines the method applied
+  res<- result |> group_by(coverClass) |> summarise(taxa= plantName, absent = meanRel[1], present = meanRel[2], low = meanRel[3], medlow = meanRel[4], med = meanRel[5], medhigh = meanRel[6], dominant = meanRel[7],
+                 numberOfPlots = sum(!(tmpFullPlotData$coverClass == "0%")))  
+  
+  res <- data.frame(taxa = character(), log = character(),  
+                    absent = numeric(), present = numeric(), low = numeric(), medlow = numeric(), med= numeric(), medhigh= numeric(), 
+                    dominant = numeric(),  numberOfPlots = integer(), status= character())
+
+  # Add the findings to the dataframe
+  res <- add_row(res, taxa = plantName, log = "1",
+                 absent = result$meanRel[1], present = result$meanRel[2], low = result$meanRel[3], medlow = result$meanRel[4], med = result$meanRel[5], medhigh = result$meanRel[6], dominant = result$meanRel[7],
+                 numberOfPlots = sum(!(tmpFullPlotData$coverClass == "0%")), status= status)
+  res <- add_row(res, taxa = plantName, log ="2",
+                 absent = result$meanLogRel[1], present = result$meanLogRel[2], low = result$meanLogRel[3], medlow = result$meanLogRel[4], med = result$meanLogRel[5], medhigh = result$meanLogRel[6], dominant = result$meanLogRel[7],
+                 numberOfPlots = sum(!(tmpFullPlotData$coverClass == "0%")), status= status)
+  res <- add_row(res, taxa = plantName, log ="3",
+                 absent = result$meanRR[1], present = result$meanRR[2], low = result$meanRR[3], medlow = result$meanRR[4], med = result$meanRR[5], medhigh = result$meanRR[6], dominant = result$meanRR[7],
+                 numberOfPlots = sum(!(tmpFullPlotData$coverClass == "0%")), status= status)
+  res
+}
+```
+
+
 ```{r}
 ## 2.5 Run all
 # Get the impact
 # Make new dataframe
-coverClassImpactForCandidates <- data.frame(taxa = character(), log = logical(),
-                                            absent = numeric(), present = numeric(), low = numeric(), med = numeric(), dominant = numeric(), 
-                                            numberOfPlots = integer(), status= character())
+coverClassImpactForCandidates <- data.frame(taxa = character(), log = character(),  
+                    absent = numeric(), present = numeric(), low = numeric(), medlow = numeric(), med= numeric(), medhigh= numeric(), 
+                    dominant = numeric(),  numberOfPlots = integer(), status= character())
 
 # All species which are deemed good to analyse based on criteria
 start <- 1
@@ -234,7 +300,7 @@ begin<- Sys.time()
 # Run for all species
 for (i in start:end) {
     # Take previously made function and store temporarily in res
-    res <- computePlantImpact(taxaForCoverClassAnalysis$taxa.names[i], taxaForCoverClassAnalysis$taxa.neophyte[i])
+    res <- computePlantImpact2(taxaForCoverClassAnalysis$taxa.names[i], taxaForCoverClassAnalysis$taxa.neophyte[i])
     # Enlarge the final dataframe
     coverClassImpactForCandidates <- rbind(coverClassImpactForCandidates, res)
     
@@ -272,7 +338,7 @@ end<- length(taxaForCoverClassAnalysis$taxa.names)
 
 # Prepare parallel
 parallel::detectCores()
-n.cores <- parallel::detectCores() - 8
+n.cores <- parallel::detectCores() - 4
 my.cluster <- parallel::makeCluster(
   n.cores, 
   type = "PSOCK"
@@ -287,7 +353,7 @@ foreach::getDoParWorkers()
 begin<- Sys.time()
 # Run for all species
 impact <- foreach(i=start:end, .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
- res<-  computePlantImpact(taxaForCoverClassAnalysis$taxa.names[i], taxaForCoverClassAnalysis$taxa.neophyte[i])
+ res<-  computePlantImpact2(taxaForCoverClassAnalysis$taxa.names[i], taxaForCoverClassAnalysis$taxa.neophyte[i])
 }  
 
 
@@ -299,9 +365,17 @@ round(end-begin)
 
 coverClassImpactForCandidates <- impact
 
+impact<- impact[impact$log=="3",]
+
 #fileName <- paste("coverClassImpactForCandidates_new_all.csv")
 #write_csv(coverClassImpactForCandidates, fileName)
 ```
+
+```{r}
+intra<- impact[impact$status=="intra",]
+```
+
+
 
 ## 2.6 Synthesis
 Create a connected box plot for all neophytes and native species to show their average impact by cover class:
@@ -314,8 +388,8 @@ Create a connected box plot for all neophytes and native species to show their a
 # Select all columns from the dataset except number of plots and pivot this data so that we have two new columns with the cover class name as a factor and their values
 dataToPlot <- coverClassImpactForCandidates |> 
   select(-numberOfPlots) |> 
-  pivot_longer(cols = c(`absent`, `present`, `low`, `med`, `dominant`), names_to = "cover_class", values_to = "diversity_impact") |>
-  mutate(cover_class = factor(cover_class, levels = c("absent", "present", "low", "med", "dominant")))
+  pivot_longer(cols =c(`absent`,`present`,`low`,`medlow`,`med`,`medhigh`,`dominant`),names_to = "cover_class", values_to ="diversity_impact") |>
+  mutate(cover_class = factor(cover_class, levels = c("absent", "present", "low","medlow", "med", "medhigh","dominant")))
 
 
 # Summarize the data per classification (Neophyte or not), cover class and method and calculate the mean and standard deviation
@@ -334,12 +408,14 @@ nativeData <- dataToPlot[dataToPlot$status=="native" & dataToPlot$log=="3",]
 # Interaction included
 summary(aov(rank(diversity_impact) ~ status * cover_class, dataToPlot[dataToPlot$log=="3",]))
 
-# Interaction not significant, 
+# Interaction significant, 
 result<-(aov(rank(diversity_impact) ~ status * cover_class, dataToPlot[dataToPlot$log=="3",]))
 summary(result)
 TukeyHSD(result, which= "cover_class")
 TukeyHSD(result, which= "status")
 ```
+
+
 
 ## 2.8 Save
 ```{r}
@@ -348,6 +424,7 @@ TukeyHSD(result, which= "status")
 #write_csv(coverClassImpactForCandidates, fileName)
 
 ```
+
 
 
 # 3 PLOT
@@ -359,7 +436,7 @@ p<- ggplot(summarizedData[summarizedData$log=="2",], aes(x=cover_class, y=mean, 
   geom_point(position=position_dodge(0.2))+
   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=position_dodge(0.2), linewidth=1) +
   ylab("Impact of Plant Species on Plant Diversity") + 
-  xlab("Cover Class") +
+  xlab("Cover Class") 
   scale_x_discrete(labels = c('0% (absent)','[0%-1%]','[1% - 10%]', '[10%-50%]', '[50%-100%]')) +scale_y_continuous(limits = c(-0.05, 0.10))+
   scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
                     name="Legend",
@@ -375,7 +452,8 @@ p<- ggplot(summarizedData[summarizedData$log=="3",], aes(x=cover_class, y=(exp(m
   geom_line(linewidth=1, position=position_dodge(0.2)) +
   geom_point(position=position_dodge(0.2))+ylab("Impact of Plant Species on Plant Diversity") + 
   xlab("Cover Class") +
-  scale_x_discrete(labels = c('0% (absent)','[0%-1%]','[1% - 10%]', '[10%-50%]', '[50%-100%]')) +scale_y_continuous(limits = c(-10, 30))+
+  scale_x_discrete(labels = c('0% (absent)','[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[50%-100%]')) +    
+  scale_y_continuous(limits = c(-10, 30))+
   scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
                     name="Legend",
                     breaks=c("native", "intra","extra"),
@@ -387,12 +465,15 @@ p<- ggplot(summarizedData[summarizedData$log=="3",], aes(x=cover_class, y=(exp(m
 p
 
 # RR as average effect size
+summarizedData<- summarizedData[!summarizedData$cover_class=="absent",]
+
 p<- ggplot(summarizedData[summarizedData$log=="3",], aes(x=cover_class, y=mean, group=status, color=status)) + 
   geom_line(linewidth=1, position=position_dodge(0.2)) +
   geom_point(position=position_dodge(0.2))+ylab("Impact of Plant Species on Plant Diversity") + 
   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=position_dodge(0.2), linewidth=1)+
   xlab("Cover Class") +
-  scale_x_discrete(labels = c('0% (absent)','[0%-1%]','[1% - 10%]', '[10%-50%]', '[50%-100%]')) +scale_y_continuous(limits = c(-0.25, 0.30))+
+  scale_x_discrete(labels = c('[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[70%-100%]'))+
+  scale_y_continuous(limits = c(-0.40, 0.30))+
   scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
                     name="Legend",
                     breaks=c("native", "intra","extra"),
@@ -444,3 +525,22 @@ dominant$taxa[dominant$status=="intra"]
 # Check countries species
 eva_country_neophyte[eva_country_neophyte$species=="Euphorbia cyparissias" & eva_country_neophyte$Neophyte=="intra",]
 ```
+
+
+## 4.2 Check average
+```{r}
+# Mean impact for all species per status
+mean(dataToPlot$diversity_impact[dataToPlot$log=="3"& dataToPlot$status=="intra"], na.rm=T)
+mean(dataToPlot$diversity_impact[dataToPlot$log=="3"& dataToPlot$status=="native"], na.rm=T)
+mean(dataToPlot$diversity_impact[dataToPlot$log=="3"& dataToPlot$status=="extra"], na.rm=T)
+
+# Mean impact across all classes
+mean(dataToPlot$diversity_impact[dataToPlot$log=="3"], na.rm=T)
+
+# Possible reasons why we have a higher impact than assumed purely based on mathematical reasons 
+      # we only assess species present in more than 50 plots
+
+# Mean number of species per plot
+mean(fullPlotData$numberOfVascularPlantSpecies)
+```
+

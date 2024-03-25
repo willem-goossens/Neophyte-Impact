@@ -33,7 +33,7 @@ library(IDPmisc)
 fullPlotData <- read_csv("fullPlotData.csv")
 fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
 
-fast <- F
+fast <- T
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
 }
@@ -43,9 +43,10 @@ if(fast) {
 Checking for correlation among predictor variables:
 ```{r}
 # take correlation omitting the INF values in the log disturbances
-correlation <- cor(NaRV.omit(fullPlotData[,c(10:44)]))
+correlation <- cor(NaRV.omit(fullPlotData[,c(9,11:45)]))
 # set all values to 0 which are not highly correlated
 correlation[correlation < 0.7 & correlation> -0.7] <- 0
+correlation
 # see correlation--> correlation --> hard to see some things within dataset
 # Interesting (but logical) --> EIVEresL correlated with disturbance frequency --> higher disturbance is species living more in sunlight
 # Correlations between same indicator different calculations and weighting methods --> likely
@@ -324,17 +325,27 @@ model2<-  numberOfVascularPlantSpecies ~
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
+model3<-  numberOfVascularPlantSpecies ~ 
+              s(log(Area),bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Latitude, Longitude, bs = 'tp') +
+              s(Dataset, bs = 're')
 
 gam9 <- bam(model,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 gam10 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-
+gam11 <- bam(model3,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 # GAM 10 is the best now
-summary(gam8)
 summary(gam9)
 summary(gam10)
+summary(gam11)
 
-AIC(gam8, gam9, gam10)
+AIC(gam11, gam9, gam10)
 ```
 
 ## 3.5 Final check
@@ -351,7 +362,7 @@ plot(gam11)
 
 # 4 PLOT
 ```{r}
-visreg(gam10, xvar = "Area", gg = TRUE) 
+visreg(gam10, xvar = "Area", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE) 
 visreg(gam10, xvar = "EIVEresM", ylab = "Richness", xlab = "M", gg = TRUE, partial=FALSE, rug = FALSE) 
 visreg(gam10, xvar = "EIVEresN", ylab = "Richness", xlab = "N", gg = TRUE, partial=FALSE, rug = FALSE) 
 visreg(gam10, xvar = "EIVEresR", ylab = "Richness", xlab = "R", gg = TRUE, partial=FALSE, rug = FALSE) 
