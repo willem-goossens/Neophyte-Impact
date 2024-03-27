@@ -114,6 +114,7 @@ summary(fullPlotData$logRelativRes)
 summary(fullPlotData$RR)
 ```
 
+
 ## Analysis
 Function calculating impact using a number of ways
 ```{r}
@@ -203,6 +204,55 @@ for(i in start:end) {
 fileName <- paste("coverClassImpactForCandidates", start, "_", end, ".csv", sep = "")
 #write_csv(coverClassImpactForCandidates, fileName)
 ```
+
+
+```{r}
+```{r}
+## 2.5 Run all
+# Get the impact
+# Make new dataframe
+coverClassImpactForCandidates <- data.frame(taxa = character(), log = character(),  
+                    absent = numeric(), present = numeric(), low = numeric(), medlow = numeric(), med= numeric(), medhigh= numeric(), 
+                    dominant = numeric(),  numberOfPlots = integer(), status= character())
+
+# All species which are deemed good to analyse based on criteria
+start <- 1
+taxaForCoverClassAnalysis<- taxaForCoverClassAnalysis[(taxaForCoverClassAnalysis$taxa.names %in% eva$species),]
+end<- length(taxaForCoverClassAnalysis$taxa.names)
+
+#if(!is.na(params$start) && params$start != "NA") { start <- params$start}
+#if(!is.na(params$end) && params$end != "NA") { end <- params$end}
+
+begin<- Sys.time()
+# Run for all species
+for (i in start:end) {
+    # Take previously made function and store temporarily in res
+    res <- computePlantImpact2(taxaForCoverClassAnalysis$taxa.names[i], taxaForCoverClassAnalysis$taxa.neophyte[i])
+    # Enlarge the final dataframe
+    coverClassImpactForCandidates <- rbind(coverClassImpactForCandidates, res)
+    
+    # If we have run for 100 species (the remainder of division by 100 is 0), we store the file already
+    if(i %% 100 == 0) {
+      fileName <- paste("coverClassImpactForCandidates", start, "_", i, ".csv", sep = "")
+      #write_csv(coverClassImpactForCandidates, fileName)
+    }
+}
+end<- Sys.time()
+round(end-begin)
+
+# Check for loop
+#taxaForCoverClassAnalysis[!((taxaForCoverClassAnalysis[(taxaForCoverClassAnalysis %in% eva$species[eva$Neophyte== "native"])]) %in% (unique(coverClassImpactForCandidates$taxa[coverClassImpactForCandidates$status=="native"])))]
+
+coverClass1<- coverClassImpactForCandidates
+
+fileName <- paste("coverClassImpactForCandidates_new_all.csv")
+#write_csv(coverClassImpactForCandidates, fileName)
+```
+```
+
+
+
+
 ## Synthesis
 Create a connected box plot for all neophytes and native species to show their average impact by cover class:
 ```{r}

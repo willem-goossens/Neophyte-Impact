@@ -91,7 +91,7 @@ Count the number of plots in which the species in the dataset exist.
 if(fast) {
   reducedEva <- eva |> select(PlotObservationID, species, `Cover %`, Neophyte)
 
-  uniqueSpecies <- unique(reducedEva$species)
+  uniqueSpecies <- unique(reducedEva[, c(2,4)])
   
   # Empty dataset
 
@@ -107,65 +107,28 @@ if(fast) {
   foreach::getDoParRegistered()
   foreach::getDoParWorkers()
 
-  plotsPerNatives <- data.frame(names = character(), numberOfPlots = integer(), Neophyte= character())
-  reducedNative<- reducedEva[reducedEva$Neophyte=="native",]
-  uniqueNatives <- unique(reducedNative$species)
-
+  plotsPerSpecies <- data.frame(names = character(), numberOfPlots = integer(), Neophyte= character())
+  uniqueSpecies <- unique(reducedEva[, c(2,4)])
   # Count in how many plots a native species occurs
   begin<- Sys.time()
-plotsPerNatives<-foreach(i= 1:length(uniqueNatives), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
-   tmp <- reducedNative$PlotObservationID[reducedNative$species == uniqueNatives[i]]
-    names=uniqueNatives[i]
+plotsPerSpecies<-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
+    tmp <- reducedEva$PlotObservationID[reducedEva$species == uniqueSpecies$species[i]& reducedEva$Neophyte == uniqueSpecies$Neophyte[i]]
+    names=uniqueSpecies$species[i]
     numberOfPlots= length(unique(tmp))
-    plotsPerNatives[i,]<- c(names, numberOfPlots,Neophyte= "native")
+    plotsPerSpecies[i,]<- c(names, numberOfPlots,Neophyte=uniqueSpecies$Neophyte[i] )
 }
-  plotsPerNatives<- as.data.frame(plotsPerNatives)
-  plotsPerNatives<-setNames(plotsPerNatives, c("names", "numberOfPlots"))
-  row.names(plotsPerNatives)<- c(1: length(uniqueNatives))
+  plotsPerSpecies<- as.data.frame(plotsPerSpecies)
+  plotsPerSpecies<-setNames(plotsPerSpecies, c("names", "numberOfPlots","Neophyte"))
+  plotsPerSpecies$numberOfPlots <- as.numeric(plotsPerSpecies$numberOfPlots)
+  row.names(plotsPerSpecies)<- c(1: nrow(uniqueSpecies))
   
   end<- Sys.time()
   round(end-begin)
-
-  plotsPerIntra <- data.frame(names = character(), numberOfPlots = integer(), Neophyte= character())
-  reducedNative<- reducedEva[reducedEva$Neophyte=="intra",]
-  uniqueIntra <- unique(reducedNative$species)
-
-  # Count in how many plots an intra European species occurs
-  begin<- Sys.time()
-plotsPerIntra<-foreach(i= 1:length(uniqueIntra), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
-   tmp <- reducedNative$PlotObservationID[reducedNative$species == uniqueIntra[i]]
-    names=uniqueIntra[i]
-    numberOfPlots= length(unique(tmp))
-    plotsPerIntra[i,]<- c(names, numberOfPlots, Neophyte="intra")
-}
-  plotsPerIntra<- as.data.frame(plotsPerIntra)
-  plotsPerIntra<-setNames(plotsPerIntra, c("names", "numberOfPlots"))
-  row.names(plotsPerIntra)<- c(1: length(uniqueIntra))
-  
-  plotsPerExtra <- data.frame(names = character(), numberOfPlots = integer(), Neophyte= character())
-  reducedNative<- reducedEva[reducedEva$Neophyte=="extra",]
-  uniqueExtra <- unique(reducedNative$species)
-
-  # Count in how many plots an extra European species occurs
-  begin<- Sys.time()
-plotsPerExtra<-foreach(i= 1:length(uniqueExtra), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
-   tmp <- reducedNative$PlotObservationID[reducedNative$species == uniqueExtra[i]]
-    names=uniqueExtra[i]
-    numberOfPlots= length(unique(tmp))
-    plotsPerExtra[i,]<- c(names, numberOfPlots, Neophyte= "extra")
-}
-  plotsPerExtra<- as.data.frame(plotsPerExtra)
-  plotsPerExtra<-setNames(plotsPerExtra, c("names", "numberOfPlots"))
-  row.names(plotsPerExtra)<- c(1: length(uniqueExtra))
   
   parallel::stopCluster(cl = my.cluster)
 } else {
-  plotsPerSpecies2 <- read_csv("plotsPerSpeciesInEurope.csv")
+  plotsPerSpecies2 <- read_csv("plotsPerSpeciesInEurope.csv", show_col_types = FALSE)
 }
-
-plotsPerSpecies<- rbind(plotsPerNatives, plotsPerIntra, plotsPerExtra)
-plotsPerSpecies$numberOfPlots <- as.numeric(plotsPerSpecies$numberOfPlots)
-colnames(plotsPerSpecies)[3]<- "Neophyte"
 #write.csv(plotsPerSpecies, 'plotsPerSpecies_new2.csv')
 ```
 
