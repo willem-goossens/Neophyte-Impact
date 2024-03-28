@@ -23,11 +23,11 @@ library(arsenal)
 neophyte<- readxl::read_excel("../Neophyte-Impact/country_species-2024-01-30-IA-VK.xlsx", sheet="country_speciesWillem")
 
 
-###### 2.2 fullPlotData #####
+###### 2.2 Eva and Header #####
 # Load and make smaller to conocate
-fullPlotEva <- read_csv("fullPlotEva.csv")
+fullPlotEva <- read_csv("fullPlotEva.csv", show_col_types = FALSE)
 eva2<- fullPlotEva[,c("PlotObservationID","species")]
-fullPlotData<- read_csv("fullPlotData.csv")
+fullPlotData<- read_csv("fullPlotData.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
 # Join eva and header (species per plot and plot info respectively)
@@ -50,7 +50,7 @@ length(unique(neophyte$species[neophyte$Region== "Poland"& neophyte$Neophyte=="n
 
 ###### 2.3 extra-EU #######
 # Data on which species are neophytes from outside of Europe
-neophyteDefinitions <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv")
+neophyteDefinitions <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv", show_col_types = FALSE)
 # Assign these names to the eva list
 neophyteNames <- neophyteDefinitions$species[neophyteDefinitions$statusEurope == "neo"]
 neophyteNames <- unique(neophyteNames[neophyteNames %in% fullPlotEva$species])
@@ -63,6 +63,10 @@ exclude <- exclude[exclude %in% fullPlotEva$species]
 neophyteDefEU[(neophyteDefEU$species %in% exclude),]
 eva_country_neophyte <- eva_country_neophyte[!(eva_country_neophyte$species %in% exclude),]
 
+# Some species are archeophytes
+arch <- neophyteDefinitions$species[neophyteDefinitions$statusEurope == "arch"]
+arch <- arch[arch %in% fullPlotEva$species]
+# We will not do anything with them now, but it is possible to adjust the code in the end to also check archeophytes and whether they different
 
 
 #### 3 ANALYSIS ####
@@ -78,11 +82,11 @@ not_defined<-setdiff(all, neophyteNamesEU) # we checked other way around, is emp
 
 # Extra test to see where they can be found
 country_species_number<- eva_country_neophyte |> group_by(Region, species, Neophyte) |> summarise( n= n())
-print(country_species_number[country_species_number$species %in% not_defined, ], n= 79)
+print(country_species_number[country_species_number$species %in% not_defined, ], n= 44)
 # most species are found in Turkey --> in old one defined as extra-European but now included.
 test<- (neophyte[neophyte$species %in% not_defined,])
 test<- test[!(test$species=="Cephalophysis species"),]
-#write.csv(test, 'species_not_defined.csv', row.names=FALSE)
+# write.csv(test, 'species_not_defined.csv', row.names=FALSE)
 # Citrus x limon everywhere alien
 # Cucumis melo everywhere alien
 # Cuscuta epilinum everywhere alien
@@ -98,21 +102,35 @@ test<- test[!(test$species=="Cephalophysis species"),]
 Turkey_not_neophyte <- c("Camelina laxa","Fritillaria persica","Crocus kotschyanus subsp. suworowianus","Lepyrodiclis holosteoides", 
                          "Moluccella laevis","Potentilla divaricata", "Roemeria refracta","Sisymbrium septulatum",
                          "Sorghum halepense var. muticum", "Sternbergia vernalis","Thlaspi huetii","Trigonella capitata", 
-                         "Tripleurospermum decipiens", "Tripleurospermum disciforme", "Vicia noeana"  )
+                         "Tripleurospermum decipiens", "Tripleurospermum disciforme", "Vicia noeana" , "Gypsophila pilosa" )
 Georgia_not_neophye<- c("Veronica ceratocarpa", "Schoenoplectus juncoides")
 # we check our previous number of strange species against these only in countries where they are native
 setdiff(not_defined, c(Turkey_not_neophyte,Georgia_not_neophye))
 # There is one species that was found to be native to spain according to KEW
 others_not_neophyte<- c("Delphinium obcordatum")
+# After checking extra species that can be removed
+others_not_neophyte<- c(others_not_neophyte, "Galanthus elwesii", "Galanthus elwesii subsp. elwesii",
+                        "Oplismenus hirtellus subsp. undulatifolius")
+
+add_extra<- as.character(c("Citrus x limon","Cucumis melo","Phoenix dactylifera"))
+add_intra<- as.character(c("Cuscuta epilinum"))
 
 # We remove all species that were wrongly indicated in the first dataset from our list
 extra_EU<- neophyteNames[!(neophyteNames %in% c(Turkey_not_neophyte, Georgia_not_neophye, others_not_neophyte))]
+extra_EU<- c(extra_EU,add_extra )
 # These are all neophytes that are extra-European
+# We also add intra-European neophytes
+intra_EU<- c(intra_EU, add_intra)
+
 # We now retrieve the six species that have to be checked
 all<- c(intra_EU, extra_EU)
-not_defined<-setdiff(all, neophyteNamesEU)
-writeClipboard(not_defined)
+all<- c(intra_EU, extra_EU)
+not_defined<-setdiff(all,neophyteNamesEU)
 not_defined<- c(not_defined, "Cephalophysis species")
+not_defined<- setdiff(not_defined, c(add_intra, add_extra))
+not_defined
+
+
 # For now, we will just exclude these from our dataset
 eva_country_neophyte<- eva_country_neophyte[!(eva_country_neophyte$species %in% not_defined),]
 
@@ -125,10 +143,12 @@ eva_country_neophyte$Neophyte[eva_country_neophyte$species %in% extra_EU] <- "ex
 eva_country_neophyte$Neophyte[eva_country_neophyte$Neophyte=="neo"]<- "intra"
 unique(eva_country_neophyte$Neophyte)
 
+# Check archeophytes
+eva_country_neophyte$Neophyte[eva_country_neophyte$species %in% arch]
 # Check number of intra and extra European species and all natives
-length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="extra"])) #803
+length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="extra"])) #807
 length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="intra"])) #883 (915 previously)
-length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])) #19323
+length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])) #19327
 
 # Summarise again now only number and region in order to see how the data varies in European countries
 country_neophyte<- eva_country_neophyte |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
@@ -180,22 +200,22 @@ medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
 # We extract the data for only the extra EU species and map this
 country_extra<- country_neophyte[country_neophyte$Neophyte=="extra",]
 Europe<- left_join(medRegions,country_extra,  by= c("Region"="Region"))
-extra_EU<- ggplot()+
+extra_EU_plot<- ggplot()+
   geom_sf(data= Europe, aes(fill= n))+
   scale_fill_viridis_c(option = "magma",begin = 0.1)+
   labs(title = "Extra-European Neophyte Distribution in European Regions") +
   theme_minimal()
-ggsave(extra_EU, file="extra_EU.png", bg="white")
+#ggsave(extra_EU_plot, file="extra_EU.png", bg="white")
 
 # We extract the data for only the intra EU species and map this
 country_intra<- country_neophyte[country_neophyte$Neophyte=="intra",]
 Europe_in<- left_join(medRegions,country_intra,  by= c("Region"="Region"))
-intra_EU<- ggplot()+
+intra_EU_plot<- ggplot()+
   geom_sf(data= Europe_in, aes(fill= n))+
   scale_fill_viridis_c(option = "magma",begin = 0.1)+
   labs(title = "Intra-European Neophyte Distribution in European Regions") +
   theme_minimal()
-ggsave(intra_EU, file="intra_EU.png", bg="white")
+#ggsave(intra_EU_plot, file="intra_EU.png", bg="white")
 
 # We extract the data for only the native EU species and map this
 country_native<- country_neophyte[country_neophyte$Neophyte=="native",]
@@ -205,7 +225,7 @@ native_EU<-ggplot()+
   scale_fill_viridis_c(option = "magma",begin = 0.1)+
   labs(title = "Native Distribution in European Regions") +
   theme_minimal()
-ggsave(native_EU, file="native_EU.png", bg="white")
+#ggsave(native_EU, file="native_EU.png", bg="white")
 
 
 ###### 4.2 relative #####
@@ -225,7 +245,7 @@ extra_EU_rel<- ggplot()+
   scale_fill_viridis_c(option = "magma",begin = 0.1)+
   labs(title = "Extra-European Neophyte Distribution in European Regions") +
   theme_minimal()
-ggsave(extra_EU_rel, file="extra_EU_rel.png", bg="white")
+#ggsave(extra_EU_rel, file="extra_EU_rel.png", bg="white")
 
 # We extract the data for only the intra EU species and map this
 country_intra_rel<- country_neophyte_relative[country_neophyte_relative$Neophyte=="intra",]
@@ -323,6 +343,8 @@ medUnique<- medSpecies |> group_by(Region, species, Neophyte) |> summarise(n=n()
 # Get all species from GLONAF that are in our database
 species_not_MED<- data_frame(country= c(), notMed=c())
 species_not_glonaf<- data_frame(country= c(), notGlonaf= c())
+
+# test which are not in dataset
 for (i in glonafRegionNames){
   notMed<- setdiff(glonafSpecies$standardized_name[glonafSpecies$Region==i][glonafSpecies$standardized_name[glonafSpecies$Region==i] %in% eva_country_neophyte$species[eva_country_neophyte$Region==i]], medUnique$species[medUnique$Region==i])
   notGlonaf<- setdiff(medUnique$species[medUnique$Region==i],glonafSpecies$standardized_name[glonafSpecies$Region==i][glonafSpecies$standardized_name[glonafSpecies$Region==i] %in% eva_country_neophyte$species[eva_country_neophyte$Region==i]])
@@ -332,12 +354,13 @@ for (i in glonafRegionNames){
   species_not_glonaf<- rbind(species_not_glonaf, notGlonaf)
 }
 
-# Quite some species are defined as alien in our database while this is not true in Glonaf (2407 species over 41 countries)
-# Maybe worse is that quite some species are not defined as alien in our database but yes in Glonaf (1606 species over 41 countries)
+# Quite some species are defined as alien in our database while this is not true in Glonaf (2262 species over 41 countries)
+# Maybe worse is that quite some species are not defined as alien in our database but yes in Glonaf (1569 species over 41 countries)
 # Randomly checking some species from the latter case against KEW and CABI gives more trust to our own classification
 
+
 ###### 5.4 Origin #####
-# Now we will check the origin using the data of Zhang et al 2023
+# Now we will check the origin using the data of Zhang et al 2023 (which is based on the GIFT database)
 native<-read.csv("../Neophyte Assignments/wf_dat.csv")
 # Remove all _ and make spaces
 native$sp_tpl <-gsub("_"," ",native$sp_tpl)

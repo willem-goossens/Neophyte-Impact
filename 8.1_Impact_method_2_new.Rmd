@@ -31,7 +31,7 @@ correctArea<- F
 ```
 
 
-## 1.2 Packages
+## 1.2 Data
 Load eva and plot data
 ```{r, warnings=F, message=F}
 eva <- read_csv("fullPlotEva.csv")
@@ -43,9 +43,13 @@ Downsample by a factor of 100 if fast is selected
 ```{r}
 fast <- T
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.90,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
+
+# Make dataset for core authors
+# write.csv(eva, "downsampledEva.csv", row.names = F)
+# write.csv(fullPlotData, "downsampledPlotData.csv", row.names = F)
 ```
 
 
@@ -84,10 +88,10 @@ x<- as.data.frame(table(eva_country_neophyte$Neophyte))
 ```
 
 
-## 1.4 Reduce
-Reduce EVA to a smaller dataset to accelerate computations.  
-Count the number of plots in which the species in the dataset exist.
-```{r}
+## 1.4 Number of plots
+Reduce EVA to a smaller dataset to accelerate computations.    
+Count the number of plots in which the species in the dataset exist.  
+```{r, message=F}
 if(fast) {
   reducedEva <- eva |> select(PlotObservationID, species, `Cover %`, Neophyte)
 
@@ -136,16 +140,14 @@ plotsPerSpecies<-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind', .packages=c
 ## 1.5 Select
 We want all species that are present in at least 50 plots, we order this set from highest to lowest and subsequently make a function to compute the total cover of the species across all sites.
 ```{r}
-#plotsPerSpecies<- read.csv('plotsPerSpecies_new2.csv')
-#hist(plotsPerSpecies$numberOfPlots[plotsPerSpecies$numberOfPlots>1000])
+# If you want to have a look at the distribution of the species richness per plot: hist(plotsPerSpecies$numberOfPlots[plotsPerSpecies$numberOfPlots>1000])
 
 # determine which plant species should be computed
 minimumNumberOfPlots<- 50
 allPlants <- plotsPerSpecies[plotsPerSpecies$numberOfPlots >= minimumNumberOfPlots,]
 allPlants <- allPlants[order(-allPlants$numberOfPlots),]
 
-#allPlants$names[(allPlants$names[allPlants$Neophyte=="native"] %in% allPlants$names[allPlants$Neophyte=="intra"])]
-
+# function to give the species cover per species in a plot
 computeSpeciesCover <- function(name, species, cover) {
   result <- sum(cover[species==name]) # we use the sum here, since otherwise the total cover / species cover cannot reach one.
   if(is.na(result)) {
@@ -158,7 +160,7 @@ computeSpeciesCover <- function(name, species, cover) {
 
 
 Test the function
-```{r, warnings=F, message=F}
+```{r, warnings=F, message=F, results='hide'}
 # Tests of the above function
 computeSpeciesCover("nonExistentPlant", c("plant1", "plant2"), c(1,2)) # If the plant is not present 0 is returned.
 computeSpeciesCover("plant1", c("plant1", "plant2"), c(1,2)) # If the is present the right value is returned
@@ -171,8 +173,8 @@ reducedEva <- eva[,c("PlotObservationID", "species", "Cover %", "Neophyte")]
 
 # 2 ANALYSIS
 ## 2.1 Function
-```{r}
-# The name of the first species
+```{r, meassage=F}
+# The name of the first species (to test the function)
 plantName = allPlants$names[1]
 plantStatus= allPlants$Neophyte[1]
 
@@ -186,9 +188,8 @@ computePlantImpact <- function(plantName, plantStatus) {
   # Get the indices of the plant in the eva dataset
   indexOfPlant <- eva$species == plantName & eva$Neophyte== plantStatus
   
-  # The majority of the time is spent in computing the cover classes. 
   # We select only the rows containing the species first because this is much faster than doing it for all plots.
-  # We make the dataset smaller (only those plots where the species is present), group the data per plot and compute the total cover (all species) and cover of the species we are highlighting now
+  # We make the dataset smaller (only those plots where the species is present), group the data per plot and compute the total cover (all     species) and cover of the species we are highlighting now
   plotsWherePlantOccurs <- reducedEva[reducedEva$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant],] |>
     group_by(PlotObservationID) |>
     summarise(totalCover = sum(`Cover %`), 
@@ -218,7 +219,6 @@ computePlantImpact <- function(plantName, plantStatus) {
   }
   
   # There is a numerical problem in the bam function if we provide empty plots...
-  # This should normally not be possible (as we did data screening) but I will check again
   tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$numberOfVascularPlantSpecies > 0 & tmpFullPlotData$Area > 0,]
   
   # Make dataset a factor to add it as a random variable
@@ -248,12 +248,11 @@ base <- bam(model,family = quasipoisson, data = tmpFullPlotData,  method = 'fREM
   
   # Get summary from model
   baseModel <- summary(base)
-  summary(base)
-  
+
   # Make a dataframe to add the residuals to
   res <- data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer(), Neophyte= character(), correlation= numeric())
   
-  res <- add_row(res, taxa = plantName, Estimate = baseModel$p.table[2,1], StdErr = baseModel$p.table[2,2], zValue = baseModel$p.table[2,3], pr = baseModel$p.table[2,4], numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), Neophyte= plantStatus, correlation=  cor(tmpFullPlotData[,c(9,48)])[2,1])
+  res <- add_row(res, taxa = plantName, Estimate = baseModel$p.table[2,1], StdErr = baseModel$p.table[2,2], zValue = baseModel$p.table[2,3], pr = baseModel$p.table[2,4], numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), Neophyte= plantStatus)
   res
 }
 ```
@@ -286,6 +285,7 @@ parallel::stopCluster(cl = my.cluster)
 
 ## 2.3 Significance
 ```{r}
+# Probably (but currently only 10% run) no normality for especially the intra class and also very little data compared to the rest, so ranked anova performed
 result<-(aov(rank(Estimate) ~ Neophyte, x))
 summary(result)
 TukeyHSD(result)
@@ -306,10 +306,10 @@ p<-ggplot(x, aes(x=Neophyte, y= Estimate, color=Neophyte))+geom_violin()+
   theme(legend.position = "bottom")+theme(legend.text= element_text(size=12), legend.title =element_text(size=14))+ 
   annotate("text", x = 1, y = mean(x$Estimate[x$Neophyte=="extra"], na.rm=T), label = "a", size = 3.5, vjust = -1, hjust = 0.5) +
   annotate("text", x = 2, y = mean(x$Estimate[x$Neophyte=="intra"], na.rm=T), label = "a", size = 3.5, vjust = -1, hjust = 0.5)+
-  annotate("text", x = 3, y = mean(x$Estimate[x$Neophyte=="native"], na.rm=T), label = "b", size = 3.5, vjust = -1, hjust = 0.5)+
-  annotate("text", x=1, y=0.8, label= paste("n=",length(x$Estimate[x=="extra"])), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=2, y=0.8, label= paste("n=",length(x$Estimate[x=="intra"])), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=3, y=0.8, label= paste("n=",length(x$Estimate[x=="native"])), vjust = -0.5, hjust = 0.5, size=3.5)
+  annotate("text", x = 3, y = mean(x$Estimate[x$Neophyte=="native"], na.rm=T), label = "a", size = 3.5, vjust = -1, hjust = 0.5)+
+  annotate("text", x=1, y=0.8, label= paste("n=",length(x$Estimate[x$Neophyte=="extra"])), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=0.8, label= paste("n=",length(x$Estimate[x$Neophyte=="intra"])), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=0.8, label= paste("n=",length(x$Estimate[x$Neophyte=="native"])), vjust = -0.5, hjust = 0.5, size=3.5)
 p
 
 #ggsave("Impact_base_model_new.jpeg", p, width = 25, height = 15, units = "cm")
