@@ -195,6 +195,10 @@ remove<- c(not_defined, exclude)
 medRegions <- read_sf("../Europe-regions-shapefiles-2023", "Emed_regions")
 medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
 
+density <- left_join(medRegions, country_neophyte, by= c("Region"="Region"))
+density$dens<- density$n/density$Shape_Area
+
+density$dens
 
 ###### 4.2 absolute #####
 # We extract the data for only the extra EU species and map this
@@ -255,7 +259,7 @@ intra_EU_rel<- ggplot()+
   scale_fill_viridis_c(option = "magma",begin = 0.1)+
   labs(title = "Intra-European Neophyte Distribution in European Regions") +
   theme_minimal()
-ggsave(intra_EU_rel, file="intra_EU_rel.png", bg="white")
+#ggsave(intra_EU_rel, file="intra_EU_rel.png", bg="white")
 
 # We extract the data for only the native species and map this
 country_native_rel<- country_neophyte_relative[country_neophyte_relative$Neophyte=="native",]
@@ -265,7 +269,7 @@ native_EU_rel<- ggplot()+
   scale_fill_viridis_c(option = "magma",begin = 0.1)+
   labs(title = "Native Distribution in European Regions") +
   theme_minimal()
-ggsave(native_EU_rel, file="native_EU_rel.png", bg="white")
+#ggsave(native_EU_rel, file="native_EU_rel.png", bg="white")
 
 #### 5 CHECK GLONAF ####
 ###### 5.1 Regions and List #####
@@ -381,4 +385,4 @@ length(which(NOT_EU %in% extra_EU))
 length(which(EUROPE %in% intra_EU))
 length(which(NOT_EU %in% intra_EU))
 NOT_EU[NOT_EU %in% intra_EU]
-# Again quite some, after checking 10 species (7%), only one was not found native to Europe
+# Again quite some, after checking 10 species (5%), only one was not found native to Europe

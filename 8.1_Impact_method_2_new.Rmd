@@ -48,8 +48,12 @@ if(fast) {
 }
 
 # Make dataset for core authors
-# write.csv(eva, "downsampledEva.csv", row.names = F)
-# write.csv(fullPlotData, "downsampledPlotData.csv", row.names = F)
+#write.csv(eva, "downsampledEva.csv", row.names = F)
+#write.csv(fullPlotData, "downsampledPlotData.csv", row.names = F)
+
+eva<- read.csv("downsampledEva.csv", header=T)
+colnames(eva)[8]<- "Cover %"
+fullPlotData<- read.csv("downsampledPlotData.csv")
 ```
 
 
@@ -57,7 +61,7 @@ if(fast) {
 Load the neophyte definitions:
 ```{r, message=F}
 # Data on which species are neophytes
-species_country_status<- read_csv("species_country_status.csv")
+species_country_status<- read_csv("species_country_status_new.csv")
 
 # Assign these names to the eva list
 extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
@@ -131,9 +135,8 @@ plotsPerSpecies<-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind', .packages=c
   
   parallel::stopCluster(cl = my.cluster)
 } else {
-  plotsPerSpecies2 <- read_csv("plotsPerSpeciesInEurope.csv", show_col_types = FALSE)
+  plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv", show_col_types = FALSE)
 }
-#write.csv(plotsPerSpecies, 'plotsPerSpecies_new2.csv')
 ```
 
 
@@ -313,6 +316,5 @@ p<-ggplot(x, aes(x=Neophyte, y= Estimate, color=Neophyte))+geom_violin()+
 p
 
 #ggsave("Impact_base_model_new.jpeg", p, width = 25, height = 15, units = "cm")
-
 ```
 

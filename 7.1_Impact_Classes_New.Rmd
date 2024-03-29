@@ -40,11 +40,15 @@ Load filtered Data containing the richness and indicator values for each plot. I
 ```{r}
 fullPlotData <- read_csv("fullPlotData.csv",show_col_types = FALSE)
 
-fast <- FALSE
+fast <- TRUE
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.999,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
+
+#eva<- read.csv("downsampledEva.csv", header=T)
+#colnames(eva)[8]<- "Cover %"
+#fullPlotData<- read.csv("downsampledPlotData.csv")
 ```
 
 
@@ -394,7 +398,7 @@ round(end-begin)
 
 coverClass1<- coverClassImpactForCandidates
 
-fileName <- paste("coverClassImpactForCandidates_new_all_2.csv")
+#fileName <- paste("coverClassImpactForCandidates_new_all_2.csv")
 #write_csv(coverClassImpactForCandidates, fileName)
 }
 ```
@@ -402,9 +406,9 @@ fileName <- paste("coverClassImpactForCandidates_new_all_2.csv")
 
 ## 2.6 Synthesis
 ```{r, warning=F, message=F}
-# Load the file diversity impact by cover class (equals coverClassImpactforCandidates)
-#fileName <- "diversityImpactByCoverClass.csv"
-#coverClassImpactForCandidates <- read_csv(fileName)
+# Load the file
+fileName <- paste("coverClassImpactForCandidates_new_all_2.csv")
+coverClassImpactForCandidates <- read_csv(fileName)
 
 
 # Select all columns from the dataset except number of plots and pivot this data so that we have two new columns with the cover class name as a factor and their values
@@ -417,10 +421,14 @@ dataToPlot<- dataToPlot[dataToPlot$log=="3",]
 dataToPlot<- dataToPlot[!is.na(dataToPlot$diversity_impact),]
 
 # Summarize the data per classification, cover class and method and calculate the mean, standard deviation and confidence interval
+if(fast){
 summarizedData <- dataToPlot |>  group_by(status, cover_class)|> 
-  summarise(n=n(), mean= mean(diversity_impact, na.rm=T),sd = sd(diversity_impact, na.rm=T), ci= qt(p=1-0.05/2, df=n-1)*sd/sqrt(n), n=n(), 
-            median=ci.median(diversity_impact, conf = 0.95)$ci[1], ci.lower= ci.median(diversity_impact, conf = 0.95)$ci[2], 
-            ci.higher= ci.median(diversity_impact, conf = 0.95)$ci[3])
+  summarise(n=n(), mean= mean(diversity_impact, na.rm=T),sd = sd(diversity_impact, na.rm=T), ci= qt(p=1-0.05/2, df=n-1)*sd/sqrt(n)) 
+} else {
+  summarizedData <- dataToPlot |>  group_by(status, cover_class)|> 
+  summarise(n=n(), mean= mean(diversity_impact, na.rm=T),sd = sd(diversity_impact, na.rm=T), ci= qt(p=1-0.05/2, df=n-1)*sd/sqrt(n), median=ci.median(diversity_impact, conf = 0.95)$ci[1], ci.lower= ci.median(diversity_impact,conf = 0.95)$ci[2], ci.higher= ci.median(diversity_impact, conf = 0.95)$ci[3])
+}
+# I also wanted to add the median (as it might be interesting to see how this relates to the mean value --> are there some 'outlier' plants that significantly change our observations) but it is not always possible to run this due to a lack of observations 
 ```
 
 
@@ -467,11 +475,13 @@ summarizedData<- summarizedData[!summarizedData$cover_class=="absent",]
 
 p<- ggplot(summarizedData, aes(x=cover_class, y=mean, group=status, color=status)) + 
   geom_line(linewidth=1, position=position_dodge(0.2)) +
-  geom_point(position=position_dodge(0.2))+ylab("Impact of Plant Species on Plant Diversity") + 
+  ggtitle("Mean impact of Plant Species on Species Richness")+
+  theme(plot.title = element_text(hjust= 0.5, size=22))+
+  geom_point(position=position_dodge(0.2))+ylab("ln(OBS/EXP)") + 
   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=position_dodge(0.2), linewidth=1)+
   xlab("Cover Class") +
   scale_x_discrete(labels = c('[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[70%-100%]'))+
-  scale_y_continuous(limits = c(-0.45, 0.30))+
+  scale_y_continuous(limits = c(-0.4, 0.30))+
   scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
                     name="Legend",
                     breaks=c("native", "intra","extra"),
@@ -482,17 +492,19 @@ p<- ggplot(summarizedData, aes(x=cover_class, y=mean, group=status, color=status
   
 p
 
-ggsave("RR_Cover_Class.jpeg", p, width = 25, height = 15, units = "cm")
+#ggsave("RR_Cover_Class.jpeg", p, width = 25, height = 15, units = "cm")
 
 # It should be noted that we can convert RR to percentage (see Mollot 2017 who also did it), but we cannot convert the confidence interval so it is not possible to make a graph out of this
 
 
-# R but as boxplot
+# RR but as barplot
 p<- ggplot(summarizedData, aes(x=cover_class, y=mean,   fill=status)) + 
   geom_bar(stat="identity",position = position_dodge(0.7), width = 0.7) +
+  ggtitle("Mean impact of Plant Species on Species Richness")+
+  theme(plot.title = element_text(hjust= 0.5, size=22))+
   geom_point(position=position_dodge(0.7))+
   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=position_dodge(0.7)) +
-  ylab("Impact of Plant Species on Plant Diversity") + 
+  ylab("ln(OBS/EXP)") + 
   xlab("Cover Class") +
     scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
                     name="Legend",
@@ -502,16 +514,20 @@ p<- ggplot(summarizedData, aes(x=cover_class, y=mean,   fill=status)) +
   theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=14) ,axis.title.x=element_text(size=14))+
   theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
 p
-ggsave("RR_Cover_Class_Barplot.jpeg", p)
+
+#ggsave("RR_Cover_Class_Barplot.jpeg", p,width = 25, height = 15, units = "cm")
 
 # I also wanted to visualise the median (to omit some species that strongly bias the outcome)
+if(!fast){
 p<- ggplot(summarizedData, aes(x=cover_class, y=median, group=status, color=status)) + 
   geom_line(linewidth=1, position=position_dodge(0.2)) +
-  geom_point(position=position_dodge(0.2))+ylab("Impact of Plant Species on Plant Diversity") + 
+  ggtitle("Median impact of Plant Species on Species Richness")+
+  theme(plot.title = element_text(hjust= 0.5, size=22))+
+  geom_point(position=position_dodge(0.2))+ylab("ln(OBS/EXP)") + 
   geom_errorbar(aes(ymin=ci.lower, ymax=ci.higher), width=.2, position=position_dodge(0.2), linewidth=1)+
   xlab("Cover Class") +
   scale_x_discrete(labels = c('[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[70%-100%]'))+
-  scale_y_continuous(limits = c(-0.45, 0.30))+
+  scale_y_continuous(limits = c(-0.35, 0.30))+
   scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
                     name="Legend",
                     breaks=c("native", "intra","extra"),
@@ -520,16 +536,19 @@ p<- ggplot(summarizedData, aes(x=cover_class, y=median, group=status, color=stat
   theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=14) ,axis.title.x=element_text(size=14))+
   theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
 p
-ggsave("RR_Cover_Class_median.jpeg", p)
-
+ggsave("RR_Cover_Class_median.jpeg", p, width = 25, height = 15, units = "cm")
+}
 ```
 
 
 ## 3.2 Boxplot
 ```{r}
+dataToPlot<- dataToPlot[!dataToPlot$cover_class=="absent",]
 p<- ggplot(dataToPlot[!is.na(dataToPlot$diversity_impact),], aes(x=cover_class, y=diversity_impact, color=status)) + 
+  ggtitle("Mean impact of Plant Species on Species Richness")+
+  theme(plot.title = element_text(hjust= 0.5, size=22))+
   geom_boxplot(position = position_dodge(0.7), width = 0.7)+
-  ylab("Impact of Plant Species on Plant Diversity") + 
+  ylab("ln(OBS/EXP)") + 
   xlab("Cover Class") +
    scale_x_discrete(labels = c('[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[70%-100%]'))+
     scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
@@ -540,7 +559,7 @@ p<- ggplot(dataToPlot[!is.na(dataToPlot$diversity_impact),], aes(x=cover_class, 
   theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=14) ,axis.title.x=element_text(size=14))+
   theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
 p
-ggsave("RR_Cover_Class_Boxplot.jpeg", p)
+#ggsave("RR_Cover_Class_Boxplot.jpeg", p, width = 25, height = 15, units = "cm")
 
 ```
 
