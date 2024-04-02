@@ -42,7 +42,7 @@ fullPlotData <- read_csv("fullPlotData.csv",show_col_types = FALSE)
 
 fast <- TRUE
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 
@@ -56,11 +56,19 @@ if(fast) {
 Load the neophyte definitions:
 ```{r, message=F}
 # Data on which species are neophytes
+native_intra_analysis=T
+if(native_intra_analysis){
+  species_country_status <- read_csv("eva2_country_status_new.csv")
+} else{
 species_country_status<- read_csv("species_country_status_new.csv")
+# or if we want to do it with intra seperately
+}
 
 # Assign these names to the eva list
 extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
 intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
+native_intra <- unique(species_country_status$species[species_country_status$Neophyte=="native_intra"])
+
 ```
 
 
@@ -133,9 +141,14 @@ plotsPerSpecies<-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind', .packages=c
   round(end-begin)
   
   parallel::stopCluster(cl = my.cluster)
+  write.csv(plotsPerSpecies,"plotsPerSpeciesInEurope_native_intra.csv", row.names = F )
 } else {
+  if(!native_intra_analysis){
   plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv", show_col_types = FALSE)
   plotsPerSpecies<- plotsPerSpecies[, -c(1)]
+  } else {
+  plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope_native_intra.csv", show_col_types = FALSE)
+  }
 }
 ```
 
@@ -398,7 +411,7 @@ round(end-begin)
 
 coverClass1<- coverClassImpactForCandidates
 
-#fileName <- paste("coverClassImpactForCandidates_new_all_2.csv")
+#fileName <- paste("coverClassImpactForCandidates_new_all_native_intra.csv")
 #write_csv(coverClassImpactForCandidates, fileName)
 }
 ```
@@ -406,11 +419,6 @@ coverClass1<- coverClassImpactForCandidates
 
 ## 2.6 Synthesis
 ```{r, warning=F, message=F}
-# Load the file
-fileName <- paste("coverClassImpactForCandidates_new_all_2.csv")
-coverClassImpactForCandidates <- read_csv(fileName)
-
-
 # Select all columns from the dataset except number of plots and pivot this data so that we have two new columns with the cover class name as a factor and their values
 dataToPlot <- coverClassImpactForCandidates |> 
   select(-numberOfPlots) |> 
@@ -448,7 +456,7 @@ TukeyHSD(result, which= "status")
 result<- oneway.test(diversity_impact ~ status, dataToPlot, var.equal = F)
 result
 # Games howell post hoc test (Tukey for uneven variances)
-games_howell_test(data=dataToPlot, diversity_impact ~ status, conf.level = 0.95, detailed=T)
+games_howell_test(data=dataToPlot, diversity_impact ~ status, conf.level = 0.95, detailed=F)
 games_howell_test(data=dataToPlot, diversity_impact ~ cover_class, conf.level = 0.95)
 ```
 
@@ -470,9 +478,7 @@ games_howell_test(data=dataToPlot, diversity_impact ~ cover_class, conf.level = 
 # Remove the absent class
 summarizedData<- summarizedData[!summarizedData$cover_class=="absent",]
 
-# RR as average effect size
-summarizedData<- summarizedData[!summarizedData$cover_class=="absent",]
-
+if(!native_intra_analysis){
 p<- ggplot(summarizedData, aes(x=cover_class, y=mean, group=status, color=status)) + 
   geom_line(linewidth=1, position=position_dodge(0.2)) +
   ggtitle("Mean impact of Plant Species on Species Richness")+
@@ -536,7 +542,73 @@ p<- ggplot(summarizedData, aes(x=cover_class, y=median, group=status, color=stat
   theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=14) ,axis.title.x=element_text(size=14))+
   theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
 p
-ggsave("RR_Cover_Class_median.jpeg", p, width = 25, height = 15, units = "cm")
+#ggsave("RR_Cover_Class_median.jpeg", p, width = 25, height = 15, units = "cm")
+}
+} else {
+p<- ggplot(summarizedData, aes(x=cover_class, y=mean, group=status, color=status)) + 
+  geom_line(linewidth=1, position=position_dodge(0.2)) +
+  ggtitle("Mean impact of Plant Species on Species Richness")+
+  theme(plot.title = element_text(hjust= 0.5, size=22))+
+  geom_point(position=position_dodge(0.2))+ylab("ln(OBS/EXP)") + 
+  geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=position_dodge(0.2), linewidth=1)+
+  xlab("Cover Class") +
+  scale_x_discrete(labels = c('[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[70%-100%]'))+
+  theme_classic()+ geom_hline(yintercept = 0, linetype="longdash")+ 
+  theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=14) ,axis.title.x=element_text(size=14))+
+  theme(legend.text= element_text(size=12), legend.title =element_text(size=14))+
+  scale_y_continuous(limits = c(-0.4, 0.30))+
+  scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#388E3C"), 
+                    name="Legend",
+                    breaks=c("native","native_intra", "intra","extra"),
+                    labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte"))
+p
+
+#ggsave("RR_Cover_Class.jpeg", p, width = 25, height = 15, units = "cm")
+
+# It should be noted that we can convert RR to percentage (see Mollot 2017 who also did it), but we cannot convert the confidence interval so it is not possible to make a graph out of this
+
+
+# RR but as barplot
+p<- ggplot(summarizedData, aes(x=cover_class, y=mean,   fill=status)) + 
+  geom_bar(stat="identity",position = position_dodge(0.7), width = 0.7) +
+  ggtitle("Mean impact of Plant Species on Species Richness")+
+  theme(plot.title = element_text(hjust= 0.5, size=22))+
+  geom_point(position=position_dodge(0.7))+
+  geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=position_dodge(0.7)) +
+  ylab("ln(OBS/EXP)") + 
+  xlab("Cover Class") +
+  scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#388E3C"), 
+                    name="Legend",
+                    breaks=c("native","native_intra", "intra","extra"),
+                    labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte"))+
+  theme_classic()+ geom_hline(yintercept = 0, linetype="longdash")+ 
+  theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=14) ,axis.title.x=element_text(size=14))+
+  theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
+p
+
+#ggsave("RR_Cover_Class_Barplot.jpeg", p,width = 25, height = 15, units = "cm")
+
+# I also wanted to visualise the median (to omit some species that strongly bias the outcome)
+if(!fast){
+p<- ggplot(summarizedData, aes(x=cover_class, y=median, group=status, color=status)) + 
+  geom_line(linewidth=1, position=position_dodge(0.2)) +
+  ggtitle("Median impact of Plant Species on Species Richness")+
+  theme(plot.title = element_text(hjust= 0.5, size=22))+
+  geom_point(position=position_dodge(0.2))+ylab("ln(OBS/EXP)") + 
+  geom_errorbar(aes(ymin=ci.lower, ymax=ci.higher), width=.2, position=position_dodge(0.2), linewidth=1)+
+  xlab("Cover Class") +
+  scale_x_discrete(labels = c('[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[70%-100%]'))+
+  scale_y_continuous(limits = c(-0.35, 0.30))+
+  scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#388E3C"), 
+                    name="Legend",
+                    breaks=c("native","native_intra", "intra","extra"),
+                    labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte"))+
+  theme_classic()+ geom_hline(yintercept = 0, linetype="longdash")+ 
+  theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=14) ,axis.title.x=element_text(size=14))+
+  theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
+p
+#ggsave("RR_Cover_Class_median.jpeg", p, width = 25, height = 15, units = "cm")
+}
 }
 ```
 
@@ -544,14 +616,15 @@ ggsave("RR_Cover_Class_median.jpeg", p, width = 25, height = 15, units = "cm")
 ## 3.2 Boxplot
 ```{r}
 dataToPlot<- dataToPlot[!dataToPlot$cover_class=="absent",]
+if(!native_intra_analysis){
 p<- ggplot(dataToPlot[!is.na(dataToPlot$diversity_impact),], aes(x=cover_class, y=diversity_impact, color=status)) + 
   ggtitle("Mean impact of Plant Species on Species Richness")+
   theme(plot.title = element_text(hjust= 0.5, size=22))+
   geom_boxplot(position = position_dodge(0.7), width = 0.7)+
   ylab("ln(OBS/EXP)") + 
   xlab("Cover Class") +
-   scale_x_discrete(labels = c('[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[70%-100%]'))+
-    scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
+  scale_x_discrete(labels = c('[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[70%-100%]'))+
+  scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
                     name="Legend",
                     breaks=c("native", "intra","extra"),
                     labels=c("native species", "intra European neophyte", "extra European neophyte"))+
@@ -560,6 +633,26 @@ p<- ggplot(dataToPlot[!is.na(dataToPlot$diversity_impact),], aes(x=cover_class, 
   theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
 p
 #ggsave("RR_Cover_Class_Boxplot.jpeg", p, width = 25, height = 15, units = "cm")
+} else {
+p<- ggplot(dataToPlot[!is.na(dataToPlot$diversity_impact),], aes(x=cover_class, y=diversity_impact, color=status)) + 
+  ggtitle("Mean impact of Plant Species on Species Richness")+
+  theme(plot.title = element_text(hjust= 0.5, size=22))+
+  geom_boxplot(position = position_dodge(0.7), width = 0.7)+
+  ylab("ln(OBS/EXP)") + 
+  xlab("Cover Class") +
+  scale_x_discrete(labels = c('[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[70%-100%]'))+
+  scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#388E3C"), 
+                    name="Legend",
+                    breaks=c("native","native_intra", "intra","extra"),
+                    labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte"))+
+  theme_classic()+ geom_hline(yintercept = 0, linetype="longdash")+
+  theme_classic()+ geom_hline(yintercept = 0, linetype="longdash")+ 
+  theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=14) ,axis.title.x=element_text(size=14))+
+  theme(legend.text= element_text(size=12), legend.title =element_text(size=14))
+p
+#ggsave("RR_Cover_Class_Boxplot.jpeg", p, width = 25, height = 15, units = "cm")
+  
+}
 
 ```
 
@@ -587,6 +680,7 @@ dominant$taxa[dominant$status=="intra"]
 mean(dataToPlot$diversity_impact[dataToPlot$log=="3"& dataToPlot$status=="intra"], na.rm=T)
 mean(dataToPlot$diversity_impact[dataToPlot$log=="3"& dataToPlot$status=="native"], na.rm=T)
 mean(dataToPlot$diversity_impact[dataToPlot$log=="3"& dataToPlot$status=="extra"], na.rm=T)
+mean(dataToPlot$diversity_impact[dataToPlot$log=="3"& dataToPlot$status=="native_intra"], na.rm=T)
 
 # Mean impact across all classes
 mean(dataToPlot$diversity_impact[dataToPlot$log=="3"], na.rm=T)
