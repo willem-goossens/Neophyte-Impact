@@ -158,6 +158,18 @@ table(country_neophyte['Neophyte'])
 native_names<-unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])
 sum(native_names %in% intra_EU) #818 (before around 848)
 
+# Here we make a new dataframe with those species that are intra in a region in europe as native_intra
+# to check whether the effect is just species dependent
+eva2<- eva_country_neophyte
+eva2$Neophyte[eva2$Neophyte=="native" & eva2$species %in% native_intra]<-"native_intra"
+length(unique(eva2$species[eva2$Neophyte=="extra"]))
+length(unique(eva2$species[eva2$Neophyte=="intra"]))
+length(unique(eva2$species[eva2$Neophyte=="native"])) # 19327-818 = 18509
+length(unique(eva2$species[eva2$Neophyte=="native_intra"]))
+
+# check whether the classification was successful for all species
+sum(unique(eva2$species[eva2$Neophyte=="native"]) %in% intra_EU)
+
 ###### 3.3 native SR #####
 aggregatedEVA <- eva_country_neophyte |>  group_by(PlotObservationID, Neophyte) |>  summarise(numberOfVascularPlantSpecies = n())
 
@@ -183,6 +195,9 @@ species_country_status<- eva_country_neophyte |> group_by(Region, species, Neoph
 species_country_status<- species_country_status[,-4]
 #write.csv(species_country_status,"species_country_status_new.csv", row.names = FALSE)
 
+eva2_country_status<- eva2 |> group_by(Region, species, Neophyte) |> summarise(n=n())
+eva2_country_status<- eva2_country_status[,-4]
+#write.csv(eva2_country_status,"eva2_country_status_new.csv", row.names = FALSE)
 
 #write.csv(fullPlotData, "fullPlotData.csv", row.names=F)
 
