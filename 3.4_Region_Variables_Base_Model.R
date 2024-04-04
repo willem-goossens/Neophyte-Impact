@@ -260,12 +260,14 @@ test<- test[,2]
 plotLocations<- cbind(plotLocations, test)
 
 # Show
-plotting=F
+plotting=T
 if(plotting){
   ggplot() +   
     geom_spatraster(data = chelsaT) + 
-    geom_sf(data = plotLocations, color = "black", size = 1) + 
-    coord_sf()
+    geom_sf(data = plotLocations, color = "black", size = 0.0001) + 
+    coord_sf()+scale_fill_continuous(low="darkblue", high="darkred", 
+                                     guide="colorbar",na.value="white")+
+    theme_classic()
 }
 
 # We are not able to extract the value for all sites so we assign the nearest value (TO BE DISCUSSED)  
@@ -327,7 +329,7 @@ test<- test[,2]
 plotLocations<- cbind(plotLocations, test)
 
 # Show
-plotting=T
+plotting=F
 if(plotting){
   ggplot() +   
     geom_spatraster(data = chelsaP, aes(fill=bio12)) + 
