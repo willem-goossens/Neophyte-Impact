@@ -319,3 +319,70 @@ if(saving){
   write_csv(fullPlotData, "fullPlotData2.csv")
 }
 
+###### 4.3 P mean #####
+# Extract the values for chelsa P
+test<- terra::extract(chelsaP, plotLocations[,c(2:4)])
+test<- test[,2]
+# Combine 
+plotLocations<- cbind(plotLocations, test)
+
+# Show
+plotting=F
+if(plotting){
+  ggplot() +   
+    geom_spatraster(data = chelsaP) + 
+    geom_sf(data = plotLocations, color = "black", size = 1) + 
+    coord_sf()
+}
+
+# We are not able to extract the value for all sites so we assign the nearest value (TO BE DISCUSSED)  
+remainingPlots<- plotLocations[is.na(plotLocations$test),]
+
+
+# I was not able to do this with foreach so takes about 1 hour to calculate
+for(i in 1:nrow(remainingPlots)){
+  # Buffer point locations by desired distance
+  ptBuff <- st_buffer(remainingPlots[i,], dist = 10000)
+  # Crop raster to buffered point
+  inbuff <- crop(chelsaP, vect(ptBuff))
+  # Convert to points
+  dat <- as.points(inbuff)
+  dat <- st_as_sf(dat)
+  # If all values are NA the dataframe will be empty, move to next
+  if(nrow(dat) == 0){
+    next
+  }
+  ptdist <- st_distance(remainingPlots[i,], dat)
+  dat$pdistance <- as.numeric(ptdist)
+  m <- as.numeric(min(ptdist))
+  val <- dat %>% 
+    dplyr::filter(pdistance == m) %>% 
+    select(bio12) %>% 
+    st_drop_geometry()
+  val <- as.numeric(val)
+  remainingPlots[i,]$test <- val
+}
+
+# assign the new values to the previous NAs  
+plotLocations[is.na(plotLocations$test),] <- remainingPlots
+
+# Make dataset with all plots that are still not assigned --> probably due to the raster nature --> maybe make the distance larger
+remainingPlots<- plotLocations[is.na(plotLocations$test),]
+# Plot these remaining not extracted plots --> all close to the coast
+if(plotting){
+  ggplot() +   
+    geom_spatraster(data = chelsaP) + 
+    geom_sf(data = remainingPlots, color = "black", size = 1) + 
+    coord_sf()+theme_minimal()
+}
+
+# prepare for saving
+saving= F
+if(saving){
+  st_geometry(plotLocations) <- NULL
+  fullPlotData <- read_csv("fullPlotData2.csv", show_col_types = FALSE)
+  colnames(plotLocations)[8]<- "chelsaP"
+  fullPlotData<- left_join(fullPlotData, plotLocations)
+  write_csv(fullPlotData, "fullPlotData2.csv")
+}
+
