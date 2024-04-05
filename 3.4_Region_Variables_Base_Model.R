@@ -34,7 +34,7 @@ fullPlotData <- read_csv("fullPlotData.csv", show_col_types = FALSE)
 fullPlotData<- fullPlotData[,c(1:5, 9:10)]
 
 # reduce size
-fast <- T
+fast <- F
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
 }
@@ -329,7 +329,7 @@ test<- test[,2]
 plotLocations<- cbind(plotLocations, test)
 
 # Show
-plotting=F
+plotting=T
 if(plotting){
   ggplot() +   
     geom_spatraster(data = chelsaP, aes(fill=bio12)) + 
