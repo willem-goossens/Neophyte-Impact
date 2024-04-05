@@ -25,15 +25,17 @@ library(ggplot2)
 library(parallel)
 library(doParallel)
 library(IDPmisc)
+library(ggeffects)
 ```
 
 ## 1.1 Load
 ```{r, message=F}
 # Data from header with the EIVE and DIV data
-fullPlotData <- read_csv("fullPlotData.csv")
+fullPlotData <- read_csv("fullPlotData2.csv")
 fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
 
-fast <- T
+fullPlotData<- fullPlotData[!is.na(fullPlotData$Date),]
+fast <- F
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
 }
@@ -43,7 +45,7 @@ if(fast) {
 Checking for correlation among predictor variables:
 ```{r}
 # take correlation omitting the INF values in the log disturbances
-correlation <- cor(NaRV.omit(fullPlotData[,c(9,11:45)]))
+correlation <- cor(NaRV.omit(fullPlotData[,c(9,11:50)]))
 # set all values to 0 which are not highly correlated
 correlation[correlation < 0.7 & correlation> -0.7] <- 0
 correlation
@@ -348,7 +350,76 @@ summary(gam11)
 AIC(gam11, gam9, gam10)
 ```
 
-## 3.5 Final check
+## 3.5 HFP and Climate
+```{r}
+model2<-  numberOfVascularPlantSpecies ~ 
+              s(log(Area),bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Soil.Disturbance.sqrt, bs = 'tp')+
+              s(Grazing.Pressure.sqrt, bs = 'tp')+
+              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(Latitude, Longitude, bs = 'tp') +
+              s(Dataset, bs = 're')
+model3<-  numberOfVascularPlantSpecies ~ 
+              s(log(Area),bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Soil.Disturbance.sqrt, bs = 'tp')+
+              s(Grazing.Pressure.sqrt, bs = 'tp')+
+              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(hfp, bs="tp")+
+              s(chelsaP, bs="tp")+
+              s(Latitude, Longitude, bs = 'tp') +
+              s(Dataset, bs = 're')
+model4<-  numberOfVascularPlantSpecies ~ 
+              s(log(Area),bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Soil.Disturbance.sqrt, bs = 'tp')+
+              s(Grazing.Pressure.sqrt, bs = 'tp')+
+              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(hfp, bs="tp")+
+              s(Latitude, Longitude, bs = 'tp') +
+              s(Dataset, bs = 're')
+model5<-  numberOfVascularPlantSpecies ~ 
+              s(log(Area),bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Soil.Disturbance.sqrt, bs = 'tp')+
+              s(Grazing.Pressure.sqrt, bs = 'tp')+
+              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(chelsaP, bs="tp")+
+              s(Latitude, Longitude, bs = 'tp') +
+              s(Dataset, bs = 're')
+gam12 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam13 <- bam(model3,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+summary(gam12)
+summary(gam13)
+gam14 <- bam(model4,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam15 <- bam(model5,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+summary(gam14)
+summary(gam15)
+```
+
+
+## 3.6 Final check
 ```{r}
 gam10 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 gam11 <- bam(model2,family = quasipoisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
@@ -362,16 +433,20 @@ plot(gam11)
 
 # 4 PLOT
 ```{r}
-visreg(gam10, xvar = "Area", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE) 
-visreg(gam10, xvar = "EIVEresM", ylab = "Richness", xlab = "M", gg = TRUE, partial=FALSE, rug = FALSE) 
-visreg(gam10, xvar = "EIVEresN", ylab = "Richness", xlab = "N", gg = TRUE, partial=FALSE, rug = FALSE) 
-visreg(gam10, xvar = "EIVEresR", ylab = "Richness", xlab = "R", gg = TRUE, partial=FALSE, rug = FALSE) 
-visreg(gam10, xvar = "EIVEresL", ylab = "Richness", xlab = "L", gg = TRUE, partial=FALSE, rug = FALSE) 
-visreg(gam10, xvar = "EIVEresT", ylab = "Richness", xlab = "T", gg = TRUE, partial=FALSE, rug = FALSE) 
-visreg(gam10, xvar = "DistSeverity.sqrt", ylab = "Richness", xlab = "Distrubance Severity (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE) 
-visreg(gam10, xvar = "Soil.Disturbance.sqrt", ylab = "Richness", xlab = "Soil Disturbance (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE) 
-visreg(gam10, xvar = "Grazing.Pressure.sqrt", ylab = "Richness", xlab = "Grazing Pressure (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE) 
-visreg(gam10, xvar = "Mowing.Frequency.sqrt", ylab = "Richness", xlab = "Mowing Frequency (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE) 
+visreg(gam13, xvar = "Area", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "EIVEresM", ylab = "Richness", xlab = "M", gg = TRUE, partial=FALSE, rug = F,  scale="response") 
+visreg(gam13, xvar = "EIVEresN", ylab = "Richness", xlab = "N", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "EIVEresR", ylab = "Richness", xlab = "R", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "EIVEresL", ylab = "Richness", xlab = "L", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "EIVEresT", ylab = "Richness", xlab = "T", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "DistSeverity.sqrt", ylab = "Richness", xlab = "Distrubance Severity (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "Soil.Disturbance.sqrt", ylab = "Richness", xlab = "Soil Disturbance (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "Grazing.Pressure.sqrt", ylab = "Richness", xlab = "Grazing Pressure (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "Mowing.Frequency.sqrt", ylab = "Richness", xlab = "Mowing Frequency (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "hfp", ylab = "Richness", xlab = "hfp", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "chelsaP", ylab = "Richness", xlab = "P mean", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+
+plot(ggpredict(gam13, terms=c("EIVEresM")))
 ```
 
 
