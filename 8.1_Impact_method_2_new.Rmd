@@ -47,13 +47,9 @@ if(fast) {
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 
-# Make dataset for core authors
-#write.csv(eva, "downsampledEva.csv", row.names = F)
-#write.csv(fullPlotData, "downsampledPlotData.csv", row.names = F)
-
-eva<- read.csv("downsampledEva.csv", header=T)
-colnames(eva)[8]<- "Cover %"
-fullPlotData<- read.csv("downsampledPlotData.csv")
+#eva<- read.csv("downsampledEva.csv", header=T)
+#colnames(eva)[8]<- "Cover %"
+#fullPlotData<- read.csv("downsampledPlotData.csv")
 ```
 
 
@@ -61,11 +57,18 @@ fullPlotData<- read.csv("downsampledPlotData.csv")
 Load the neophyte definitions:
 ```{r, message=F}
 # Data on which species are neophytes
+native_intra_analysis=T
+if(native_intra_analysis){
+  species_country_status <- read_csv("eva2_country_status_new.csv")
+} else{
 species_country_status<- read_csv("species_country_status_new.csv")
+# or if we want to do it with intra seperately
+}
 
 # Assign these names to the eva list
 extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
 intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
+native_intra <- unique(species_country_status$species[species_country_status$Neophyte=="native_intra"])
 ```
 
 
@@ -135,7 +138,12 @@ plotsPerSpecies<-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind', .packages=c
   
   parallel::stopCluster(cl = my.cluster)
 } else {
+  if(!native_intra_analysis){
   plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv", show_col_types = FALSE)
+  plotsPerSpecies<- plotsPerSpecies[, -c(1)]
+  } else {
+  plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope_native_intra.csv", show_col_types = FALSE)
+  }
 }
 ```
 
@@ -253,7 +261,7 @@ base <- bam(model,family = quasipoisson, data = tmpFullPlotData,  method = 'fREM
   baseModel <- summary(base)
 
   # Make a dataframe to add the residuals to
-  res <- data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer(), Neophyte= character(), correlation= numeric())
+  res <- data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer(), Neophyte= character())
   
   res <- add_row(res, taxa = plantName, Estimate = baseModel$p.table[2,1], StdErr = baseModel$p.table[2,2], zValue = baseModel$p.table[2,3], pr = baseModel$p.table[2,4], numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), Neophyte= plantStatus)
   res
@@ -265,6 +273,7 @@ base <- bam(model,family = quasipoisson, data = tmpFullPlotData,  method = 'fREM
 ## 2.2 Impact
 Use foreach to speed up computations
 ```{r}
+if(fast){
 # prepare parallel
 n.cores<- parallel::detectCores()-6
 my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK" )
@@ -283,6 +292,24 @@ round(end-begin, 2)
 
 parallel::stopCluster(cl = my.cluster)
 #write.csv(x, 'Impact2_new10%.csv')
+}
+```
+
+```{r}
+if(!fast){
+
+allPlantsImpact <-  data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer(), Neophyte= character())
+
+i=1
+begin<- Sys.time()
+for(i in 1:length(allPlants$names)) {
+   res <- computePlantImpact(allPlants$names[i], allPlants$Neophyte[i])
+   allPlantsImpact <- rbind(allPlantsImpact, res)
+}
+end<- Sys.time()
+round(end-begin)
+}
+
 ```
 
 
@@ -298,6 +325,7 @@ TukeyHSD(result)
 
 # 3 PLOT
 ```{r}
+if(!native_intra_analysis){
 p<-ggplot(x, aes(x=Neophyte, y= Estimate, color=Neophyte))+geom_violin()+
   stat_summary(fun= "mean",
                geom = "point", aes(group= Neophyte), size=3)+
@@ -316,5 +344,27 @@ p<-ggplot(x, aes(x=Neophyte, y= Estimate, color=Neophyte))+geom_violin()+
 p
 
 #ggsave("Impact_base_model_new.jpeg", p, width = 25, height = 15, units = "cm")
+} else {
+p<-ggplot(x, aes(x=Neophyte, y= Estimate, color=Neophyte))+geom_violin()+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= Neophyte), size=3)+
+   scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#388E3C"), 
+                    name="Legend",
+                    breaks=c("native","native_intra", "intra","extra"),
+                    labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte"))+
+  theme_classic()+ 
+  theme(legend.position = "right")+theme(legend.text= element_text(size=12), legend.title =element_text(size=14))+ 
+  annotate("text", x = 1, y = mean(x$Estimate[x$Neophyte=="extra"], na.rm=T), label = "a", size = 3.5, vjust = -1, hjust = 0.5) +
+  annotate("text", x = 2, y = mean(x$Estimate[x$Neophyte=="intra"], na.rm=T), label = "a", size = 3.5, vjust = -1, hjust = 0.5)+
+  annotate("text", x = 3, y = mean(x$Estimate[x$Neophyte=="native"], na.rm=T), label = "a", size = 3.5, vjust = -1, hjust = 0.5)+
+  annotate("text", x = 4, y = mean(x$Estimate[x$Neophyte=="native_intra"], na.rm=T), label = "b", size = 3.5, vjust = -1, hjust = 0.5)+
+  annotate("text", x=1, y=0.8, label= paste("n=",length(x$Estimate[x$Neophyte=="extra"])), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=0.8, label= paste("n=",length(x$Estimate[x$Neophyte=="intra"])), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=0.8, label= paste("n=",length(x$Estimate[x$Neophyte=="native"])), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=4, y=0.8, label= paste("n=",length(x$Estimate[x$Neophyte=="native_intra"])), vjust = -0.5, hjust = 0.5, size=3.5)
+p
+
+#ggsave("Impact_base_model_new.jpeg", p, width = 25, height = 15, units = "cm") 
+}
 ```
 
