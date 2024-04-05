@@ -260,7 +260,7 @@ test<- test[,2]
 plotLocations<- cbind(plotLocations, test)
 
 # Show
-plotting=T
+plotting=F
 if(plotting){
   ggplot() +   
     geom_spatraster(data = chelsaT) + 
@@ -323,6 +323,9 @@ if(saving){
 
 ###### 4.3 P mean #####
 # Extract the values for chelsa P
+plotLocations <- st_as_sf(plotLocations, coords = c("Longitude","Latitude"), remove = FALSE)
+st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
+
 test<- terra::extract(chelsaP, plotLocations[,c(2:4)])
 test<- test[,2]
 # Combine 
@@ -385,7 +388,7 @@ saving= F
 if(saving){
   st_geometry(plotLocations) <- NULL
   fullPlotData <- read_csv("fullPlotData2.csv", show_col_types = FALSE)
-  colnames(plotLocations)[8]<- "chelsaP"
+  colnames(plotLocations)[9]<- "chelsaP"
   fullPlotData<- left_join(fullPlotData, plotLocations)
   write_csv(fullPlotData, "fullPlotData2.csv")
 }
