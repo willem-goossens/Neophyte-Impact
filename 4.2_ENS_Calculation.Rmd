@@ -1,0 +1,154 @@
+---
+title: "Species diversity and eveness"
+author: "Willem Goossens"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# 1 DATA
+## 1.1 Preparation
+We first clean the environment.
+```{r, echo=T}
+rm(list=ls())
+```
+
+Subsequently we load the required packages.
+```{r, warnings=F, message=F}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(hillR)
+library(arsenal)
+library(doParallel)
+library(FSA)
+library(vegan)
+library(stringr)
+library(janitor)
+```
+
+## 1.2 Data loaded
+First, we load data of EVA
+```{r, warnings=F, message=F}
+# Eva data for which plots are available and after correcting for incorrect or weird plot observations
+eva <- read_csv("fullPlotEva.csv")
+```
+
+Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it.
+```{r, warnings=F, message=F}
+# header like data, filtered and appended with EIVE and DIV
+fullPlotData <- read_csv("fullPlotData.csv")
+
+fast <- T
+if(fast) {
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
+  eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
+}
+```
+
+Load the neophyte definitions:
+```{r, message=F}
+# Data on which species are neophytes
+native_intra_analysis=T
+if(native_intra_analysis){
+  species_country_status <- read_csv("eva2_country_status_new.csv")
+} else{
+species_country_status<- read_csv("species_country_status_new.csv")
+# or if we want to do it with intra seperately
+}
+
+# Assign these names to the eva list
+extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
+intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
+native_intra <- unique(species_country_status$species[species_country_status$Neophyte=="native_intra"])
+```
+
+
+Remove species that are not defined or to be excluded
+```{r, warnings=F}
+remove<- read_csv("not_defined.csv", show_col_types = FALSE)
+remove<- as.vector(unlist(remove))
+eva<- eva[!(eva$species %in% remove),]
+```
+
+Assign classification to species
+```{r}
+# Only observation ID and Region
+fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
+# Right join to keep only species present in fullplot (otherwise a lot of NAs)
+eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
+# Join eva and classification
+eva_country_neophyte<- left_join(eva, species_country_status, by= c("Region"= "Region", "species"= "species"))
+eva<- eva_country_neophyte
+# Look at how much from every type are present
+x<- table(eva_country_neophyte$Neophyte)
+```
+
+
+```{r}
+# reduce size eva
+eva<- eva[,c(1, 10, 8, 7)]
+# change name
+colnames(eva)[3]<- "cover"
+
+# check data layer
+eva$Layer <- as.numeric(eva$Layer)
+#eva<- filter(eva, Layer == 0 | (Layer >=4 ) )
+eva<- eva[,-4]
+
+# make vegetation dataframe
+matrix<- pivot_wider(eva, names_from= c("species"),
+            values_from =("cover" ), values_fill = 0, values_fn = sum)
+# remove the plot observation ID
+x<- matrix[, -1]
+# create Hill numbers
+y<- tsallis(x, hill=TRUE, scales=c(0,1,2))
+# bind met plot ID
+x<- cbind(matrix$PlotObservationID, y)
+
+# varies --> some replicates in original dataset so added as extra species which is not true
+all.equal(x[,2], fullPlotData$numberOfVascularPlantSpecies)
+```
+
+
+Additional check species names
+```{r}
+y<- unique(eva$species)
+
+split_after_second_word <- function(text) {
+  words <- str_split(text, "\\s+")[[1]]  # Split the text into words
+  if (length(words) > 2) {
+    new_text <- paste(words[1:2], collapse = " ")  # Combine the first two words
+    remaining_text <- paste(words[3:length(words)], collapse = " ")  # Combine the remaining words
+    return(c(text,new_text, words[2], remaining_text, words[4]))  # Return both parts
+  } else {
+    return(c(text,text,words[2],NA, NA))  # If less than 3 words, return the original text and an empty string
+  }
+}
+
+split_text <- t(sapply(y, split_after_second_word))
+
+# Convert the result to a dataframe
+new_df <- as.data.frame(split_text)
+
+# get duplicates of the species name without the subspecies
+new_df<- new_df |> get_dupes(V2)
+
+new_df[is.na(new_df)] <- "NA"
+
+y<- unique(new_df$V2)
+i<- y[1]
+
+test<- new_df[-c(1:length(new_df$V2)),]
+for(i in y){
+  tmp<- new_df[new_df$V2==i,]
+  x<- tmp[tmp$V4=="NA",]
+  for(j in 1:length(tmp$V2)){
+    tmp$V1[tmp$V4=="NA"]<- ifelse(x$V3==tmp$V5[j], tmp$V1[j], tmp$V2[j])
+    tmp$V4[tmp$V4=="NA"]<- ifelse(x$V3==tmp$V5[j], tmp$V4[j], "NA")
+  }
+  test<- rbind(test, tmp)
+}
+
+```
+
