@@ -25,13 +25,14 @@ library(modEvA)
 library(doParallel)
 library(arsenal)
 library(pracma)
+library(vegdata)
 ```
 
 
 ## 1.2 Eva Data
 We load the data
 ```{r , message=FALSE, warning=FALSE}
-fast <- F
+fast <- T
 if(fast) {
   eva <- read_delim("../EVA Data/onePromilleEva.csv", "\t")
 } else {
@@ -88,8 +89,18 @@ eva$species[is.na(eva$species)] <- eva$`Matched concept`[is.na(eva$species)]
 We only keep vascular plants and remove the columns in which this data is designated.
 ```{r}
 eva <- eva[eva$`Taxon group` == "Vascular plant",!names(eva) %in% c("Taxon group", "Taxon group ID")]
+
+x<- (eva |> group_by(PlotObservationID) |> summarise(s= duplicated(species)))
+which((x$s))
+eva[439:450,]
+unique(eva$Layer)
+hist(eva$Layer, breaks= c(0:9))
+sum(eva$Layer=="6")
 ```
 
+```{r}
+x<- as.data.frame(sort(unique(eva$species)))
+```
 
 
 ## 1.3 Header Data
