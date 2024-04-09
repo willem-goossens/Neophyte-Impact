@@ -177,3 +177,50 @@ We store the results in a new file
 #write_csv(taxaTaxonGroupAssignments, "taxa_taxon_group_assignments.csv")
 ```
 
+
+
+# 4 MONOSPECIFIC 
+```{r}
+y<- unique(eva$species)
+
+split_after_second_word <- function(text) {
+  words <- str_split(text, "\\s+")[[1]]  # Split the text into words
+  if (length(words) > 2) {
+    new_text <- paste(words[1:2], collapse = " ")  # Combine the first two words
+    remaining_text <- paste(words[3:length(words)], collapse = " ")  # Combine the remaining words
+    return(c(text,new_text, words[2], remaining_text, words[4]))  # Return both parts
+  } else {
+    return(c(text,text,words[2],NA, NA))  # If less than 3 words, return the original text and an empty string
+  }
+}
+
+split_text <- t(sapply(y, split_after_second_word))
+
+# Convert the result to a dataframe
+new_df <- as.data.frame(split_text)
+
+# get duplicates of the species name without the subspecies
+new_df<- new_df |> get_dupes(V2)
+
+new_df[is.na(new_df)] <- "NA"
+
+y<- unique(new_df$V2)
+i<- y[1]
+
+test<- new_df[-c(1:length(new_df$V2)),]
+for(i in y){
+  tmp<- new_df[new_df$V2==i,]
+  x<- tmp[tmp$V4=="NA",]
+  for(j in 1:length(tmp$V2)){
+    tmp$V1[tmp$V4=="NA"]<- ifelse(x$V3==tmp$V5[j], tmp$V1[j], tmp$V2[j])
+    tmp$V4[tmp$V4=="NA"]<- ifelse(x$V3==tmp$V5[j], tmp$V4[j], "NA")
+  }
+  test<- rbind(test, tmp)
+}
+
+
+```
+
+
+```
+
