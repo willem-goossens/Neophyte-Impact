@@ -38,11 +38,11 @@ eva <- read_csv("fullPlotEva.csv",show_col_types = FALSE)
 
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it:
 ```{r}
-fullPlotData <- read_csv("fullPlotData.csv",show_col_types = FALSE)
+fullPlotData <- read_csv("fullPlotData2.csv",show_col_types = FALSE)
 
-fast <- TRUE
+fast <- T
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.50,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 
@@ -266,6 +266,9 @@ summary(fullPlotData$RR)
 ## 2.4 Analysis
 Function calculating impact and summarizing this per cover class. In the original work, we divided the cover classes in way larger classes, but following our new species selection based on a minimum number of occurrences this is not necessary
 ```{r}
+# currently we are still assessing the data based on every layer, maybe it is useful to omit the alien species dataframe
+# eva<- filter(eva, Layer == 0 | (Layer >=4 ) )
+
 # Get Eva with plot, species and cover
 reducedEva <- eva[,c("PlotObservationID", "species", "Cover %", "Neophyte")]
 
