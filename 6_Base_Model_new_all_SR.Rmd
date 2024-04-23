@@ -41,11 +41,12 @@ if(fast) {
 }
 ```
 
+
 ## 1.2 Correlations
 Checking for correlation among predictor variables:
 ```{r}
 # take correlation omitting the INF values in the log disturbances
-correlation <- cor(NaRV.omit(fullPlotData[,c(9,11:50)]))
+correlation <- cor(NaRV.omit(fullPlotData[,c(9,11:53)]))
 # set all values to 0 which are not highly correlated
 correlation[correlation < 0.7 & correlation> -0.7] <- 0
 correlation
@@ -58,8 +59,8 @@ The following variables are all highly correlated: DistFrequency and EIVEresL. W
 
 Check assumptions quasipoisson
 ```{r}
-mean(fullPlotData$numberOfVascularPlantSpecies)
-var(fullPlotData$numberOfVascularPlantSpecies)
+mean(fullPlotData$ENS0)
+var(fullPlotData$ENS0)
 ```
 
 
@@ -68,7 +69,7 @@ var(fullPlotData$numberOfVascularPlantSpecies)
 ## 2.1 Distribution
 We chose to include light instead of dist frequency
 ```{r}
-model<- (numberOfVascularPlantSpecies ~ log(Area) + 
+model<- (ENS0 ~ log(Area) + 
                     EIVEresM.sqrt + I(EIVEresM.sqrt^2) + 
                     EIVEresN.sqrt + I(EIVEresN.sqrt^2) + 
                     EIVEresR.sqrt + I(EIVEresR.sqrt^2) + 
@@ -103,7 +104,7 @@ dsquaredGlm2
 
 ## 2.2 Method
 ```{r}
-model<- (numberOfVascularPlantSpecies ~ 
+model<- (ENS0 ~ 
               log(Area) + 
               s(EIVEresM.sqrt, bs = 'tp') +
               s(EIVEresN.sqrt, bs = 'tp') +
@@ -124,7 +125,7 @@ summary(gam1)
 AIC(gam0)
 
 # GAM0 has a considerably higher Dsquared
-dsquaredGam0 <- Dsquared(obs = fullPlotData$numberOfVascularPlantSpecies, pred = fitted(gam0), family = "poisson")
+dsquaredGam0 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam0), family = "poisson")
 dsquaredGam0
 ```
 
@@ -134,7 +135,7 @@ dsquaredGam0
 ## 3.1 Database
 We add database (random effect) and longitude and latitude as smoothers
 ```{r}
-model<- numberOfVascularPlantSpecies ~ 
+model<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM.sqrt, bs = 'tp') +
               s(EIVEresN.sqrt, bs = 'tp') +
@@ -147,7 +148,7 @@ model<- numberOfVascularPlantSpecies ~
               s(Mowing.Frequency, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model2<- numberOfVascularPlantSpecies ~ 
+model2<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM.sqrt, bs = 'tp') +
               s(EIVEresN.sqrt, bs = 'tp') +
@@ -167,7 +168,7 @@ summary(gam3)
 #summary(gam4)
 
 # GAM3 has a considerably higher Dsquared
-dsquaredGam3 <- Dsquared(obs = fullPlotData$numberOfVascularPlantSpecies, pred = fitted(gam3), family = "poisson")
+dsquaredGam3 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam3), family = "poisson")
 dsquaredGam3
 
 # Incorporating the database considerably increases the Dsquared
@@ -177,7 +178,7 @@ dsquaredGam3
 
 ## 3.2 Weight EIVEs
 ```{r}
-model1<- numberOfVascularPlantSpecies ~ 
+model1<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM.nw, bs = 'tp') +
               s(EIVEresN.nw, bs = 'tp') +
@@ -191,7 +192,7 @@ model1<- numberOfVascularPlantSpecies ~
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
 
-model2<- numberOfVascularPlantSpecies ~ 
+model2<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM.cnw, bs = 'tp') +
               s(EIVEresN.cnw, bs = 'tp') +
@@ -204,7 +205,7 @@ model2<- numberOfVascularPlantSpecies ~
               s(Mowing.Frequency, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model3<- numberOfVascularPlantSpecies ~ 
+model3<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -232,18 +233,18 @@ summary(gam6)
 AIC(gam3,gam4,gam5,gam6)
 
 # DSQUARED is lowest for GAM6
-dsquaredGam4 <- Dsquared(obs = fullPlotData$numberOfVascularPlantSpecies, pred = fitted(gam4), family = "poisson")
+dsquaredGam4 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam4), family = "poisson")
 dsquaredGam4
-dsquaredGam5 <- Dsquared(obs = fullPlotData$numberOfVascularPlantSpecies, pred = fitted(gam5), family = "poisson")
+dsquaredGam5 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam5), family = "poisson")
 dsquaredGam5
-dsquaredGam6 <- Dsquared(obs = fullPlotData$numberOfVascularPlantSpecies, pred = fitted(gam6), family = "poisson")
+dsquaredGam6 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam6), family = "poisson")
 dsquaredGam6
 ```
 
 
 ## 3.3 Weight DIVs
 ```{r}
-model1<- numberOfVascularPlantSpecies ~ 
+model1<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -256,7 +257,7 @@ model1<- numberOfVascularPlantSpecies ~
               s(Mowing.Frequency, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model2<- numberOfVascularPlantSpecies ~ 
+model2<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -269,7 +270,7 @@ model2<- numberOfVascularPlantSpecies ~
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model3<- numberOfVascularPlantSpecies ~ 
+model3<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -301,7 +302,7 @@ plot(gam8)
 
 ## 3.4 Area
 ```{r}
-model<-  numberOfVascularPlantSpecies ~ 
+model<-  ENS0 ~ 
               poly(log(Area),2) + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -314,7 +315,7 @@ model<-  numberOfVascularPlantSpecies ~
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model2<-  numberOfVascularPlantSpecies ~ 
+model2<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -327,7 +328,7 @@ model2<-  numberOfVascularPlantSpecies ~
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model3<-  numberOfVascularPlantSpecies ~ 
+model3<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -352,7 +353,7 @@ AIC(gam11, gam9, gam10)
 
 ## 3.5 HFP and Climate
 ```{r}
-model2<-  numberOfVascularPlantSpecies ~ 
+model2<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -365,7 +366,7 @@ model2<-  numberOfVascularPlantSpecies ~
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model3<-  numberOfVascularPlantSpecies ~ 
+model3<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -380,7 +381,7 @@ model3<-  numberOfVascularPlantSpecies ~
               s(chelsaP, bs="tp")+
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model4<-  numberOfVascularPlantSpecies ~ 
+model4<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -394,7 +395,7 @@ model4<-  numberOfVascularPlantSpecies ~
               s(hfp, bs="tp")+
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model5<-  numberOfVascularPlantSpecies ~ 
+model5<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -416,13 +417,15 @@ gam14 <- bam(model4,family = poisson(link = log), data = fullPlotData,  method =
 gam15 <- bam(model5,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 summary(gam14)
 summary(gam15)
+AIC(gam1,gam3,gam4,gam5,gam6,gam7,gam8,gam9,gam10,gam11,gam12, gam13,gam14,gam15)
+
 ```
 
 
 ## 3.6 Final check
 ```{r}
-gam10 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam11 <- bam(model2,family = quasipoisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam10 <- bam(model3,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam11 <- bam(model3,family = quasipoisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 summary(gam10)
 plot(gam10)
