@@ -32,13 +32,14 @@ library(vegdata)
 ## 1.2 Eva Data
 We load the data
 ```{r , message=FALSE, warning=FALSE}
-fast <- T
+fast <- F
 if(fast) {
   eva <- read_delim("../EVA Data/onePromilleEva.csv", "\t")
 } else {
   eva <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_species.csv", "\t")
 }
 ```
+
 
 We remove the rows without observations.
 ```{r}
@@ -89,17 +90,22 @@ eva$species[is.na(eva$species)] <- eva$`Matched concept`[is.na(eva$species)]
 We only keep vascular plants and remove the columns in which this data is designated.
 ```{r}
 eva <- eva[eva$`Taxon group` == "Vascular plant",!names(eva) %in% c("Taxon group", "Taxon group ID")]
-
-x<- (eva |> group_by(PlotObservationID) |> summarise(s= duplicated(species)))
-which((x$s))
-eva[439:450,]
-unique(eva$Layer)
-hist(eva$Layer, breaks= c(0:9))
-sum(eva$Layer=="6")
 ```
 
+
 ```{r}
-x<- as.data.frame(sort(unique(eva$species)))
+# sum all species over layers if present in multiple layers
+Layersum=F
+if(Layersum){
+  eva <- eva |> group_by(PlotObservationID, Taxonomy, species) |> summarise(`Cover %`= sum(`Cover %`))
+}
+
+
+# remove species with 0 cover
+coverzero=F
+if(coverzero){
+  eva<- eva[!eva$`Cover %`=="0", ]
+}
 ```
 
 
@@ -173,6 +179,7 @@ eva <- eva[eva$PlotObservationID %in% plotsInEvaAndHeader,]
 header <- header[header$PlotObservationID %in% plotsInEvaAndHeader,]
 ```
 After filtering `r length(header$PlotObservationID)` plots remain.
+
 
 # 2 INDICATORS
 ## 2.1 Eive
@@ -335,7 +342,13 @@ cNWwmean <- function(indicatorValue, cover, nicheWidth) {
   indicators <- indicatorValue[!is.na(indicatorValue)]
   weighted.mean(indicators, weights)
 }
+```
+
+
+Run aggregation
+```{r}
 begin<- Sys.time()
+
 aggregatedEva <- eva |> 
   group_by(PlotObservationID) |> 
   summarise(
@@ -402,16 +415,14 @@ aggregatedEva <- eva |>
     )
 end<- Sys.time()
 round(end-begin)
-
-#write_csv(aggregatedEva, "aggregatedEva.csv")
 ```
 
 
 Join the result with the header data:
 ```{r}
-aggregatedEva2<-read.csv("aggregatedEva.csv")
+#aggregatedEva2<-read.csv("aggregatedEva.csv")
 fullPlotData<- subset(header, select= c(PlotObservationID, Country,Longitude, Latitude, Region, Dataset, `Relevé area (m²)`,`Date of recording`))
-fullPlotData <- full_join(fullPlotData, aggregatedEva2, by = "PlotObservationID")
+fullPlotData <- full_join(fullPlotData, aggregatedEva, by = "PlotObservationID")
 names(fullPlotData)[names(fullPlotData) == 'Relevé area (m²)'] <- 'Area'
 names(fullPlotData)[names(fullPlotData) == 'Date of recording'] <- 'Date'
 ```
@@ -427,6 +438,7 @@ highDiversityPlots <- fullPlotData[fullPlotData$numberOfVascularPlantSpecies > 1
 # Jurgen plots suspiciously high
 highDiversityPlotsToBeRemoved <- c(842839, 843192, 842921) # plots published by Juergen which are for sure incorrect
 
+highDiversityPlots$Dataset<- as.character(highDiversityPlots$Dataset)
 # Look at datasets containing the plots with SR> 100
 highDiversityDatasets <- unique(highDiversityPlots$Dataset)
 
@@ -444,7 +456,7 @@ for(dataset in highDiversityDatasets) {
     highDiversityPlotsToBeRemoved <- append(highDiversityPlotsToBeRemoved, plotsToBeRemoved$PlotObservationID)
   }
 }
-
+highDiversityPlots[!highDiversityPlots$PlotObservationID %in% highDiversityPlotsToBeRemoved,]
 
 numberOfHighDiversityPlotsToBeRemoved <- length(highDiversityPlotsToBeRemoved)
 
@@ -455,7 +467,7 @@ fullPlotData <- fullPlotData[!(fullPlotData$PlotObservationID %in% highDiversity
 highDiversityPlots <- fullPlotData[fullPlotData$numberOfVascularPlantSpecies > 100,]
 # plot to have an idea how the SR is distributed
 # hist(fullPlotData$numberOfVascularPlantSpecies)
-#write_csv(highDiversityPlots, "highDiversityPlots.csv")
+# write_csv(highDiversityPlots, "highDiversityPlots.csv")
 ```
 
 `r numberOfHighDiversityPlotsToBeRemoved` of the plots were removed because they have suspiciously high, non unique richness in the same database or are known to be incorrect.
@@ -495,11 +507,23 @@ fullPlotData <- fullPlotData[!plotsForWhichNotAllIndicatorValuesWereEstimated,]
 
 ## 3.4 Filter date
 ```{r}
+fullPlotData$Date<- as.Date(fullPlotData$Date, format = "%d.%m.%Y")
 numberOfPlotsWithoutDate<-length(fullPlotData$PlotObservationID[is.na(fullPlotData$Date)])
 fullPlotData<- fullPlotData[!is.na(fullPlotData$Date),]
 ```
 
-
+```{r}
+test<- eva|> group_by(PlotObservationID) |> summarise(sum= sum(`Cover %`))
+test<- test[test$sum>1000,]
+fullPlotData<- read.csv("fullPlotData2.csv")
+fullPlot<- fullPlotData[, c("PlotObservationID","ENS0")]
+test<- left_join(test, fullPlot)
+test<- test[!is.na(test$ENS0),]
+test<- test[order(test$sum),]
+test<- test[143:293,]
+obs<- test$PlotObservationID
+test<- eva[eva$PlotObservationID %in% obs,]
+```
 
 Remove all from data
 ```{r}
@@ -651,11 +675,11 @@ Looking at different datasets from a similar region exhibits quite large differe
 # Make sure all plot data is in eva
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
-#write_csv(fullPlotData, "fullPlotData.csv")
+#write_csv(fullPlotData, "fullPlotData3.csv")
 
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
-#write_csv(eva, "fullPlotEva.csv")
+#write_csv(eva, "fullPlotEva3.csv")
 ```
 
 
