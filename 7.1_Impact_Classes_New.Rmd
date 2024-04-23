@@ -177,7 +177,7 @@ computeSpeciesCover("plant2", c("plant1", "plant2", "plant2"), c(1,2, 3))
 
 Run this (eval=T) if you want to use the second method (in which we want at least x observations in the lowest and highest cover class)
 ```{r, message=F}
-eval<-F
+eval<-T
 if (eval){
 # Prepare parallel
 parallel::detectCores()
