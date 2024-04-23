@@ -169,3 +169,5 @@ if(save){
 ```
 
 
+# 3 EVA
+As a result of this script, I got to know that there are some species duplications in our dataset that will probably
