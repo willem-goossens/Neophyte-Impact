@@ -87,24 +87,63 @@ eva$species[is.na(eva$species)] <- eva$`Matched concept`[is.na(eva$species)]
 # In file Irena some write 'exclude'
 ```
 
+
 We only keep vascular plants and remove the columns in which this data is designated.
 ```{r}
 eva <- eva[eva$`Taxon group` == "Vascular plant",!names(eva) %in% c("Taxon group", "Taxon group ID")]
 ```
 
 
+Here we decide on which layers to keep
 ```{r}
 # sum all species over layers if present in multiple layers
-Layersum=F
-if(Layersum){
-  eva <- eva |> group_by(PlotObservationID, Taxonomy, species) |> summarise(`Cover %`= sum(`Cover %`))
+numberOfRowsTreeLayer<- length(eva$Layer[eva$Layer %in% c(1:3)])
+
+Layerremove=F
+if(Layerremove){
+  numberOfRowsTreeLayer<- length(eva$Layer[eva$Layer %in% c(1:3)])
+  eva <- eva |> group_by(PlotObservationID, species) |> filter(Layer %in% c(0,4:9))
 }
 
+# Which rows contain duplicates
+numberOfRowsDuplicates<- sum((eva|> group_by(PlotObservationID)|> mutate(duplicated = duplicated(species)))$duplicated)
+Layersum=T
+if(Layersum){
+  eva <- eva |> group_by(PlotObservationID, species) |> mutate(`Cover %`= sum(`Cover %`))
+}
 
 # remove species with 0 cover
-coverzero=F
+numberOfZeroCover <- length(eva$PlotObservationID[eva$`Cover %`=="0"])
+# look at from which datasets these come --> "Belgium-forest" "Belgium-INBOVEG" "GrassVeg.DE" "Turkey NFVDT"--> wrong entering --> remove
+# unique(header$Dataset[header$PlotObservationID %in% (eva$PlotObservationID[eva$`Cover %`=="0"])])
+coverzero=T
 if(coverzero){
   eva<- eva[!eva$`Cover %`=="0", ]
+}
+```
+
+
+Compute total cover for each plot.
+```{r}
+totalCover <- 
+  eva %>% 
+  group_by(PlotObservationID) %>% 
+  summarise(totalCover = sum(`Cover %`))
+
+# Check distribution (we max on 2000, but total cover goes up to 25000)
+hist(totalCover$totalCover[totalCover$totalCover> 750 & totalCover$totalCover<2000 ])
+# We calculate the number of plots in which this occurs
+numberOfTooLargeCover<- length(totalCover$totalCover[totalCover$totalCover> 900])
+
+# We check the datasets --> many datasets have more than 900 (64 out of 320)
+# unique(header$Dataset[header$PlotObservationID %in% (totalCover$PlotObservationID[totalCover$totalCover> 900])])
+
+# We check the plots (only largest subset)
+eva[eva$PlotObservationID %in% totalCover$PlotObservationID[totalCover$totalCover> 20000],]
+
+maxcover=T
+if(maxcover){
+  eva<- eva[!eva$PlotObservationID %in% totalCover$PlotObservationID[totalCover$totalCover> 900],] 
 }
 ```
 
@@ -159,6 +198,7 @@ numberOfPlotsWithoutCoverInformation <- sum(plotsWithPresenceAbsenceOnly)
 allPlotsToBeRemoved <- plotsWithoutPlotSize | tooLargePlots | plotsWithoutLocation | plotsWithPresenceAbsenceOnly | plotsWithoutRegionAssignment
 totalNumberRemoved <- sum(allPlotsToBeRemoved)
 ```
+
 
 `r numberOfPlotsWithoutPlotSize` of the plots do not contain a size, `r numberOfTooLargePlots` were larger than 1000m² and therefore most likely no plots, `r numberOfPlotsWithoutLocation` of the plots do not have a location, `r numberOfPlotsWithoutRegionAssignment` cannot be assigned to one of the neophyte regions and `r numberOfPlotsWithoutCoverInformation` of the plots do not contain cover data. All these plots (`r totalNumberRemoved`) are removed:
 ```{r}
@@ -512,18 +552,6 @@ numberOfPlotsWithoutDate<-length(fullPlotData$PlotObservationID[is.na(fullPlotDa
 fullPlotData<- fullPlotData[!is.na(fullPlotData$Date),]
 ```
 
-```{r}
-test<- eva|> group_by(PlotObservationID) |> summarise(sum= sum(`Cover %`))
-test<- test[test$sum>1000,]
-fullPlotData<- read.csv("fullPlotData2.csv")
-fullPlot<- fullPlotData[, c("PlotObservationID","ENS0")]
-test<- left_join(test, fullPlot)
-test<- test[!is.na(test$ENS0),]
-test<- test[order(test$sum),]
-test<- test[143:293,]
-obs<- test$PlotObservationID
-test<- eva[eva$PlotObservationID %in% obs,]
-```
 
 Remove all from data
 ```{r}
@@ -657,8 +685,6 @@ plot(glm0)
 ```
 
 We can see that the residuals of this model are in a reasonable range and hence the model fits reasonably well to the data.
-
-
 ```{r}
 dataFromGermany <- fullPlotData[fullPlotData$Region == "Germany",]
 dataFromGermany$Dataset <- as.factor(as.character(dataFromGermany$Dataset))
