@@ -25,9 +25,9 @@ neophyte<- readxl::read_excel("../Neophyte-Impact/country_species-2024-01-30-IA-
 
 ###### 2.2 Eva and Header #####
 # Load and make smaller to conocate
-fullPlotEva <- read_csv("fullPlotEva.csv", show_col_types = FALSE)
+fullPlotEva <- read_csv("fullPlotEva3.csv", show_col_types = FALSE)
 eva2<- fullPlotEva[,c("PlotObservationID","species")]
-fullPlotData<- read_csv("fullPlotData.csv", show_col_types = FALSE)
+fullPlotData<- read_csv("fullPlotData3.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
 # Join eva and header (species per plot and plot info respectively)
@@ -148,7 +148,7 @@ eva_country_neophyte$Neophyte[eva_country_neophyte$species %in% arch]
 # Check number of intra and extra European species and all natives
 length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="extra"])) #807
 length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="intra"])) #883 (915 previously)
-length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])) #19327
+length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])) #19327 #19292 (after removing some additional plots)
 
 # Summarise again now only number and region in order to see how the data varies in European countries
 country_neophyte<- eva_country_neophyte |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
@@ -157,49 +157,82 @@ table(country_neophyte['Neophyte'])
 # Check whether some intra_EU species are native in other regions
 native_names<-unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])
 sum(native_names %in% intra_EU) #818 (before around 848)
+native_intra<- native_names[native_names %in% intra_EU]
 
+intra_analysis=T
+if(intra_analysis){
 # Here we make a new dataframe with those species that are intra in a region in europe as native_intra
 # to check whether the effect is just species dependent
 eva2<- eva_country_neophyte
 eva2$Neophyte[eva2$Neophyte=="native" & eva2$species %in% native_intra]<-"native_intra"
 length(unique(eva2$species[eva2$Neophyte=="extra"]))
 length(unique(eva2$species[eva2$Neophyte=="intra"]))
-length(unique(eva2$species[eva2$Neophyte=="native"])) # 19327-818 = 18509
+length(unique(eva2$species[eva2$Neophyte=="native"])) # 19327-818 = 18509 #18474+818 = 19292
 length(unique(eva2$species[eva2$Neophyte=="native_intra"]))
 
 # check whether the classification was successful for all species
 sum(unique(eva2$species[eva2$Neophyte=="native"]) %in% intra_EU)
 
+
+country_neophyte <- eva2 |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
+table(country_neophyte['Neophyte'])
+eva_country_neophyte<- eva2
+}
+
 ###### 3.3 native SR #####
 aggregatedEVA <- eva_country_neophyte |>  group_by(PlotObservationID, Neophyte) |>  summarise(numberOfVascularPlantSpecies = n())
 
 # Only native SR is relevant here (does not make sense to look at the influence of alien species on alien species)
-nativeSR <- aggregatedEVA[aggregatedEVA$Neophyte=="native",]
-nativeSR <- subset(nativeSR, select= -c(Neophyte))
-names(nativeSR)[names(nativeSR)=="numberOfVascularPlantSpecies"]<- "nativeSR"
+nativeSpR <- aggregatedEVA[aggregatedEVA$Neophyte=="native" | aggregatedEVA$Neophyte=="native_intra" ,]
+nativeSpR <- subset(nativeSpR, select= -c(Neophyte))
+names(nativeSpR)[names(nativeSpR)=="numberOfVascularPlantSpecies"]<- "nativeSR"
 
-# Are there some plots that do not have any native SR
-fullPlotData[!(fullPlotData$PlotObservationID %in% nativeSR$PlotObservationID),]
+# Are there some plots that do not have any native SR (544)
+fullPlotData[!(fullPlotData$PlotObservationID %in% nativeSpR$PlotObservationID),]
 
 # Count number of plots with alien species
 plots_with_intra <- sum(aggregatedEVA$Neophyte=="intra")
 plots_with_extra <- sum(aggregatedEVA$Neophyte=="extra")
+plots_with_native<-  sum(aggregatedEVA$Neophyte=="native")
 
+nativeSR_calculation=F
+if(nativeSR_calculation){
 # Join native SR with data
-fullPlotData<- left_join(fullPlotData, nativeSR, by="PlotObservationID")
+fullPlotData<- left_join(fullPlotData, nativeSpR, by="PlotObservationID")
 fullPlotData <- fullPlotData |> relocate(nativeSR, .after = numberOfVascularPlantSpecies)
 fullPlotData$nativeSR[is.na(fullPlotData$nativeSR)] <- 0
+}
+
+# Check if overview is correct --> difference 19
+sum(fullPlotData$numberOfVascularPlantSpecies-fullPlotData$nativeSR)
+sum(eva_country_neophyte$Neophyte=="extra")+sum(eva_country_neophyte$Neophyte=="intra")
+# check with natives as well
+sum(fullPlotData$numberOfVascularPlantSpecies)
+sum(eva_country_neophyte$Neophyte=="native")+ sum(eva_country_neophyte$Neophyte=="extra"| eva_country_neophyte$Neophyte=="intra")
+# there is a variance in number of intra and extra species vs the total number of species --> but no NA values
+any(is.na(eva_country_neophyte$Neophyte)) 
+# difference is also present in difference eva_country and eva_country_neophyte --> check!
+# difference is caused by the removal of species with the exclude and not defined part --> check where it is present and reduce with 1
+remove<- c(not_defined, exclude)
+if(nativeSR_calculation){
+remove_observations <- eva_country$PlotObservationID[eva_country$species %in% remove]
+fullPlotData$numberOfVascularPlantSpecies[fullPlotData$PlotObservationID %in% remove_observations]<-
+  fullPlotData$numberOfVascularPlantSpecies[fullPlotData$PlotObservationID %in% remove_observations]-1
+}
+# checked --> correct
 
 ###### 3.4 Save #####
-species_country_status<- eva_country_neophyte |> group_by(Region, species, Neophyte) |> summarise(n=n())
-species_country_status<- species_country_status[,-4]
-#write.csv(species_country_status,"species_country_status_new.csv", row.names = FALSE)
-
+if(intra_analysis){
 eva2_country_status<- eva2 |> group_by(Region, species, Neophyte) |> summarise(n=n())
 eva2_country_status<- eva2_country_status[,-4]
 #write.csv(eva2_country_status,"eva2_country_status_new.csv", row.names = FALSE)
+} else {
+  species_country_status<- eva_country_neophyte |> group_by(Region, species, Neophyte) |> summarise(n=n())
+  species_country_status<- species_country_status[,-4]
+  #write.csv(species_country_status,"species_country_status_new.csv", row.names = FALSE)
+}
 
-#write.csv(fullPlotData, "fullPlotData.csv", row.names=F)
+#write.csv(fullPlotData, "fullPlotData3.csv", row.names=F)
 
 remove<- c(not_defined, exclude)
 #write.csv(remove, "not_defined.csv", row.names=FALSE)
@@ -227,7 +260,7 @@ extra_EU_plot<- ggplot()+
 #ggsave(extra_EU_plot, file="extra_EU.png", bg="white")
 
 # We extract the data for only the intra EU species and map this
-country_intra<- country_neophyte[country_neophyte$Neophyte=="intra",]
+country_intra<- country_neophyte2[country_neophyte$Neophyte=="intra",]
 Europe_in<- left_join(medRegions,country_intra,  by= c("Region"="Region"))
 intra_EU_plot<- ggplot()+
   geom_sf(data= Europe_in, aes(fill= n))+
@@ -246,6 +279,16 @@ native_EU<-ggplot()+
   theme_minimal()
 #ggsave(native_EU, file="native_EU.png", bg="white")
 
+if(intra_analysis){
+  country_native_intra<- country_neophyte[country_neophyte$Neophyte=="native_intra",]
+  Europe_nt_in<- left_join(medRegions,country_native_intra,  by= c("Region"="Region"))
+  native_intra_EU<-ggplot()+
+    geom_sf(data= Europe_nt_in, aes(fill= n))+
+    scale_fill_viridis_c(option = "magma",begin = 0.1)+
+    labs(title = "Native Distribution in European Regions alien elsewhere") +
+    theme_minimal()
+  #ggsave(native_intra_EU, file="native_intra_EU.png", bg="white")
+}
 
 ###### 4.2 relative #####
 # Group by region and calculate the relative proportions of all species
@@ -285,6 +328,18 @@ native_EU_rel<- ggplot()+
   labs(title = "Native Distribution in European Regions") +
   theme_minimal()
 #ggsave(native_EU_rel, file="native_EU_rel.png", bg="white")
+
+if(intra_analysis){
+  country_native_intra_rel<- country_neophyte_relative[country_neophyte_relative$Neophyte=="native_intra",]
+  Europe_nt_in<- left_join(medRegions,country_native_intra_rel,  by= c("Region"="Region"))
+  native_intra_EU_rel<-ggplot()+
+    geom_sf(data= Europe_nt_in, aes(fill= relative_proportion))+
+    scale_fill_viridis_c(option = "magma",begin = 0.1)+
+    labs(title = "Native Distribution in European Regions alien elsewhere") +
+    theme_minimal()
+  #ggsave(native_intra_EU_rel, file="native_intra_EU_rel.png", bg="white")
+}
+
 
 #### 5 CHECK GLONAF ####
 ###### 5.1 Regions and List #####
