@@ -31,7 +31,7 @@ library(ggeffects)
 ## 1.1 Load
 ```{r, message=F}
 # Data from header with the EIVE and DIV data
-fullPlotData <- read_csv("fullPlotData2.csv")
+fullPlotData <- read_csv("fullPlotData_cover_all_layer_cleaned.csv")
 fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
 
 fullPlotData<- fullPlotData[!is.na(fullPlotData$Date),]
@@ -46,7 +46,7 @@ if(fast) {
 Checking for correlation among predictor variables:
 ```{r}
 # take correlation omitting the INF values in the log disturbances
-correlation <- cor(NaRV.omit(fullPlotData[,c(9,11:53)]))
+correlation <- cor(NaRV.omit(fullPlotData[,c(9,11:58)]))
 # set all values to 0 which are not highly correlated
 correlation[correlation < 0.7 & correlation> -0.7] <- 0
 correlation
@@ -54,6 +54,7 @@ correlation
 # Interesting (but logical) --> EIVEresL correlated with disturbance frequency --> higher disturbance is species living more in sunlight
 # Correlations between same indicator different calculations and weighting methods --> likely
 ```
+
 
 The following variables are all highly correlated: DistFrequency and EIVEresL. We therefore decided to only keep the overall disturbance severity and frequency in the model and remove the other correlated variables. DistFrequencyHerblayer and DistSeveretityHerblayer are only estimated for a subset of the habitats and hence should not be used for all habitats as we are doing. This is why we also removed this variable from the predictors.
 
@@ -409,14 +410,32 @@ model5<-  ENS0 ~
               s(chelsaP, bs="tp")+
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
+model6<-  ENS0 ~ 
+              s(log(Area),bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Soil.Disturbance.sqrt, bs = 'tp')+
+              s(Grazing.Pressure.sqrt, bs = 'tp')+
+              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(hfp, bs="tp")+
+              s(chelsaP, bs="tp")+
+              s(elev, bs='tp')+
+              s(Latitude, Longitude, bs = 'tp') +
+              s(Dataset, bs = 're')
 gam12 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 gam13 <- bam(model3,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-summary(gam12)
-summary(gam13)
 gam14 <- bam(model4,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 gam15 <- bam(model5,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam16 <- bam(model6,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+summary(gam12)
+summary(gam13)
 summary(gam14)
 summary(gam15)
+summary(gam16)
 AIC(gam1,gam3,gam4,gam5,gam6,gam7,gam8,gam9,gam10,gam11,gam12, gam13,gam14,gam15)
 
 ```
@@ -424,8 +443,8 @@ AIC(gam1,gam3,gam4,gam5,gam6,gam7,gam8,gam9,gam10,gam11,gam12, gam13,gam14,gam15
 
 ## 3.6 Final check
 ```{r}
-gam10 <- bam(model3,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam11 <- bam(model3,family = quasipoisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam10 <- bam(model6,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam11 <- bam(model6,family = quasipoisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 summary(gam10)
 plot(gam10)
@@ -448,7 +467,7 @@ visreg(gam13, xvar = "Grazing.Pressure.sqrt", ylab = "Richness", xlab = "Grazing
 visreg(gam13, xvar = "Mowing.Frequency.sqrt", ylab = "Richness", xlab = "Mowing Frequency (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
 visreg(gam13, xvar = "hfp", ylab = "Richness", xlab = "hfp", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
 visreg(gam13, xvar = "chelsaP", ylab = "Richness", xlab = "P mean", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-
+visreg(gam11, xvar = "elev", ylab = "Richness", xlab = "elev", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
 plot(ggpredict(gam13, terms=c("EIVEresM")))
 ```
 
