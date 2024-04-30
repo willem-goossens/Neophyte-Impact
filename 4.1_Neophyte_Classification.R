@@ -25,9 +25,9 @@ neophyte<- readxl::read_excel("../Neophyte-Impact/country_species-2024-01-30-IA-
 
 ###### 2.2 Eva and Header #####
 # Load and make smaller to conocate
-fullPlotEva <- read_csv("fullPlotEva3.csv", show_col_types = FALSE)
+fullPlotEva <- read_csv("fullPlotEva_cover_all_layer.csv", show_col_types = FALSE)
 eva2<- fullPlotEva[,c("PlotObservationID","species")]
-fullPlotData<- read_csv("fullPlotData3.csv", show_col_types = FALSE)
+fullPlotData<- read_csv("fullPlotData_cover_all_layer.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
 # Join eva and header (species per plot and plot info respectively)
@@ -159,7 +159,7 @@ native_names<-unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=
 sum(native_names %in% intra_EU) #818 (before around 848)
 native_intra<- native_names[native_names %in% intra_EU]
 
-intra_analysis=T
+intra_analysis=F
 if(intra_analysis){
 # Here we make a new dataframe with those species that are intra in a region in europe as native_intra
 # to check whether the effect is just species dependent
@@ -232,7 +232,7 @@ eva2_country_status<- eva2_country_status[,-4]
   #write.csv(species_country_status,"species_country_status_new.csv", row.names = FALSE)
 }
 
-#write.csv(fullPlotData, "fullPlotData3.csv", row.names=F)
+#write.csv(fullPlotData, "fullPlotData_cover_all_layer.csv", row.names=F)
 
 remove<- c(not_defined, exclude)
 #write.csv(remove, "not_defined.csv", row.names=FALSE)
