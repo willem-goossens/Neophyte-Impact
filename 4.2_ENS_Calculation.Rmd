@@ -31,13 +31,13 @@ library(janitor)
 Then, we load data of EVA
 ```{r, warnings=F, message=F}
 # Eva data for which plots are available and after correcting for incorrect or weird plot observations
-eva <- read_csv("fullPlotEva.csv")
+eva <- read_csv("fullPlotEva_cover_all_layer.csv")
 ```
 
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it.
 ```{r, warnings=F, message=F}
 # header like data, filtered and appended with EIVE and DIV
-fullPlotData <- read_csv("fullPlotData2.csv")
+fullPlotData <- read_csv("fullPlotData_cover_all_layer.csv")
 
 fast <- F
 if(fast) {
@@ -49,7 +49,7 @@ if(fast) {
 Load the neophyte definitions:
 ```{r, message=F}
 # Data on which species are neophytes
-native_intra_analysis=T
+native_intra_analysis=F
 if(native_intra_analysis){
   species_country_status <- read_csv("eva2_country_status_new.csv")
 } else{
@@ -81,7 +81,10 @@ eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID")
 eva_country_neophyte<- left_join(eva, species_country_status, by= c("Region"= "Region", "species"= "species"))
 eva<- eva_country_neophyte
 # Look at how much from every type are present
-x<- table(eva_country_neophyte$Neophyte)
+tt<- as.data.frame(table(eva_country_neophyte$Neophyte))
+tt
+
+rm(fullPlot2, eva_country_neophyte, remove)
 ```
 
 
@@ -89,15 +92,16 @@ x<- table(eva_country_neophyte$Neophyte)
 ## 2.1 Prepare
 ```{r}
 # reduce size eva
-eva<- eva[,c(1, 10, 8, 7)]
+eva<- eva[,c(1:3)]
 # change name
 colnames(eva)[3]<- "cover"
 
 # check data layer
-eva$Layer <- as.numeric(eva$Layer)
+# eva$Layer <- as.numeric(eva$Layer)
 # We now have some trees, which can possibly affect our calculations (I will have to check the effect for the data )
 # eva<- filter(eva, Layer == 0 | (Layer >=4 ) )
-eva<- eva[,-4]
+# eva<- eva[,-4]
+
 ```
 
 
@@ -119,8 +123,8 @@ x<- foreach(i= 1:100, .combine = "rbind", .packages = c("dplyr","mgcv","tidyr","
   # create the length of the to be calculated data chunk
   j <- (length(plotID)/100)
   # create begin and end values for the plot observation ID
-  begin<- floor((i-1)*j+1)
-  end<- floor(i*j)
+  begin<- round((i-1)*j+1)
+  end<- round(i*j)
   # make the vegetation dataframe for this chunk
   matrix<- pivot_wider(eva[eva$PlotObservationID %in% plotID[begin:end],], names_from= c("species"),
             values_from =("cover" ), values_fill = 0, values_fn = sum)
@@ -149,22 +153,20 @@ stopCluster(my.cluster)
 ```{r}
 # check the values --> some difference --> related to summing different layers 
 all.equal(x[,2], fullPlotData$numberOfVascularPlantSpecies)
+(x[x$ENS0 != fullPlotData$numberOfVascularPlantSpecies,])
+fullPlotData[fullPlotData$numberOfVascularPlantSpecies != x$ENS0,]
 
 # plot
 apply(x[, 2:4], MARGIN=2, FUN = hist)
-hist(x[,4])
-
-eva[eva$PlotObservationID==751013,]
-fullPlotData[fullPlotData$PlotObservationID==751013,]
 ```
 
 
 ## 2.4 Save
 ```{r}
-save=F
+save=T
 if(save){
   fullPlotData<- left_join(fullPlotData, x)
-  write_csv(fullPlotData, "fullPlotData2.csv")
+  write_csv(fullPlotData, "fullPlotData_cover_all_layer.csv")
 }
 ```
 
