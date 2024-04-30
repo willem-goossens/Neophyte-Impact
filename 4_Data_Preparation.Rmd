@@ -109,7 +109,7 @@ if(Layerremove){
 numberOfRowsDuplicates<- sum((eva|> group_by(PlotObservationID)|> mutate(duplicated = duplicated(species)))$duplicated)
 Layersum=T
 if(Layersum){
-  eva <- eva |> group_by(PlotObservationID, species) |> mutate(`Cover %`= sum(`Cover %`))
+  eva <- eva |> group_by(PlotObservationID, species) |> summarise(`Cover %`= sum(`Cover %`))
 }
 
 # remove species with 0 cover
@@ -701,11 +701,11 @@ Looking at different datasets from a similar region exhibits quite large differe
 # Make sure all plot data is in eva
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
-#write_csv(fullPlotData, "fullPlotData3.csv")
+#write_csv(fullPlotData, "fullPlotData_cover_all_layer.csv")
 
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
-#write_csv(eva, "fullPlotEva3.csv")
+#write_csv(eva, "fullPlotEva_cover_all_layer.csv")
 ```
 
 
@@ -721,6 +721,10 @@ eva_country<- left_join(eva2, fullPlot2)
 species_country<- eva_country |> group_by(Region) |> summarise(species= unique(species))
 
 #write.csv(species_country,"country_species.csv")
+```
+```{r}
+fullPlotData3<- fullPlotData
+eva3<- eva
 ```
 
 
