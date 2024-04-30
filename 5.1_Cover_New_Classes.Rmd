@@ -29,13 +29,13 @@ This script analyses whether neophytes are more dominant and frequent than nativ
 First, we load data of EVA
 ```{r, warnings=F, message=F}
 # Eva data for which plots are available and after correcting for incorrect or weird plot observations
-eva <- read_csv("fullPlotEva.csv")
+eva <- read_csv("fullPlotEva_cover_all_layer.csv")
 ```
 
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it.
 ```{r, warnings=F, message=F}
 # header like data, filtered and appended with EIVE and DIV
-fullPlotData <- read_csv("fullPlotData.csv")
+fullPlotData <- read_csv("fullPlotData_cover_all_layer_cleaned.csv")
 
 fast <- F
 if(fast) {
@@ -47,7 +47,7 @@ if(fast) {
 Load the neophyte definitions:
 ```{r, message=F}
 # Data on which species are neophytes
-native_intra_analysis=T
+native_intra_analysis=F
 if(native_intra_analysis){
   species_country_status <- read_csv("eva2_country_status_new.csv")
 } else{
@@ -85,6 +85,7 @@ table(eva_country_neophyte$Neophyte)
 # 2 COVER
 ## 2.1 Synthesis
 ```{r}
+fast=T
 if(fast){
 # For speed optimization we extract only the necessary information from EVA
 reducedEva <- eva_country_neophyte |> select(PlotObservationID, Region, species, Neophyte,`Cover %`)
@@ -141,6 +142,7 @@ parallel::stopCluster(cl = my.cluster)
   speciesDominance<- read.csv("speciesDominance_native_intra.csv")
   }else{
   speciesDominance<- read.csv("speciesDominance_new_categorization_50.csv")
+  #write.csv(speciesDominance, "speciesDominance_new_categorization_50_cover_all_layer_cleaned.csv")
   }
 }
 ```
@@ -185,7 +187,7 @@ topdominant_extra <- topdominant[topdominant$neophyte=="extra",]
 ## 2.6 Plot
 ```{r}
 # Violin plot
-native_intra_analysis=T
+native_intra_analysis=F
 if(!native_intra_analysis){
 p<-ggplot(speciesDominance, mapping = aes(x= (neophyte), y = log10(coverMean), colour = neophyte)) + 
   # create violin plot with x axis no title and y 
@@ -204,11 +206,11 @@ p<-ggplot(speciesDominance, mapping = aes(x= (neophyte), y = log10(coverMean), c
   annotate("text", x = 1, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="extra"])), label = "c", size = 3.5, vjust = -2, hjust = 0.5) +
   annotate("text", x = 2, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="intra"])), label = "b", size = 3.5, vjust = -2, hjust = 0.5)+
   annotate("text", x = 3, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native"])), label = "a", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x=1, y=2.1, label= paste("n=",length(extraCover$names)), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=2, y=2.1, label= paste("n=",length(intraCover$names)), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=3, y=2.1, label= paste("n=",length(nativeCover$names)), vjust = -0.5, hjust = 0.5, size=3.5)
+  annotate("text", x=1, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = -0.5, hjust = 0.5, size=3.5)
 p
-ggsave("Dominance New 50.jpeg", p,width = 6, height = 4)
+#ggsave("Dominance New 50.jpeg", p,width = 6, height = 4)
 }
 
 
@@ -236,7 +238,7 @@ if(native_intra_analysis){
   annotate("text", x=3, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = -0.5, hjust = 0.5, size=3.5)+
   annotate("text", x=4, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="native_intra")), vjust = -0.5, hjust = 0.5, size=3.5)
 p
-ggsave("Dominance New 50 native_inta.jpeg", p,width = 6, height = 4)
+ggsave("Dominance New 50.jpeg", p,width = 6, height = 4)
   
   
 }
@@ -279,9 +281,9 @@ p<- ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(numberOfPlots)
   annotate("text", x = 1, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="extra"])), label = "b", size = 3.5, vjust = -2, hjust = 0.5) +
   annotate("text", x = 2, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="intra"])), label = "a", size = 3.5, vjust = -2, hjust = 0.5)+
   annotate("text", x = 3, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native"])), label = "b", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x=1, y=5.2, label= paste("n=",length(extraCover$names)), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=2, y=5.2, label= paste("n=",length(intraCover$names)), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=3, y=5.2, label= paste("n=",length(nativeCover$names)), vjust = -0.5, hjust = 0.5, size=3.5)
+  annotate("text", x=1, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = -0.5, hjust = 0.5, size=3.5)
 p
 #ggsave("Frequency New 50.jpeg", p,width = 6, height = 4)
 } else {
