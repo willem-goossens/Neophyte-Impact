@@ -24,6 +24,7 @@ library(ggplot2)
 library(doParallel)
 library(foreach)
 library(tidyverse)
+library(geometry)
 ```
 
 
@@ -36,8 +37,8 @@ correctArea<- T
 ## 1.2 Data
 Load eva and plot data
 ```{r, warnings=F, message=F}
-eva <- read_csv("fullPlotEva.csv")
-fullPlotData <- read_csv("fullPlotData2.csv")
+eva <- read_csv("fullPlotEva_cover_all_layer_cleaned.csv")
+fullPlotData <- read_csv("fullPlotData_cover_all_layer_cleaned.csv")
 ```
 
 
@@ -45,7 +46,7 @@ Downsample by a factor of 100 if fast is selected
 ```{r}
 fast <- T
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.95,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 
@@ -212,8 +213,16 @@ computePlantImpact <- function(plantName, plantStatus) {
   # Copy dataset temporarily to be able to make changes
   tmpFullPlotData <- fullPlotData
   
+  # Select only explanatory variables
+  tmpFullPlotData <- tmpFullPlotData %>% 
+    select(numberOfVascularPlantSpecies,PlotObservationID, Area, 
+           EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
+           DistSeverity.sqrt, DistFrequency.sqrt, Soil.Disturbance.sqrt, 
+           Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
+           Latitude, Longitude, Dataset, totalCover, chelsaP, elev, hfp)
+  
   # Copy the full dataset without aberrant totalCover
-  tmpFullPlotData <- fullPlotData %>% filter(totalCover < 850)
+  tmpFullPlotData <- tmpFullPlotData %>% filter(totalCover <= 900)
   reducedEva <- eva %>% filter(PlotObservationID %in% tmpFullPlotData$PlotObservationID)
 
   # Get the indices of the plant in the eva dataset
@@ -235,6 +244,7 @@ computePlantImpact <- function(plantName, plantStatus) {
   tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in%
     reducedEva$PlotObservationID[indexOfPlant]
   
+
   # If species is not present:
   # Make 1 total cover and 0 species cover
   tmpFullPlotData$totalCover[is.na(tmpFullPlotData$totalCover)] <- 100.0
@@ -261,14 +271,6 @@ computePlantImpact <- function(plantName, plantStatus) {
   tmpFullPlotData <- tmpFullPlotData %>% 
     mutate(relSpeciesCover = 100 * speciesCover / totalCover)
   
-  # Select only explanatory variables
-  tmpFullPlotData <- tmpFullPlotData %>% 
-    select(numberOfVascularPlantSpecies, Area, 
-           EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
-           DistSeverity.sqrt, DistFrequency.sqrt, Soil.Disturbance.sqrt, 
-           Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
-           Latitude, Longitude, Dataset, plantOccurs, 
-           totalCover, speciesCover, relSpeciesCover)
   
   # Species occurrence as factor (not logical)
   tmpFullPlotData$plantOccursF <- factor(tmpFullPlotData$plantOccurs)
@@ -287,7 +289,7 @@ computePlantImpact <- function(plantName, plantStatus) {
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')+
-              plantOccursF
+              plantOccurs
 
   base <- bam(model,family = quasipoisson, 
               data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, 
@@ -295,6 +297,7 @@ computePlantImpact <- function(plantName, plantStatus) {
   
   # Get summary from model
   baseModel <- summary(base)
+  baseModel
   
   # Make a dataframe to add the residuals to
   res <- data.frame(taxa = character(), Estimate = numeric(), 
@@ -318,6 +321,149 @@ computePlantImpact <- function(plantName, plantStatus) {
   res
 }
 ```
+
+
+## 2.1 Function 1.1
+```{r, meassage=F}
+# The name of the first species (to test the function)
+plantName = allPlants$names[1]
+plantStatus= allPlants$Neophyte[1]
+
+
+# Function to compute the impact for each species, so we only need the plant name as input
+computePlantImpact1 <- function(plantName, plantStatus) {
+  
+  # Copy dataset temporarily to be able to make changes
+  tmpFullPlotData <- fullPlotData
+  
+  # Select only explanatory variables
+  tmpFullPlotData <- tmpFullPlotData %>% 
+    select(numberOfVascularPlantSpecies,PlotObservationID, Area, 
+           EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
+           DistSeverity.sqrt, DistFrequency.sqrt, Soil.Disturbance.sqrt, 
+           Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
+           Latitude, Longitude, Dataset, totalCover, chelsaP, elev, hfp)
+  
+  # Copy the full dataset without aberrant totalCover
+  tmpFullPlotData <- tmpFullPlotData %>% filter(totalCover <= 900)
+  reducedEva <- eva %>% filter(PlotObservationID %in% tmpFullPlotData$PlotObservationID)
+
+  # Get the indices of the plant in the eva dataset
+  indexOfPlant <- reducedEva$species == plantName & reducedEva$Neophyte== plantStatus
+  
+  # We select only the rows containing the species first because this is much faster than doing it for all plots.
+  # We make the dataset smaller (only those plots where the species is present), group the data per plot and compute the total cover (all     species) and cover of the species we are highlighting now
+  plotsWherePlantOccurs <- reducedEva[reducedEva$PlotObservationID %in%
+                                      reducedEva$PlotObservationID[indexOfPlant],] |>
+    group_by(PlotObservationID) |>
+    summarise(speciesCover = computeSpeciesCover(plantName, species, `Cover %`))
+  
+  
+  # Join the computed cover plots with the full data
+  tmpFullPlotData <- left_join(tmpFullPlotData, plotsWherePlantOccurs, 
+                             by = "PlotObservationID")
+  
+  # Identify all plots where the species investigated occurs
+  tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in%
+    reducedEva$PlotObservationID[indexOfPlant]
+  
+  species_plots <- tmpFullPlotData[, c(4:13, 18, 20)  ]
+  PCA<- prcomp(tmpFullPlotData[, c(4:13, 18, 20)  ], scale=T)
+
+  PCA<- PCA$x[,1:3]
+  
+  test <- cbind(tmpFullPlotData, PCA)
+  
+  species_plots <- test[test$plantOccurs, c(23:25)  ]
+  
+  species_plots<- as.matrix(species_plots)
+  duplicated<- duplicated(species_plots)
+  species_plots<- species_plots[!duplicated, ]
+  convex_hull <- convhulln((species_plots))
+
+  is_within_hull <- inhulln(convex_hull, as.matrix(test[, c(23:25)]))
+  subset_data <- test[is_within_hull, ]
+
+  sum(!subset_data$plantOccurs)
+  tmpFullPlotData <- subset_data
+  # If species is not present:
+  # Make 1 total cover and 0 species cover
+  tmpFullPlotData$totalCover[is.na(tmpFullPlotData$totalCover)] <- 100.0
+  tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
+  
+  # Exclude all plots which have 0 total cover
+  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover >=1,] 
+  
+  # Do SR - 1 for all plots in which the species is present
+  tmpFullPlotData$numberOfVascularPlantSpecies <- tmpFullPlotData$numberOfVascularPlantSpecies - tmpFullPlotData$plantOccurs
+  
+  # Correct area: if true we calculate the area that is reserved for the other plant species. 
+  if(correctArea) {
+    tmpFullPlotData$Area <- tmpFullPlotData$Area*(1.0 - tmpFullPlotData$speciesCover/tmpFullPlotData$totalCover)
+  }
+
+  # There is a numerical problem in the bam function if we provide empty plots...
+  tmpFullPlotData <- tmpFullPlotData |> filter(numberOfVascularPlantSpecies > 0, Area > 0)
+  
+  # Make dataset a factor to add it as a random variable
+  tmpFullPlotData$Dataset <- as.factor(tmpFullPlotData$Dataset)
+  
+  # Add relative species cover
+  tmpFullPlotData <- tmpFullPlotData %>% 
+    mutate(relSpeciesCover = 100 * speciesCover / totalCover)
+  
+  
+  # Species occurrence as factor (not logical)
+  tmpFullPlotData$plantOccursF <- factor(tmpFullPlotData$plantOccurs)
+  
+  # Base model
+  model<-  numberOfVascularPlantSpecies ~ 
+              s(log(Area),bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Soil.Disturbance.sqrt, bs = 'tp')+
+              s(Grazing.Pressure.sqrt, bs = 'tp')+
+              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(Latitude, Longitude, bs = 'tp') +
+              s(Dataset, bs = 're')+
+              plantOccurs
+
+  base <- bam(model,family = quasipoisson, 
+              data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, 
+              nthreads=4)
+  
+  # Get summary from model
+  baseModel <- summary(base)
+  baseModel
+  
+  # Make a dataframe to add the residuals to
+  res <- data.frame(taxa = character(), Estimate = numeric(), 
+                    StdErr = numeric(), `zValue` = numeric(), 
+                    pr = numeric(), numberOfPlots = integer(), 
+                    Neophyte= character(),
+                    RelDiff= numeric())
+  
+  res <- add_row(res, 
+                 taxa = plantName, Estimate = baseModel$p.table[2,1], 
+                 StdErr = baseModel$p.table[2,2], 
+                 zValue = baseModel$p.table[2,3], 
+                 pr = baseModel$p.table[2,4], 
+                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
+                 Neophyte= plantStatus,
+                 RelDiff= 100* 
+                   (mean(fitted(base)[tmpFullPlotData$plantOccursF == TRUE]) -
+                    mean(fitted(base)[tmpFullPlotData$plantOccursF == FALSE])) /
+                    mean(fitted(base)[tmpFullPlotData$plantOccursF == FALSE]))
+  
+  res
+}
+```
+
+
 
 
 ## 2.2 Function 2
@@ -516,7 +662,7 @@ computePlantImpact4 <- function(plantName, plantStatus) {
   
   
   # Copy the full dataset without aberrant totalCover
-  tmpFullPlotData <- fullPlotData %>% filter(totalCover < 850)
+  tmpFullPlotData <- fullPlotData %>% filter(totalCover <=900)
   reducedEva <- eva %>% filter(PlotObservationID %in% tmpFullPlotData$PlotObservationID)
   
   # Select only explanatory variables
@@ -525,7 +671,7 @@ computePlantImpact4 <- function(plantName, plantStatus) {
            EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
            DistSeverity.sqrt, DistFrequency.sqrt, Soil.Disturbance.sqrt, 
            Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
-           Latitude, Longitude, Dataset, totalCover)
+           Latitude, Longitude, Dataset, elev, chelsaP, hfp, totalCover)
   
   # Get the indices of the plant in the eva dataset
   indexOfPlant <- reducedEva$species == plantName & reducedEva$Neophyte== plantStatus
@@ -588,6 +734,9 @@ computePlantImpact4 <- function(plantName, plantStatus) {
               s(Grazing.Pressure.sqrt, bs = 'tp')+
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
+              s(chelsaP, bs='tp')+
+              s(hfp, bs='tp')+
+              s(elev, bs='tp')+
               s(Dataset, bs="re")+
               coverClass
   
@@ -697,8 +846,9 @@ res
 Use foreach to speed up computations
 ```{r}
 if(fast){
+
 # prepare parallel
-n.cores<- parallel::detectCores()-6
+n.cores<- parallel::detectCores()-2
 my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK" )
 print(my.cluster)
 doParallel::registerDoParallel(cl = my.cluster)
@@ -710,13 +860,27 @@ begin<-Sys.time()
 x<- foreach(i= 1:length(allPlants$names), 
             .combine = "rbind", 
             .packages = c("dplyr","mgcv")) %dopar% {
-  res <- computePlantImpact4(allPlants$names[i], allPlants$Neophyte[i])
+  res <- computePlantImpact(allPlants$names[i], allPlants$Neophyte[i])
+}
+end<-Sys.time()
+round(end-begin, 2)
+
+
+# run for all and time
+begin<-Sys.time()
+zz<- foreach(i= 1:length(allPlants$names), 
+            .combine = "rbind", 
+            .packages = c("dplyr","mgcv","geometry")) %dopar% {
+  res <- computePlantImpact1(allPlants$names[i], allPlants$Neophyte[i])
 }
 end<-Sys.time()
 round(end-begin, 2)
 
 parallel::stopCluster(cl = my.cluster)
 #write.csv(x, 'Impact2_new10%_ENS0_squared.csv')
+
+all.equal(x, zz)
+
 }
 ```
 
@@ -975,6 +1139,7 @@ p<-ggplot(x, aes(x=class, y= RelDiff, color=Species, fill=Species))+geom_violin(
   ylab("Relative difference \n compared to absence species") + xlab("Cover class")+
   geom_boxplot(width=0.2, position = position_dodge(1), color="black", alpha=0.1)
 p
+#ggsave("Impact_base_model_classes.jpeg", p, width = 25, height = 15, units = "cm") 
 ```
 
 
