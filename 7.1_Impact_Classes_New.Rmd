@@ -761,7 +761,7 @@ test<- test |>group_by( status) |> mutate(rel= round(n/max(n), 3))
 
 p<- ggplot(test, aes(x=cover_class, y= rel, color=status, group=status))+
   scale_x_discrete(labels = c('[0%]','[0%-1%]','[1% - 10%]', '[10%-30%]','[30%-50%]', '[50%-70%]','[70%-100%]'))+
-         geom_line()
+         geom_bar(stat = "identity", position = position_dodge(0.7), width = 0.7)
 #ggsave("Cover class relative distribution.jpeg", p, width = 25, height = 15, units = "cm")
 ```
 
