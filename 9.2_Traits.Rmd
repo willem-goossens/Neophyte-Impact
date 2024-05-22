@@ -1,0 +1,512 @@
+---
+title: "Functional traits"
+author: "Willem Goossens"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+# 1 Load
+```{r}
+rm(list=ls())
+```
+
+
+```{r}
+library(readr)
+library(rtry)
+library(dplyr)
+library(lmerTest)
+library(lme4)
+library(sjPlot)
+library(BHPMF)
+```
+
+
+# 2 TRY
+## 2.1 Explore
+```{r}
+# Get all trait data
+Traits <- rtry_import("../TRY/32370.txt", separator = "\t",encoding = "Latin-1", quote = "",showOverview = TRUE)
+
+# How is data structured
+head(Traits)
+colnames(Traits)
+
+# Which traits are in the dataset
+Trait_variability<- rtry_explore(Traits, TraitID, TraitName)
+Species_variability<- rtry_explore(Traits, AccSpeciesID, AccSpeciesName, TraitID, TraitName)
+```
+
+
+## 2.2 Select
+```{r}
+# select columns
+workdata <- rtry_select_col(Traits, ObsDataID, ObservationID, AccSpeciesID, AccSpeciesName, 
+                            ValueKindName, TraitID, TraitName, DataID, DataName, OriglName, 
+                            OrigValueStr, OrigUnitStr, StdValue, UnitName, OrigObsDataID, 
+                            ErrorRisk, Comment)
+
+# explore sorted dataframe
+workdata_explore_anc <- rtry_explore(workdata, DataID, DataName, TraitID, TraitName, sortBy = TraitID)
+
+# Data ID
+# 659, 60, 61    long, lat, alt
+# 62, 80         MAT, MAP
+
+# select which rows we want to keep
+workdata <- rtry_select_row(workdata, TraitID > 0 | DataID %in% c(59, 60, 61, 62, 80, 413))
+```
+
+
+```{r}
+# Save a version before deleting data
+workdata_unexcluded <- workdata
+```
+
+
+## 2.3 Exclude
+Select rows we want to work with
+```{r}
+# explore dataframe
+tmp_unfiltered <- rtry_explore(workdata, DataID, DataName, TraitID, TraitName, sortBy = TraitID)
+
+# exclude some data
+workdata <- rtry_exclude(workdata, DataID %in% c(974, 1629, 1739, 3727, 3728, 8178, 9780:9782,8681,8682), baseOn = ObsDataID)
+
+# select some rows
+all<- rtry_select_row(workdata, DataID %in% c(4, 2568, 14, 15, 16, 30, 31, 258, 65, 100, 407, 
+                                              485, 620, 19,20,448,504, 6575, 6463,6577,6579, 
+                                              6581, 6589,6582, 6584,6598), baseOn=ObsDataID)
+
+# explore newly made dataframe
+tmp_unfiltered <- rtry_explore(all, DataID, DataName, TraitID, TraitName, sortBy = TraitID)
+```
+
+
+Remove values that are likely errors
+```{r}
+# error risk --> distance species/ genus mean --> 3 --> 3 sd away from mean
+tmp_unfiltered <- rtry_explore(all, DataID, DataName, TraitID, TraitName, ErrorRisk, sortBy = ErrorRisk)
+all <- rtry_exclude(all, ErrorRisk >= 5, baseOn = ObsDataID)
+
+```
+
+
+Duplicates
+```{r}
+# Based on OrigObsDataID but important to note that also data is removed that might not be duplicated if not all data was available from the beginning
+workdata <- rtry_remove_dup(workdata)
+```
+
+
+## 2.4 Transform
+```{r}
+# from long to wide (more columns, less rows)
+
+# only select rows with numeric values
+num_traits <- rtry_select_row(workdata, complete.cases(TraitID) & complete.cases(StdValue))
+# take the columns we want to use
+num_traits <- rtry_select_col(num_traits, ObservationID, AccSpeciesID, AccSpeciesName, TraitID, TraitName, StdValue, UnitName)
+
+# before transformation summarise
+num_traits <- num_traits |> group_by(AccSpeciesName, TraitID, TraitName, UnitName) |> summarise(StdValue= mean(StdValue))
+
+# transformation --> get names from trait names and use values as cell values (with mean)
+num_traits_wider <-rtry_trans_wider(num_traits, names_from = c(TraitID, TraitName, UnitName), values_from = c(StdValue), values_fn = list(StdValue = mean))
+```
+
+
+## 2.5 Eva
+```{r}
+# load data
+eva <- read_csv("fullPlotEva_cover_all_layer_cleaned.csv",show_col_types = FALSE)
+
+# get species names of both datasets
+species_try <- unique(num_traits_wider$AccSpeciesName)
+species_eva<- unique(eva$species)
+# count how many of our species are present in TRY
+sum(species_eva %in% species_try)
+
+# merge eva and trait data
+test<- left_join(eva, num_traits_wider, by=c("species"="AccSpeciesName"))
+
+# Count number of NA values per trait
+na_counts <- (apply(test[, 21:48], 2, function(x) sum(!is.na(x))))
+na_counts_df <- data.frame(variable = names(na_counts), value = na_counts)
+na_counts_df
+
+# Summarise data per plot
+x<- test |> group_by(PlotObservationID) |> 
+  summarise(cwm_SSD= mean(`4_Stem specific density (SSD, stem dry mass per stem fresh volume) or wood density_g/cm3`, na.rm=T), 
+            cwm_SLA= mean(`3115_Leaf area per leaf dry mass (specific leaf area, SLA or 1/LMA): petiole excluded_mm2 mg-1`, na.rm=T), 
+            n=n(`4_Stem specific density (SSD, stem dry mass per stem fresh volume) or wood density_g/cm3`))
+```
+
+
+
+
+# 3 DIAZ
+## 3.1 Explore
+```{r}
+# Load data
+Diaz <- readxl::read_excel("../TRY/Species_mean_traits.xlsx", guess_max = min(2000, n_max = NULL))
+Diaz_raw<- Diaz
+eva <- read_csv("fullPlotEva_cover_all_layer_cleaned.csv",show_col_types = FALSE)
+
+# vector with species names
+Diaz_names<- Diaz$`Species name standardized against TPL`
+# vector with eva names
+eva_names<- unique(eva$species)
+# check how much species in our dataset possess a trait value in Diaz
+sum(eva_names %in% Diaz_names)
+
+# Downsample database to required columns and only species in eva
+Diaz <- Diaz[Diaz_names %in% eva_names, c(1: 3, 5:6,11, 15:16,18,20,22,24,31,32)]
+# check number of tree species in our database
+sum(Diaz$`Growth Form`=="tree", na.rm=T)
+```
+
+
+## 3.2 Join
+```{r}
+# Join eva and mean trait database
+test<- left_join(eva, Diaz, by=c("species"="Species name standardized against TPL"))
+
+# check number of missing values per trait
+sum(is.na(Diaz$`Leaf area (mm2)`))
+sum(is.na(Diaz$`SSD combined (mg/mm3)`))
+sum(is.na(Diaz$`LMA (g/m2)`))
+sum(is.na(Diaz$`Diaspore mass (mg)`))
+sum(is.na(Diaz$`Nmass (mg/g)`))
+sum(is.na(Diaz$`Plant height (m)`))
+
+
+# 30% of the species have their name in the Diaz database
+sum(eva_names %in% Diaz_names)/length(eva_names)
+# 84% of the observations do have a value for at least one trait
+sum(!is.na(test$`Number of traits with values`))/ length(test$PlotObservationID)
+
+
+# Summarise to get number of plots without any trait data and relative amount of traits per plot
+x<- test |> group_by(PlotObservationID) |> 
+  summarise(n= sum(!is.na(`Number of traits with values`)), all=n(), sum= sum(`Number of traits with values`, na.rm=T)) |> 
+  mutate(rel= n/all, trait_rel = sum/(all*6))
+
+# 0.1 % of plots do not have at least one species with at least one trait
+sum((x$n==0))/length(x$n)
+
+# On average, 84% of the species in a site have at least one trait
+summary(x$rel)
+hist(x$rel)
+
+# on average, 75% of all possible traits in a site are present
+summary(x$trait_rel)
+hist(x$trait_rel)
+```
+
+
+## 3.3 Plot level
+```{r}
+y<- test |> group_by(PlotObservationID) |> summarise(cwm_SSD= weighted.mean(`SSD combined (mg/mm3)`, `Cover %`, na.rm=T), 
+                                                     cwm_LMA= weighted.mean(`LMA (g/m2)`, `Cover %`, na.rm=T),
+                                                     cwm_height = weighted.mean(`Plant height (m)`, `Cover %`, na.rm=T),
+                                                     cwm_seed= weighted.mean(`Diaspore mass (mg)`, `Cover %`, na.rm=T),
+                                                     cwm_LA= weighted.mean(`Leaf area (mm2)`, `Cover %`, na.rm=T),
+                                                     cwm_N =weighted.mean(`Nmass (mg/g)`, `Cover %`, na.rm=T))
+
+# check correlation with plot level EIVE values
+fullPlotData <- read_csv("fullPlotData_cover_all_layer_cleaned.csv", show_col_types = FALSE)
+cor(y[,2:7], fullPlotData[,26:30],use="pairwise.complete.obs", method="pearson" )
+# we notice quite high correlations for EIVE N and leaf nitrogen content
+# also high for EIVE L and SSD and Height
+```
+
+
+## 3.4 Genus
+```{r}
+eva$Genus <- gsub("([A-Za-z]+).*", "\\1", eva$species)
+
+Diaz_genus <- Diaz_raw |> group_by(Genus) |> summarise(LA= mean(`Leaf area (mm2)`, na.rm=T),
+                                                   N= mean(`Nmass (mg/g)`, na.rm=T),
+                                                   LMA= mean(`LMA (g/m2)`, na.rm=T), 
+                                                   H= mean(`Plant height (m)`, na.rm=T),
+                                                   SM= mean(`Diaspore mass (mg)`, na.rm=T),
+                                                   SSD= mean(`SSD combined (mg/mm3)`, na.rm=T))
+
+
+copy<- eva
+
+copy <- left_join(copy, Diaz[,c(2,4,6:14)], by= c("species"="Species name standardized against TPL"))
+
+copy<- full_join(copy, Diaz_raw, by= c("species"="Species name standardized against TPL"))
+
+library(taxize)
+
+tax_name(eva$species[1:10], get= "family", db="ncbi")
+
+hierarchy.info<- Diaz[, c(1,2,4,5)]
+trait.info <- Diaz[, c(8:13)]
+trait.info <- as.matrix(trait.info)
+
+all.equal(copy[!is.na(copy$Genus.y), 21], copy[!is.na(copy$Genus.y), 22])
+
+back_trans_pars <- list()
+  rm_col <- c()
+  for(i in 1:ncol(trait.info)){
+  x <- trait.info[,i] # goes through the columns
+      min_x <- min(x,na.rm = T) # takes the min of each column
+      if(min_x < 0.00000000001){
+        x <- x - min_x + 1 # make this optional if min x is neg
+      }
+    logx <- log10(x)
+    mlogx <- mean(logx, na.rm = T)
+    slogx <- sd(logx, na.rm = T)
+    x <- (logx - mlogx)/slogx # Z transformation
+    back_trans_pars[[i]] <- list(min_x = min_x,
+                                 mlogx = mlogx,
+                                 slogx = slogx)
+    trait.info[,i] <- x
+    }
+```
+
+
+
+```{r}
+eva_family <- eva[!duplicated(eva$Genus),]
+Diaz_family <- Diaz_raw[!duplicated(Diaz_raw$Genus),]
+
+eva_family$family <- Diaz_family$Family[match(eva_family$Genus, Diaz_family$Genus)]
+
+test<- eva_family[is.na(eva_family$family),]
+
+
+
+library(plantlist)
+x<- status(test$species)
+
+accept_dup<- data.frame(species= character(), family= character())
+for(i in x$SCIENTIFIC_NAME){
+  if(length(unique(x$ACCEPTED_SPECIES[x$SCIENTIFIC_NAME==i]))==1){
+    if(!any((is.na(x$ACCEPTED_SPECIES)))){
+      accept_dup<- cbind(species= x$ACCEPTED_SPECIES, family= x$FAMILY)
+    } else {
+      accept_dup <- cbind(species= x$SCIENTIFIC_NAME, family= x$FAMILY)
+    }
+  } else {
+    if(any(x$STATUS[x$SCIENTIFIC_NAME==i]=="Accepted")){
+      accept_dup <- cbind(species= x$ACCEPTED_SPECIES[x$STATUS=="Accepted"], family= x$FAMILY[x$STATUS=="Accepted"] )
+    } else {
+      if(!any(duplicated(x$SCIENTIFIC_NAME==i))){
+        accept_dup <- cbind(species= x$ACCEPTED_SPECIES, family= x$FAMILY)
+      } else {
+        accept_dup <- cbind(species= x$SCIENTIFIC_NAME, family= x$FAMILY)
+      }
+    }
+  }
+}
+
+accept_dup<- as.data.frame(accept_dup)
+accept_dup <- accept_dup[!duplicated(accept_dup$species),]
+
+sum(is.na(accept_dup$family))
+sum(is.na(x$AUTHOR))
+
+eva_family$species[is.na(eva_family$family)] <- accept_dup$species
+eva_family$family[is.na(eva_family$family)] <- accept_dup$family
+
+test<- eva_family[is.na(eva_family$family),]
+
+
+eva_family$family[is.na(eva_family$family)] <-x$FAMILY
+TPL(test$species)
+
+install.packages("WorldFlora")
+library(WorldFlora)
+
+WFO.remember(WFO.file = "C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/TRY/_DwC_backbone_R/classification.csv", 
+             WFO.data = "WFO.data", WFO.pos = 1)
+
+eva_species <- eva[!duplicated(eva$species),]
+
+cuts <- cut(c(1:nrow(eva_species)), breaks=20, labels=FALSE)
+cut.i <- sort(unique(cuts))
+
+start.time <- Sys.time()
+
+for (i in 1:length(cut.i)) {
+
+cat(paste("Cut: ", i, "\n"))  
+    
+GTS.i <- WFO.one(WFO.match.fuzzyjoin(spec.data=eva_species[cuts==cut.i[i], ],
+                                     WFO.data=WFO.data,
+                                     spec.name="species",
+                                     fuzzydist.max=3),
+                 verbose=FALSE)
+
+if (i==1) {
+  GTS.WFO <- GTS.i
+}else{
+  GTS.WFO <- rbind(GTS.WFO, GTS.i)
+}
+
+}
+
+
+
+
+z <- c()
+family<- c()
+for(i in 488: length(eva_family$Genus[is.na(eva_family$family)])){
+  z <- tax_name(eva_family$species[is.na(eva_family$family)][i], get= "family", db="ncbi")$family
+  family<- rbind(family, z)
+}
+
+eva_family <- eva_family[!eva_family$species=="Eontodon concinnus",]
+eva_family$family[is.na(eva_family$family)] <- family
+
+eva_family$species[is.na(eva_family$family)]
+
+test<- eva_family[is.na(eva_family$family),]
+
+tax_name(test$species, get= "family", db="both")$family
+
+z <- z[!is.na(z)]
+family<- family[1:487]
+
+```
+
+
+
+
+
+```{r}
+head(copy)
+
+copy <- left_join(copy, Diaz_genus)
+
+i=27
+j=1
+
+copyNA <- is.na(Diaz)
+
+for(i in 27:32){
+  for(j in 1:length(test$PlotObservationID)){
+    test[j,i] <- ifelse(is.na(test[j,i]) & test$Genus[j] %in% Diaz_genus$Genus,
+                        Diaz_genus[Diaz_genus$Genus %in% test$Genus[j], i-25],
+                        test[j,i])
+  }
+}
+
+head(Diaz)
+head(test)
+```
+
+
+
+# 4 Impact 
+## 4.1 Explore
+```{r}
+# Load impact data 7.1
+fileName <- paste("coverClassImpactForCandidates_cover_all_layer_cleaned.csv")
+impact<- read.csv( fileName)
+impact <- impact[impact$log=="3",]
+
+# Load part impact data 8.1
+impact2<- read.csv('Impact2_new70%_ENS0_reldiff_PCA.csv')
+impact2 <- impact2[,-1]
+
+# get species that are in Diaz and for which we have the impact calculated
+impact_sp <- Diaz$`Species name standardized against TPL`[Diaz_names %in% impact$taxa]
+
+# possibly only use non-tree species (can maybe influence calculation)
+# Diaz <- Diaz |> filter(!`Growth Form`=="tree")
+```
+
+
+## 4.2 Join
+```{r}
+# Merge 7.1 and traits data
+test<- left_join(impact, Diaz, by=c("taxa"="Species name standardized against TPL"))
+test<- left_join(impact2, Diaz, by=c("taxa"="Species name standardized against TPL"))
+
+# Calculate correlations
+cor_extra<-cor(test[test$Neophyte=="extra", c(8,6, 17:22)],  use="pairwise.complete.obs", method="pearson")
+cor_intra <-cor(test[test$Neophyte=="intra", c(8,6, 17:22)],  use="pairwise.complete.obs", method="pearson")
+cor_native <-cor(test[test$Neophyte=="native", c(8,6, 17:22)],  use="pairwise.complete.obs", method="pearson")
+```
+
+
+## 4.3 Effect individual
+```{r}
+# Make Neophyte a factor for in the models
+test$Neophyte <- as.factor(test$Neophyte)
+
+# Change names FT
+colnames(test)[17:22]<- c("LA", "N", "LMA","H","SM","SSD")
+
+# Make copy dataset
+test2<- test
+# Log transform all FT except WD
+test2<- as.data.frame(log(test2[,17:21]))
+# Creata dataset that can be used
+test2 <- cbind(test$RelDiff, test$Neophyte, test2, test$SSD)
+# Change names columns
+colnames(test2)[1:2]<- c("RelDiff","Neophyte")
+colnames(test2)[8]<- c("SSD")
+
+
+# Model per FT individually, as limited species (+- 880) LMAave values for all functional traits
+MDL_H<- lmer(RelDiff ~ H + (1|Neophyte), test2)
+summary(MDL_H)
+MDL_LMA<- lmer(RelDiff ~ LMA + (1|Neophyte), test2)
+summary(MDL_LMA)
+MDL_SM<- lmer(RelDiff ~ SM + (1|Neophyte), test2)
+summary(MDL_SM)
+MDL_SSD<- lmer(RelDiff ~ SSD + (1|Neophyte), test2)
+summary(MDL_SSD)
+MDL_N<- lmer(RelDiff ~ N + (1|Neophyte), test2)
+summary(MDL_N)
+MDL_LA<- lmer(RelDiff ~ LA + (1|Neophyte), test2)
+summary(MDL_LA)
+MDL_Neophyte<- lm(RelDiff ~ -1+Neophyte, test2)
+summary(MDL_Neophyte)
+
+# Plot
+visreg::visreg(MDL_SSD,"SSD")
+visreg::visreg(MDL_LMA,"LMA")
+visreg::visreg(MDL_LA,"LA")
+visreg::visreg(MDL_H,"H")
+visreg::visreg(MDL_N,"N")
+visreg::visreg(MDL_SM,"SM")
+visreg::visreg(MDL_Neophyte,"Neophyte")
+```
+
+
+## 4.4 Effect all
+```{r}
+# Scale data to make them comparable
+test2<- as.data.frame(scale(test2[,3:8]))
+test2 <- cbind(test$RelDiff, test$Neophyte, test2)
+# Change names columns
+colnames(test2)[1:2]<- c("RelDiff","Neophyte")
+colnames(test2)[8]<- c("SSD")
+
+# Model for all traits together
+MDL<- lmer(RelDiff ~ LMA+ H+ SSD+ LA+ SM+ N+ (1|Neophyte), test2)
+summary(MDL)
+
+
+plot_model(MDL, type = "re", facet.grid=FALSE) 
+plot_model(MDL, type = "pred", facet.grid=T, terms= c("H", "Neophyte"), pred.type="re", ci.lvl=NA, show.data=T) 
+
+visreg::visreg(MDL,"SSD")
+visreg::visreg(MDL,"LMA")
+visreg::visreg(MDL,"LA")
+visreg::visreg(MDL,"H")
+visreg::visreg(MDL,"N")
+visreg::visreg(MDL,"SM")
+visreg::visreg(MDL, "Neophyte")
+```
+
+
