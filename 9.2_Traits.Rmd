@@ -20,6 +20,7 @@ library(lmerTest)
 library(lme4)
 library(sjPlot)
 library(BHPMF)
+library(plantlist)
 ```
 
 
@@ -152,7 +153,16 @@ x<- test |> group_by(PlotObservationID) |>
 # Load data
 Diaz <- readxl::read_excel("../TRY/Species_mean_traits.xlsx", guess_max = min(2000, n_max = NULL))
 Diaz_raw<- Diaz
-eva <- read_csv("fullPlotEva_cover_all_layer_cleaned.csv",show_col_types = FALSE)
+
+eva <- read_csv("fullPlotEva_cover_all_layer_cleaned.csv", show_col_types = FALSE)
+fullPlotData <- read_csv("fullPlotData_cover_all_layer_cleaned.csv", show_col_types = FALSE)
+
+fast <- T
+if(fast) {
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
+  eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
+}
+
 
 # vector with species names
 Diaz_names<- Diaz$`Species name standardized against TPL`
@@ -163,6 +173,7 @@ sum(eva_names %in% Diaz_names)
 
 # Downsample database to required columns and only species in eva
 Diaz <- Diaz[Diaz_names %in% eva_names, c(1: 3, 5:6,11, 15:16,18,20,22,24,31,32)]
+Diaz_raw <- Diaz_raw[, c(1: 3, 5:6,11, 15:16,18,20,22,24,31,32)]
 # check number of tree species in our database
 sum(Diaz$`Growth Form`=="tree", na.rm=T)
 ```
@@ -206,6 +217,7 @@ hist(x$trait_rel)
 ```
 
 
+
 ## 3.3 Plot level
 ```{r}
 y<- test |> group_by(PlotObservationID) |> summarise(cwm_SSD= weighted.mean(`SSD combined (mg/mm3)`, `Cover %`, na.rm=T), 
@@ -216,17 +228,325 @@ y<- test |> group_by(PlotObservationID) |> summarise(cwm_SSD= weighted.mean(`SSD
                                                      cwm_N =weighted.mean(`Nmass (mg/g)`, `Cover %`, na.rm=T))
 
 # check correlation with plot level EIVE values
-fullPlotData <- read_csv("fullPlotData_cover_all_layer_cleaned.csv", show_col_types = FALSE)
 cor(y[,2:7], fullPlotData[,26:30],use="pairwise.complete.obs", method="pearson" )
 # we notice quite high correlations for EIVE N and leaf nitrogen content
 # also high for EIVE L and SSD and Height
 ```
 
 
-## 3.4 Genus
+## 3.4 Genus Names
+We first get the data for genus level interpretation
 ```{r}
-eva$Genus <- gsub("([A-Za-z]+).*", "\\1", eva$species)
+# get genus 
+eva$genus <- gsub("([A-Za-z]+).*", "\\1", eva$species)
 
+# get list unique species
+eva_names <- unique(eva$species)
+
+# we remove the aggr part
+eva_names <- gsub(" aggr.", "", eva_names)
+eva_names <- unique(eva_names)
+
+# we will check names here quickly
+status_already <- read.csv("TPL_status_part.csv")
+status_already <- status_already[, -1]
+status_already <- status_already[!duplicated(status_already),]
+
+# names to calculate
+eva_status <- eva_names[!eva_names %in% status_already$SCIENTIFIC_NAME]
+
+# status calculation
+#status <- status(eva_status)
+# remove dubble entries
+#status <- status[!duplicated(status),]
+
+#status <- rbind(status_already, status)
+#status <- status[!duplicated(status),]
+
+status<- status_already
+
+if(fast){
+  status<- status[status$SCIENTIFIC_NAME %in% eva_names,]
+}
+
+rm(list=c("status_already"))
+#write.csv(all_status, "TPL_status_part.csv")
+
+```
+
+
+
+```{r}
+# change names to accepted
+accept_dup<- data.frame(species= character(), family= character(), old_name= character())
+# run for all species
+for(i in 1: length(eva_names)){ 
+  # first check if they exist in our status data, if not keep only old name
+  if(any(is.na(status$STATUS[status$SCIENTIFIC_NAME== eva_names[i]]))){
+    accept_dup <- add_row(accept_dup,
+                      species= NA, 
+                      family= NA,
+                      old_name= eva_names[i])
+  # then check if they exist in our status data with an accepted name
+  } else if(any(status$STATUS[status$SCIENTIFIC_NAME==eva_names[i]]=="Accepted")){
+    accept_dup <- add_row(accept_dup,
+                      species= status$ACCEPTED_SPECIES[status$STATUS=="Accepted" & status$SCIENTIFIC_NAME==eva_names[i]], 
+                      family= status$FAMILY[status$STATUS=="Accepted" & status$SCIENTIFIC_NAME==eva_names[i]],
+                      old_name= eva_names[i])
+  # check for species that are present only once and are designated as 'synonym'
+  } else if(all(!any(status$STATUS[status$SCIENTIFIC_NAME==eva_names[i]]=="Accepted"),
+            length(status$STATUS[status$SCIENTIFIC_NAME==eva_names[i]])==1 &
+            status$STATUS[status$SCIENTIFIC_NAME==eva_names[i]]=="Synonym")){
+    accept_dup <- add_row(accept_dup,
+                      species= status$ACCEPTED_SPECIES[status$STATUS=="Synonym" & status$SCIENTIFIC_NAME==eva_names[i]], 
+                      family= status$FAMILY[status$STATUS=="Synonym" & status$SCIENTIFIC_NAME==eva_names[i]],
+                      old_name= eva_names[i]) 
+  # if no other options, give NA  
+  }  else {
+   accept_dup <- add_row(accept_dup,
+                      species= NA, 
+                      family= NA,
+                      old_name= eva_names[i])
+  }
+}
+
+# make data frame
+accept_dup<- as.data.frame(accept_dup)
+# check if there are still duplicated species in the old name list
+dup<- accept_dup[accept_dup$old_name %in% accept_dup$species[duplicated(accept_dup$old_name)],]
+
+# count number of species without a species name and retrieve them
+sum(is.na(accept_dup$species))
+accept_dup_na <- accept_dup[is.na(accept_dup$species),]
+# check how much observations these are
+length(eva$PlotObservationID[eva$species %in% accept_dup_na$old_name])/ length(eva$PlotObservationID)
+
+
+# also retrieve all status values for these species
+status_na <- status[status$SCIENTIFIC_NAME %in% accept_dup_na$old_name, ]
+
+# look which species are in eva but not in the accept_dup list
+eva_names[!eva_names %in% accept_dup$old_name]
+# this list are species that are also not present in the status list
+eva_names[!eva_names %in% status$SCIENTIFIC_NAME]
+# and there are also species in status that are not in eva but in status
+status[!status$SCIENTIFIC_NAME %in% eva_names,]
+
+# we create a list with crop species that can be removed
+crops <- c("crop rye","crop spelt","crop barley","crop potato", "crop wheat", "crop vineyard", "crop radish","crop lettuce","crop gladiolus","crop salsify",
+           "crop zucchini","crop parsley","crop clover","crop tobacco", "crop maize","crop rye","crop canola","crop wheat", "crop potato", "crop oat",
+           "crop pea","crop onion","crop asparagus" ,"crop tomato","crop strawberry" ,"crop carrot" ,"crop cabbage","crop spelt" ,"crop rhubarb", "crop hops",            "crop beet","crop flax","crop bean","crop digitalis", "crop celery" ,"crop currant","crop buckwheat")
+eva_names <- eva_names[!eva_names %in% crops]
+eva_names[(duplicated(eva_names))]
+eva <- eva[!eva$species %in% crops,]
+
+# check length of number of occurences of these species
+length(eva$PlotObservationID[eva$species %in% eva_names[!eva_names %in% status$SCIENTIFIC_NAME]])/ length(eva$PlotObservationID)
+
+# we will just add them to the existing list
+accept_dup <- add_row(accept_dup, 
+                      species= NA, 
+                      family= NA,
+                      old_name= eva_names[!eva_names %in% status$SCIENTIFIC_NAME])
+
+
+# we check whether we now have every species in eva in our new list
+all.equal(sort(accept_dup$old_name), sort(eva_names))
+# count number of species without a species name
+sum(is.na(accept_dup$family))
+
+# add accepted species names and family
+eva$new_species <- accept_dup$species[match(eva$species,accept_dup$old_name)]
+eva$family <- accept_dup$family[match(eva$species,accept_dup$old_name)]
+
+# list of all species in dataset
+eva_family <- eva[!duplicated(eva$species),]
+# remove all species without a family name
+genus_family <- eva_family[!is.na(eva_family$family),]
+# get all unique geni with a family
+genus_family <- genus_family[!duplicated(genus_family$genus),]
+
+
+# match geni with families
+eva$family[is.na(eva$family)] <- genus_family$family[match(eva$genus[is.na(eva$family)], genus_family$genus)]
+```
+
+
+Now we will use TPL
+```{r}
+# we still have some species left
+eva_family <- eva[is.na(eva$family), ]
+# we get all unique species
+eva_family <- eva_family[!duplicated(eva_family$species),]
+
+
+# TPL
+plant_list <- TPL(eva_family$species)
+
+# link with data
+eva$family[is.na(eva$family)] <- plant_list$FAMILY[match(eva$species[is.na(eva$family)], plant_list$YOUR_SEARCH)]
+
+# check species without family name
+# we still have some species left
+eva_family <- eva[is.na(eva$family),]
+eva_family <- eva_family[!duplicated(eva_family$species),]
+
+
+# we make a dataframe for the species
+own_class <- data.frame(species= c("Pseudopodospermum hispanicum", 
+                                   "Calamagrostis × baltica", 
+                                    "Archanthemis marschalliana",
+                                   "Pseudopodospermum elatum",
+                                   "Willemetia stipitata",
+                                   "Parthenocissus quinquefolia",
+                                   "Elaeagnus angustifolia",
+                                   "Astragalus angustifolius subsp. angustifolius",
+                                   "Cyathophylla chlorifolia",
+                                   "Anthemis cretica subsp. cretica",
+                                   "Teucrium chamaedrys subsp. tauricola",
+                                   "Arenaria pamphylica subsp. alpestris",
+                                   "Achillea formosa subsp. formosa",
+                                   "Pilosella piloselloides subsp. magyarica",
+                                   "Centaurea idaea",
+                                   "Torminalis glaberrima",
+                                   "Ajuga",
+                                   "Achillea sivasica",
+                                   "Melanortocarya obtusifolia",
+                                   "Achillea formosa subsp. amanica",
+                                   "Archanthemis marschalliana subsp. pectinata",
+                                   "Malus florentina",
+                                   "Phrynella ortegioides",
+                                   "Chaloupkaea chrysantha",
+                                   "Dorystoechas hastata",
+                                   "Archanthemis marschalliana subsp. sosnovskyana",
+                                   "Xatardia scabra","Lolium",
+                                   "Hormuzakia aggregata",
+                                   "× Agropogon lutosus",
+                                   "Resetnikia triquetra",
+                                   "Lolium × elongatum",
+                                   "Vahlodea atropurpurea",
+                                   "Vogtia annua",
+                                   "Aizoanthemopsis hispanica",
+                                   "Arthrocaulon meridionalis",
+                                   "Myriolimon ferulaceum",
+                                   "Aloiampelos ciliaris",
+                                   "Vogtia microphylla",
+                                   "Lolium × holmbergii",
+                                   "Parapholis cylindrica",
+                                   "Anchusa variegata",
+                                   "Phyllolepidum cyclocarpum"),
+                           family= c("Asteraceae", "Poaceae",
+                                     "Asteraceae","Asteraceae",
+                                     "Asteraceae", "Vitaceae",
+                                     "Elaeagnaceae","Fabaceae",
+                                     "Caryophyllaceae","Asteraceae",
+                                     "Lamiaceae","Caryophyllaceae",
+                                     "Asteraceae","Asteraceae",
+                                     "Asteraceae","Rosaceae",
+                                     "Lamiaceae","Asteraceae",
+                                     "Boraginaceae","Asteraceae",
+                                     "Asteraceae","Rosaceae",
+                                     "Caryophyllaceae","Crassulaceae",
+                                     "Lamiaceae","Asteraceae",
+                                     "Apiaceae","Poaceae",
+                                     "Boraginaceae","Poaceae",
+                                     "Brassicaceae","Poaceae",
+                                     "Poaceae","Asteraceae",
+                                     "Aizoaceae","Amaranthaceae",
+                                     "Plumbaginaceae","Asphodelaceae",
+                                     "Asteraceae","Poaceae",
+                                     "Poaceae","Boraginaceae",
+                                     "Brassicaceae"),
+                           old_name=c("Pseudopodospermum hispanicum",
+                                      "x_Calammophila baltica", 
+                                      "Archanthemis marschalliana",
+                                      "Pseudopodospermum elatum",
+                                      "Calycocorsusástipitatus* species",
+                                      "Partenocissus quinquefolia",
+                                      "Elaeagnos angustifolia",
+                                      "Astragals angustifolius subsp. angustifolius",
+                                      "Saponasia chlorifolia",
+                                      "Antemis cretica subsp. pontica",
+                                      "Teuchrium chamaedrys subsp. tauricola",
+                                      "Arenari pamphylica subsp. alpestris",
+                                      "Leucocylus formosus subsp. formosus",
+                                      "Pllosella piloselloides subsp. megalomastix",
+                                      "Cenaturea idaea",
+                                      "Srbus torminalis var. orientalis",
+                                      "Chamaepitys",
+                                      "Chrysocamela noeana",
+                                      "Melanortocarya obtusifolia",
+                                      "Leucocyclus formosus subsp. amanicus",
+                                      "Archanthemis marschalliana subsp. pectinata",
+                                      "x_Malosorbus florentina",
+                                      "Phrynella ortegioides",
+                                      "Chaloupkaea chrysantha",
+                                      "Dorystoechas hastata",
+                                      "Archanthemis marschalliana subsp. sosnovskyana",
+                                      "Xatartia scabra",
+                                      "x_Schedolium",
+                                      "Hormuzakia aggregata",
+                                      "x_Agropogon littoralis",
+                                      "Resetnikia triquetra",
+                                      "x_Schedolium loliaceum",
+                                      "Vahlodea atropurpurea",
+                                      "Vogtia annua",
+                                      "Aizoanthemopsis hispanica",
+                                      "Arthrocaulon meridionalis",
+                                      "Myriolimon ferulaceum",
+                                      "Aloiampelos ciliaris",
+                                      "Vogtia microphylla",
+                                      "x_Schedolium holmbergii",
+                                      "Haynardia cylindrica",
+                                      "Anchusella variegata",
+                                      "Phyllolepidum cyclocarpum subsp. cyclocarpum"))
+
+
+remove <- c("Eontodon concinnus","Guadinopsis macra subsp. macra","Chelianthes fragrans","Avenochloa cycladica",
+            "Dycot spec","Keimling species 1","Keimling species 2","Chinaschilf* species","Sturmia species",
+            "Magnoliophyta species", "Tracheophyta species","Planta indeterminate","Pteridophyta species",
+            "Polypodiopsida species","Chenopodiaceae","Spermatophyta species","Liliopsida","Magnoliopsida species",
+            "Gefaesspflanze species","Hypanthium glabre","Kiemplant species","Dipsacaceae","Filicopsida species",
+            "Liliopsida species", "Cephalophysis species", "Dicot sp.1","Dicot sp.2","Gras species", 
+            "Hakvrucht cultuurgewas", "Graan cultuurgewas","Crucifer species","Rubiales species",
+            "Dicotyledone species","Monocotyledonae* species")
+
+unclear <- c("Cardueae","x_Sorbaronia mitschurinii","x_Triticosecale","× Triticosecale rimpaui",
+             "Mycelis tinctoria","x_Triticosecale rimpaui","Allopecurus littoralis","Echilops ovata")
+
+
+# we add our own classification
+eva$new_species[eva$species %in% own_class$old_name] <- 
+  own_class$species[match(eva$species[eva$species %in% own_class$old_name], own_class$old_name)]
+# family
+eva$family[eva$species %in% own_class$old_name] <- 
+  own_class$family[match(eva$species[eva$species %in% own_class$old_name], own_class$old_name)]
+
+# remove the species
+eva<- eva[!eva$species %in% remove,]
+eva<- eva[!eva$species %in% unclear,]
+
+
+# we check whether we still have family data left
+eva[is.na(eva$family),]
+any(is.na(eva$family))
+```
+
+
+
+## 3.5 Genus traits
+```{r}
+# remove also aggr. from species
+eva$species <- gsub(" aggr.", "", eva$species)
+eva$new_genus <- gsub("([A-Za-z]+).*", "\\1", eva$new_species)
+eva$new_genus <- as.character(eva$new_genus)
+
+eva_names <- unique(eva$species)
+
+eva$official <- ifelse(!is.na(eva$new_species), eva$new_species, eva$species)
+eva$official_genus <- ifelse(!is.na(eva$new_species), eva$new_genus, eva$genus)
+
+# we get Diaz genus level data
 Diaz_genus <- Diaz_raw |> group_by(Genus) |> summarise(LA= mean(`Leaf area (mm2)`, na.rm=T),
                                                    N= mean(`Nmass (mg/g)`, na.rm=T),
                                                    LMA= mean(`LMA (g/m2)`, na.rm=T), 
@@ -235,21 +555,56 @@ Diaz_genus <- Diaz_raw |> group_by(Genus) |> summarise(LA= mean(`Leaf area (mm2)
                                                    SSD= mean(`SSD combined (mg/mm3)`, na.rm=T))
 
 
+# we make a copy of eva to use as a working version
 copy<- eva
 
-copy <- left_join(copy, Diaz[,c(2,4,6:14)], by= c("species"="Species name standardized against TPL"))
+# left join with Diaz
+# copy <- left_join(copy, Diaz[,c(2,4,6:14)], by= c("species"="Species name standardized against TPL"))
 
-copy<- full_join(copy, Diaz_raw, by= c("species"="Species name standardized against TPL"))
+# left join with diaz raw by official name
+diaz_eva<-  full_join(eva, Diaz_raw, by= c("official"="Species name standardized against TPL"))
 
-library(taxize)
+# change genus for species that are not present in eva
+diaz_eva$official_genus[is.na(diaz_eva$official_genus)]<-
+  diaz_eva$Genus[is.na(diaz_eva$official_genus)]
+# give family to theses species
+diaz_eva$family[is.na(diaz_eva$family)]<-
+  diaz_eva$Family[is.na(diaz_eva$family)]
 
-tax_name(eva$species[1:10], get= "family", db="ncbi")
 
-hierarchy.info<- Diaz[, c(1,2,4,5)]
-trait.info <- Diaz[, c(8:13)]
+old_method=F
+if(old_method){
+  diaz_eva<- full_join(eva, Diaz_raw, by= c("new_species"="Species name standardized against TPL"))
+
+  # add traits from old names not in accepted names
+  diaz_eva[is.na(diaz_eva$`Number of traits with values`), c(27:39)] <-
+    Diaz_raw[match(diaz_eva$species[is.na(diaz_eva$`Number of traits with values`)], 
+               Diaz$`Species name standardized against TPL`[is.na(diaz_eva$`Number of traits with values`)]), c(1,3:14)]
+  
+  # get all diaz eva names
+  diaz_eva_names <- unique(diaz_eva$species[!is.na(diaz_eva$`Number of traits with values`)])
+}
+
+copy <- diaz_eva
+copy <- copy[!is.na(copy$`Number of traits with values`),]
+copy <- copy[!(copy$`Number of traits with values`==1 & !is.na(copy$`SSD combined (mg/mm3)`)),]
+copy <- copy[,-c(38)]
+copy <- copy[!duplicated(copy$official),]
+
+# create list of hierarchy in eva
+hierarchy.info<- copy[, c("official","official_genus","family")]
+hierarchy.info$id <- c(1: nrow(hierarchy.info))
+hierarchy.info <- hierarchy.info %>% relocate(id)
+hierarchy.info <- hierarchy.info[!duplicated(hierarchy.info$official),]
+colnames(hierarchy.info)[2] <- "species"
+colnames(hierarchy.info)[3] <- "genus"
+hierarchy.info<- as.data.frame(hierarchy.info)
+
+# get trait data
+trait.info <- copy[, c(33:38)]
 trait.info <- as.matrix(trait.info)
 
-all.equal(copy[!is.na(copy$Genus.y), 21], copy[!is.na(copy$Genus.y), 22])
+trait.info<- trait.info[,c(1:5)]
 
 back_trans_pars <- list()
   rm_col <- c()
@@ -267,140 +622,53 @@ back_trans_pars <- list()
                                  mlogx = mlogx,
                                  slogx = slogx)
     trait.info[,i] <- x
-    }
+  }
 ```
-
 
 
 ```{r}
-eva_family <- eva[!duplicated(eva$Genus),]
-Diaz_family <- Diaz_raw[!duplicated(Diaz_raw$Genus),]
+unique_geni <- unique(hierarchy.info$genus)
 
-eva_family$family <- Diaz_family$Family[match(eva_family$Genus, Diaz_family$Genus)]
-
-test<- eva_family[is.na(eva_family$family),]
-
-
-
-library(plantlist)
-x<- status(test$species)
-
-accept_dup<- data.frame(species= character(), family= character())
-for(i in x$SCIENTIFIC_NAME){
-  if(length(unique(x$ACCEPTED_SPECIES[x$SCIENTIFIC_NAME==i]))==1){
-    if(!any((is.na(x$ACCEPTED_SPECIES)))){
-      accept_dup<- cbind(species= x$ACCEPTED_SPECIES, family= x$FAMILY)
-    } else {
-      accept_dup <- cbind(species= x$SCIENTIFIC_NAME, family= x$FAMILY)
-    }
-  } else {
-    if(any(x$STATUS[x$SCIENTIFIC_NAME==i]=="Accepted")){
-      accept_dup <- cbind(species= x$ACCEPTED_SPECIES[x$STATUS=="Accepted"], family= x$FAMILY[x$STATUS=="Accepted"] )
-    } else {
-      if(!any(duplicated(x$SCIENTIFIC_NAME==i))){
-        accept_dup <- cbind(species= x$ACCEPTED_SPECIES, family= x$FAMILY)
-      } else {
-        accept_dup <- cbind(species= x$SCIENTIFIC_NAME, family= x$FAMILY)
-      }
-    }
+x<- data.frame(genus= character(), n= numeric(), family1= character(), n1=numeric(), family2= character(), n2=numeric(), rel1= numeric())
+for(i in unique_geni){
+  hier<- hierarchy.info[hierarchy.info$genus==i,]
+  length <- length(unique(hierarchy.info$family[hierarchy.info$genus==i]))
+  if(length > 1){
+    test <- hier |> group_by(family) |> summarise(n= n()) 
+    test <- test[order(-test$n),]
+    x <- add_row(x, genus= i, n= length, family1= test$family[1],n1= test$n[1], family2= test$family[2], n2= test$n[2], rel1= n1/(n1+n2))
   }
 }
 
-accept_dup<- as.data.frame(accept_dup)
-accept_dup <- accept_dup[!duplicated(accept_dup$species),]
-
-sum(is.na(accept_dup$family))
-sum(is.na(x$AUTHOR))
-
-eva_family$species[is.na(eva_family$family)] <- accept_dup$species
-eva_family$family[is.na(eva_family$family)] <- accept_dup$family
-
-test<- eva_family[is.na(eva_family$family),]
+family<- x[, c(1,3)]
+colnames(family)[2]<-"family"
 
 
-eva_family$family[is.na(eva_family$family)] <-x$FAMILY
-TPL(test$species)
+own_family <- data.frame(genus=c("Calophyllum","Holboellia","Ripogonum","Tectaria","Labisia",
+                                 "Sarcotheca","Sphenostemon","Stauntonia"),
+                         family=c("Calophyllaceae","Lardizabalaceae","Rhipogonaceae","Polypodiaceae",
+                                "Primulaceae","Anacardiaceae","Paracryphiaceae","Lardizabalaceae"))
 
-install.packages("WorldFlora")
-library(WorldFlora)
+family$family[family$genus %in% own_family$genus] <- 
+  own_family$family[match(family$genus[family$genus %in% own_family$genus], own_family$genus)]
 
-WFO.remember(WFO.file = "C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/TRY/_DwC_backbone_R/classification.csv", 
-             WFO.data = "WFO.data", WFO.pos = 1)
-
-eva_species <- eva[!duplicated(eva$species),]
-
-cuts <- cut(c(1:nrow(eva_species)), breaks=20, labels=FALSE)
-cut.i <- sort(unique(cuts))
-
-start.time <- Sys.time()
-
-for (i in 1:length(cut.i)) {
-
-cat(paste("Cut: ", i, "\n"))  
-    
-GTS.i <- WFO.one(WFO.match.fuzzyjoin(spec.data=eva_species[cuts==cut.i[i], ],
-                                     WFO.data=WFO.data,
-                                     spec.name="species",
-                                     fuzzydist.max=3),
-                 verbose=FALSE)
-
-if (i==1) {
-  GTS.WFO <- GTS.i
-}else{
-  GTS.WFO <- rbind(GTS.WFO, GTS.i)
-}
-
-}
-
-
-
-
-z <- c()
-family<- c()
-for(i in 488: length(eva_family$Genus[is.na(eva_family$family)])){
-  z <- tax_name(eva_family$species[is.na(eva_family$family)][i], get= "family", db="ncbi")$family
-  family<- rbind(family, z)
-}
-
-eva_family <- eva_family[!eva_family$species=="Eontodon concinnus",]
-eva_family$family[is.na(eva_family$family)] <- family
-
-eva_family$species[is.na(eva_family$family)]
-
-test<- eva_family[is.na(eva_family$family),]
-
-tax_name(test$species, get= "family", db="both")$family
-
-z <- z[!is.na(z)]
-family<- family[1:487]
-
+hierarchy.info$family[hierarchy.info$genus %in% family$genus]<- 
+  family$family[match(hierarchy.info$genus[hierarchy.info$genus %in% family$genus],family$genus)]
 ```
-
 
 
 
 
 ```{r}
-head(copy)
+GapFilling(trait.info, hierarchy.info,
+      mean.gap.filled.output.path= "../TRY/Species_mean_traits.txt",
+    	std.gap.filled.output.path="../TRY/Species_std_traits.txt")
 
-copy <- left_join(copy, Diaz_genus)
-
-i=27
-j=1
-
-copyNA <- is.na(Diaz)
-
-for(i in 27:32){
-  for(j in 1:length(test$PlotObservationID)){
-    test[j,i] <- ifelse(is.na(test[j,i]) & test$Genus[j] %in% Diaz_genus$Genus,
-                        Diaz_genus[Diaz_genus$Genus %in% test$Genus[j], i-25],
-                        test[j,i])
-  }
-}
-
-head(Diaz)
-head(test)
+traits <- read.delim("../TRY/Species_mean_traits.txt")
+colnames(traits)[1:5]<- c("LA", "N", "LMA","H","SM")
+traits <- cbind(hierarchy.info, traits)
 ```
+
 
 
 
@@ -427,13 +695,12 @@ impact_sp <- Diaz$`Species name standardized against TPL`[Diaz_names %in% impact
 ## 4.2 Join
 ```{r}
 # Merge 7.1 and traits data
-test<- left_join(impact, Diaz, by=c("taxa"="Species name standardized against TPL"))
-test<- left_join(impact2, Diaz, by=c("taxa"="Species name standardized against TPL"))
-
+test<- left_join(impact, traits, by=c("taxa"="species"))
+test<- left_join(impact2, traits, by=c("taxa"="species"))
 # Calculate correlations
-cor_extra<-cor(test[test$Neophyte=="extra", c(8,6, 17:22)],  use="pairwise.complete.obs", method="pearson")
-cor_intra <-cor(test[test$Neophyte=="intra", c(8,6, 17:22)],  use="pairwise.complete.obs", method="pearson")
-cor_native <-cor(test[test$Neophyte=="native", c(8,6, 17:22)],  use="pairwise.complete.obs", method="pearson")
+cor_extra<-cor(test[test$Neophyte=="extra", c(8,2, 14:18)],  use= "pairwise.complete.obs", method="pearson")
+cor_intra <-cor(test[test$Neophyte=="intra", c(8,2, 14:18)],  use="pairwise.complete.obs", method="pearson")
+cor_native <-cor(test[test$Neophyte=="native", c(8,2, 14:18)],  use="pairwise.complete.obs", method="pearson")
 ```
 
 
@@ -445,15 +712,6 @@ test$Neophyte <- as.factor(test$Neophyte)
 # Change names FT
 colnames(test)[17:22]<- c("LA", "N", "LMA","H","SM","SSD")
 
-# Make copy dataset
-test2<- test
-# Log transform all FT except WD
-test2<- as.data.frame(log(test2[,17:21]))
-# Creata dataset that can be used
-test2 <- cbind(test$RelDiff, test$Neophyte, test2, test$SSD)
-# Change names columns
-colnames(test2)[1:2]<- c("RelDiff","Neophyte")
-colnames(test2)[8]<- c("SSD")
 
 
 # Model per FT individually, as limited species (+- 880) LMAave values for all functional traits
@@ -485,22 +743,14 @@ visreg::visreg(MDL_Neophyte,"Neophyte")
 
 ## 4.4 Effect all
 ```{r}
-# Scale data to make them comparable
-test2<- as.data.frame(scale(test2[,3:8]))
-test2 <- cbind(test$RelDiff, test$Neophyte, test2)
-# Change names columns
-colnames(test2)[1:2]<- c("RelDiff","Neophyte")
-colnames(test2)[8]<- c("SSD")
-
 # Model for all traits together
-MDL<- lmer(RelDiff ~ LMA+ H+ SSD+ LA+ SM+ N+ (1|Neophyte), test2)
+MDL<- lmer(RelDiff ~ LMA+ H+ LA+ SM+ N+ (1|Neophyte), test)
 summary(MDL)
 
 
 plot_model(MDL, type = "re", facet.grid=FALSE) 
 plot_model(MDL, type = "pred", facet.grid=T, terms= c("H", "Neophyte"), pred.type="re", ci.lvl=NA, show.data=T) 
 
-visreg::visreg(MDL,"SSD")
 visreg::visreg(MDL,"LMA")
 visreg::visreg(MDL,"LA")
 visreg::visreg(MDL,"H")
