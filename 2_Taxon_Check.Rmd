@@ -49,7 +49,7 @@ Make a new column with only the genus' name.
 eva$Genus <- gsub("([A-Za-z]+).*", "\\1", eva$`Matched concept`)
 
 # This worked, all plant observations have a genus
-#sum(is.na(eva$Genus))
+# sum(is.na(eva$Genus))
 ```
 
 # Wrong taxa
@@ -80,8 +80,8 @@ numberOfDifferentTaxonGroups <- function(possibleTaxonGroups) {
 }
 ```
 
-We create a matrix with the taxon group for each genus.  
 
+We create a matrix with the taxon group for each genus.  
 We later show all geni with multiple taxa, i.e. there is a wrong taxon in Eva. We combine all erroneous inputs in a dataframe per genus and taxon group.
 ```{r, message= F, warning=FALSE }
 # For every genus: if all taxa with that genus have the same taxon group, give it that taxon group. Else give it NA. 
@@ -102,6 +102,9 @@ taxonGroupForGeni[taxonGroupForGeni$NumberOfDifferentTaxonGroups > 1,]
 genusTaxonGroupCorrections <- data.frame(Genus = c("Hepatica", "Lamprothamnium", "Leptorhaphis", "Mycoblastus", "Peltaria"),
                                        TaxonGroup = c("Vascular plant", "Alga", "Lichen", "Lichen", "Vascular plant"))
 ```
+
+
+
 We combine all genus that need a new taxon group.  
 First we make a function to obtain a vector with TRUE if taxon starts with a specified genus.  
 We then make a new dataframe and store in this one the matched concept and old and new taxon.
@@ -145,10 +148,13 @@ taxonGroupForGeni <- read_csv("../Intermediate Data/taxon_group_for_unassigned_g
 # check what we will actually change
 x<-eva[which(eva$Genus%in%taxonGroupForGeni$Genus),c(1,3,6,12)]
 # these are all species with apparently no taxon
+
 # check for sure
 y<-eva[eva$`Taxon group`=="Unknown", c(1,3,6,12)]
 # check difference and similarity two datasets just created
 setdiff(y,x)
+# chekc opposite --> the created database contains all eva species checked
+setdiff(x,y)
 # which taxa are in our dataset
 unique(taxonGroupForGeni$TaxonGroup)
 ```
@@ -177,9 +183,28 @@ We store the results in a new file
 #write_csv(taxaTaxonGroupAssignments, "taxa_taxon_group_assignments.csv")
 ```
 
+```{r}
+# What is the location of the species in eva that are specified incorrectly
+index <- eva$`Matched concept` %in% taxaTaxonGroupCorrections$Matched.concept
+
+# Change to correct for each species
+eva$`Taxon group`[index] <- taxaTaxonGroupCorrections$NewTaxonGroup[match(eva$`Matched concept`[index], taxaTaxonGroupCorrections$Matched.concept)]
+
+index <- eva$`Matched concept` %in% taxaTaxonGroupAssignments$Matched.concept
+eva$`Taxon group`[index] <- taxaTaxonGroupAssignments$TaxonGroup[match(eva$`Matched concept`[index], taxaTaxonGroupAssignments$Matched.concept)]
+# Some taxon names seem incorrect
+taxonNameCorrections <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv")
+
+# give the species name from taxon name corrections to eva in the species column
+# to lower makes sure all data is written without capitals
+# match gives vector with position of argument eva in taxonNameCorrections, and does this for the total length of eva
+eva$species <- taxonNameCorrections$species[match(tolower(eva$`Matched concept`), tolower(taxonNameCorrections$Matched.concept))]
+```
 
 
 # 4 MONOSPECIFIC 
+Here is a test to see which species are subspecies and which are genus names for species with also subspecies
+We do not use this part
 ```{r}
 y<- unique(eva$species)
 
@@ -217,10 +242,5 @@ for(i in y){
   }
   test<- rbind(test, tmp)
 }
-
-
-```
-
-
 ```
 
