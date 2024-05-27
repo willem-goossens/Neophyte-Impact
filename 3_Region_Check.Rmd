@@ -9,6 +9,9 @@ output: html_document
 rm(list=ls())
 ```
 
+
+# 1 Prepare
+## 1.1 Load
 ```{r, echo=F, warning=F, message=F}
 library(readr)
 library(ggplot2)
@@ -23,22 +26,27 @@ library(units)
 library(lwgeom)
 library(arsenal)
 library(doParallel)
+library(CoordinateCleaner)
 ```
 
 
-# Data
+## 1.2 Data
 Read data from header
 ```{r, warning= F, message= F}
 header <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_header.csv", "\t")
-fast <- T
+fast <- F
 if(fast) {
   header <- header[runif(length(header$PlotObservationID)) > 0.999,]
 }
 ```
 
+# 2 Country check
+## 2.1 No coordinates
 Check how many plots have a country defined but no coordinates and later remove those plots
 ```{r, warning=F, message=F}
+# Count plots without coordinates but assigned country
 numberOfPlotWithCountryAndNoCoordinates <- sum(!is.na(header$Country) & (is.na(header$Latitude) | is.na(header$Longitude)))
+# give relative number of plots with country but no coordinates
 percentOfPlotsWithCountryButNoCoordinates <- numberOfPlotWithCountryAndNoCoordinates / length(header$Country) * 100
 percentOfPlotsWithCountryButNoCoordinates
 
@@ -46,6 +54,7 @@ percentOfPlotsWithCountryButNoCoordinates
 header <- header[!(is.na(header$Latitude) | is.na(header$Longitude)),]
 ```
 
+## 2.2 Country join
 Make header a simple feature object and give it the WGS84 CRS
 ```{r, warning=F, message=F}
 # make geometry with long and lat
@@ -53,11 +62,13 @@ plotLocations <- st_as_sf(header, coords = c("Longitude","Latitude"), remove = F
 st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 ```
 
+
 Load the Euro+Med European region shapefiles and give the same CRS
 ```{r, warning=F, message=F}
 medRegions <- read_sf("../Europe-regions-shapefiles-2023", "Emed_regions")
 medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
 ```
+
 
 Return all records that match spatially except the 20th row, which are the Netherlands, these are subsequently run seperately because there seems to be some problems in the shapefile
 ```{r}
@@ -74,96 +85,44 @@ joinedData[(res$Region == "Netherlands") %in% TRUE,] <- res[(res$Region == "Neth
 ```
 
 
-# Unassigned data
+# 3 Unassigned
 Not all data was assigned to a region, check percentage of plots not assigned. We then look to assign the rest to a region when they are within 10 km of the closest region. 
 
+## 3.1 General
 First we compute the distances to a bounding box, which facilitates the calculations. If the plot is within the threshold distance to the box, we compute the real distance for every region untill we obtain the smallest distance. This data is stored in region, together with the distance.
 ```{r}
 # Percentage not assigned
 percentNotAssignedPlots <- sum(is.na(joinedData$Region))/length(joinedData$PlotObservationID)*100
 percentNotAssignedPlots
-
-# For the remaining plots we assign them to the closest region which is no more than 10 km away. Else we ignore the data.
-#distanceThreshold <- set_units(10000,m)
-
-# Plots with no assigned region
-#remainingPlots <- plotLocations[is.na(joinedData$Region),]
-#remainingPlots<- remainingPlots[, c("PlotObservationID","Country", "geometry")]
-# Compute bounding boxes for the regions, this allows to decide faster, if a plot is outside the distanceThreshold from a region
-# a bounding box is just the surrounding
-#boundingBoxes <- medRegions
-#for(i in 1:length(boundingBoxes$country)) {
-#  boundingBoxes$geometry[i] <- st_as_sfc(st_bbox(boundingBoxes$geometry[i]))
-#}
-
-# Remaining plots two extra parts
-#remainingPlots$Region <- NA
-#remainingPlots$Distance <- -1
-
-#begin<- Sys.time()
-#for(i in 1:length(remainingPlots$PlotObservationID)) {
-#  region <- NA
-#  distance <- set_units(1000000,m)
-  
-#  for(j in 1:length(medRegions$Region)) {
-#    distBoundingBox <- st_distance(boundingBoxes[j,], remainingPlots[i,]) #Calculate the distance
-#    # Only if the distance to the bounding box is smalle than distanceThreshold we need to compute the real distance to the region
-#    if(distBoundingBox < distanceThreshold){
-#      dist <- st_distance(medRegions[j,], remainingPlots[i,])
-#      if(dist < distanceThreshold & dist < distance) {
-#        region <- medRegions$Region[j]
-#        distance <- dist
-#      }
-#    }
-#  }
-#  # Print the progress
-#  message(i/length(remainingPlots$PlotObservationID)*100, "% ", remainingPlots$Country[i], " ", region)
-#  remainingPlots$Region[i] <- region
-#  remainingPlots$Distance[i] <- distance
-#}
-#end<-Sys.time()
-#round(end-begin, 2) 
-
-#remainingPlots2<- remainingPlots
 ```
 
 
 ```{r}
-parallel::detectCores()
-n.cores <- parallel::detectCores() - 2
-my.cluster <- parallel::makeCluster(
-  n.cores, 
-  type = "PSOCK"
-)
-print(my.cluster)
-doParallel::registerDoParallel(cl = my.cluster)
-foreach::getDoParRegistered()
-foreach::getDoParWorkers()
-
+use_for =F
+if(use_for){
+# For the remaining plots we assign them to the closest region which is no more than 10 km away. Else we ignore the data.
 distanceThreshold <- set_units(10000,m)
 
+# Plots with no assigned region
 remainingPlots <- plotLocations[is.na(joinedData$Region),]
-
-# make smaller to make calculation quicker
 remainingPlots<- remainingPlots[, c("PlotObservationID","Country", "geometry")]
-
 # Compute bounding boxes for the regions, this allows to decide faster, if a plot is outside the distanceThreshold from a region
+# a bounding box is just the surrounding
 boundingBoxes <- medRegions
-
 for(i in 1:length(boundingBoxes$country)) {
   boundingBoxes$geometry[i] <- st_as_sfc(st_bbox(boundingBoxes$geometry[i]))
 }
 
+# Remaining plots two extra parts
 remainingPlots$Region <- NA
 remainingPlots$Distance <- -1
 
-begin<-Sys.time() 
-remainingPlots[,4:5]<-foreach(i = 1:length(remainingPlots$PlotObservationID), .combine='rbind', .packages=c("dplyr","mgcv", "sf","units")) %dopar% {
+begin<- Sys.time()
+for(i in 1:length(remainingPlots$PlotObservationID)) {
   region <- NA
   distance <- set_units(1000000,m)
-  
-  for(j in 1:length(boundingBoxes$country)) {
-    sf_use_s2(F)
+
+  for(j in 1:length(medRegions$Region)) {
     distBoundingBox <- st_distance(boundingBoxes[j,], remainingPlots[i,]) #Calculate the distance
     # Only if the distance to the bounding box is smalle than distanceThreshold we need to compute the real distance to the region
     if(distBoundingBox < distanceThreshold){
@@ -176,48 +135,166 @@ remainingPlots[,4:5]<-foreach(i = 1:length(remainingPlots$PlotObservationID), .c
   }
   # Print the progress
   message(i/length(remainingPlots$PlotObservationID)*100, "% ", remainingPlots$Country[i], " ", region)
+  remainingPlots$Region[i] <- region
+  remainingPlots$Distance[i] <- distance
+}
+end<-Sys.time()
+round(end-begin, 2) 
+
+remainingPlots2<- remainingPlots
+}
+```
+
+## 3.2 Sea 
+```{r}
+# Create plot with all na data
+remainingPlots <-header[is.na(joinedData$Region),]
+remainingPlots[remainingPlots$Region=="Netherlands",]
+
+# Check which plots are not located in the sea
+not_sea<- cc_sea(remainingPlots, lon= "Longitude", lat= "Latitude", buffer= 25000)
+
+# Check which plots are removed and count them
+sea <- remainingPlots[!remainingPlots$PlotObservationID %in% not_sea$PlotObservationID,]
+sum(sea$PlotObservationID %in% remainingPlots$PlotObservationID)
+```
+
+## 3.3 Region assignment
+```{r}
+# Prepare parallel
+parallel::detectCores()
+n.cores <- parallel::detectCores() - 2
+my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK")
+print(my.cluster)
+doParallel::registerDoParallel(cl = my.cluster)
+foreach::getDoParRegistered()
+foreach::getDoParWorkers()
+
+# Create threshold to use
+distanceThreshold <- set_units(10000,m)
+
+# Dataset of points that were not assigned with sf_within
+remainingPlots <-plotLocations[is.na(joinedData$Region),]
+
+# make smaller to make calculation quicker
+remainingPlots<- remainingPlots[, c("PlotObservationID","Country", "geometry")]
+
+# Compute bounding boxes for the regions, this allows to decide faster, if a plot is outside the distanceThreshold from a region
+boundingBoxes <- medRegions
+
+# Create box for every country
+for(i in 1:length(boundingBoxes$country)) {
+  boundingBoxes$geometry[i] <- st_as_sfc(st_bbox(boundingBoxes$geometry[i]))
+}
+
+# Begin parameters
+remainingPlots$Region <- NA
+remainingPlots$Distance <- -1
+
+# Start clock
+begin<-Sys.time() 
+
+# Perform parallel loop and add results to remaining plots
+remainingPlots[,4:5]<-foreach(i = 1:length(remainingPlots$PlotObservationID), 
+                              .combine='rbind', .packages=c("dplyr","mgcv", "sf","units")) %dopar% {
+  
+  # set region to no region and distance to large value
+  region <- NA
+  distance <- set_units(1000000,m)
+  
+  # check for every country individually if distance to the box is more than is allowed
+  for(j in 1:length(boundingBoxes$country)) {
+    sf_use_s2(F)
+    distBoundingBox <- st_distance(boundingBoxes[j,], remainingPlots[i,]) #Calculate the distance
+    # Only if the distance to the bounding box is smaller than distanceThreshold we need to compute the real distance to the region
+    if(distBoundingBox < distanceThreshold){
+      dist <- st_distance(medRegions[j,], remainingPlots[i,])
+      # if this distance is smaller than the previously computed distance and the threshold, save this one
+      if(dist < distanceThreshold & dist < distance) {
+        region <- medRegions$Region[j]
+        distance <- dist
+      }
+    }
+  }
+  # add these to the remaining plots
   remainingPlots$Region[i] <- c(region, distance)
 }
+# End time and calculation time needed
 end<-Sys.time()
 round(end-begin, 2)  
 
+# Stop cluster
 parallel::stopCluster(cl = my.cluster)
+
+# Change type of distance in plot
 remainingPlots$Distance<- as.double(remainingPlots$Distance)
 
-#setdiff(st_drop_geometry(remainingPlots), st_drop_geometry(remainingPlots2))
-#comparedf(st_drop_geometry(remainingPlots), st_drop_geometry(remainingPlots2))
+# check whether the for and foreachloop gave similar results
+if(use_for){
+  setdiff(st_drop_geometry(remainingPlots), st_drop_geometry(remainingPlots2))
+  comparedf(st_drop_geometry(remainingPlots), st_drop_geometry(remainingPlots2))
+}
 ```
+
 
 We assign the remaining plots to the region obtained (if applicable)
 ```{r}
-# merge the plots which lie within a region with those which are in proximity and write the result to file
+# reduce dataset with country and region data
 allPlotsWithRegion <- joinedData[,c("PlotObservationID", "Region", "Country")]
+# calculate number of plots without a region
 sum(is.na(allPlotsWithRegion$Region))
+
+# merge the plots which lie within a region with those which are in proximity
 allPlotsWithRegion[is.na(allPlotsWithRegion$Region),] <- remainingPlots[,c("PlotObservationID", "Region", "Country")]
+# Look at how many plots have no region after the buffer method
 sum(is.na(allPlotsWithRegion$Region))
 
 ```
 
+## 3.4 Save
 We make the dataset a normal dataframe (remove the geometry) and save the dataset
 ```{r}
+# remove geometry
 st_geometry(allPlotsWithRegion) <- NULL
+
+# save file
 #write_csv(allPlotsWithRegion[,1:2], "plot_to_region_assignment_small.csv")
 
 #check whether my 'plot to region' is different than the one from Christian
-#myPlot<- read.csv("plot_to_region_assignment.csv")
-hisPlot<- read_csv("../Intermediate Data/plot_to_region_assignment.csv")
-comparedf(hisPlot, myPlot)
+if(use_for){
+  myPlot<- read.csv("plot_to_region_assignment.csv")
+  hisPlot<- read_csv("../Intermediate Data/plot_to_region_assignment.csv")
+  comparedf(hisPlot, myPlot)
+}
 ```
 
-# Still unassigned
+
+# 4 Extra
+## 4.1 Still unassigned
 Some countries (from eva) still posses plots that are not assigned to an Euro+Med region. We first check how many and then check for which countries this applies.
 ```{r}
+# percent still unassigned
 percentOfPlotsStillUnassigned <- sum(is.na(allPlotsWithRegion$Region))/length(allPlotsWithRegion$Region)*100
 
 # from which countries do we have plots which are still unassigned?
-unique(allPlotsWithRegion[is.na(allPlotsWithRegion$Region),])
+unique(allPlotsWithRegion$Country[is.na(allPlotsWithRegion$Region)])
+
+# quite some data from North-Africa (Tunisia, Algeria), Islands or coastal countries
 ```
 
+## 4.2 Check sea
+```{r}
+# get all plots which are not assigned
+remainingPlots <- remainingPlots[is.na(remainingPlots$Region),]
+
+# how many of these plots were located in the sea
+percentSea<- sum(remainingPlots$PlotObservationID %in% sea$PlotObservationID)/ length(sea$PlotObservationID)
+percentRegionSea<- sum(remainingPlots$PlotObservationID %in% sea$PlotObservationID)/ length(remainingPlots$PlotObservationID)
+```
+
+
+
+## 4.3 check assigned
 Check whether the number of plots which are in a region match number of plots in a country
 ```{r}
 compareCountryLabelWithRegion <- function(country, region) {
@@ -235,9 +312,12 @@ compareCountryLabelWithRegion("Italy", "Sardinia")
 
 ```
 
-# Plot
+
+# 5 Plot
 We now plot for a region
 ```{r}
+plot= F
+if(plot){
 # Which regions are there?
 sort(medRegions$Region)
 
@@ -258,10 +338,12 @@ ggplot() +
   geom_sf(data = regionShape, color = "black", fill = "cyan1") + 
   geom_sf(data = plotsInRegion, color = "red", size = 1) + 
   coord_sf()
+}
 ```
 
 Plot Europe with plots
 ```{r}
+if(plot){
 Europe<- st_combine(medRegions)
 
 Europe_Plots<- fortify(allPlotsWithRegion[!is.na(allPlotsWithRegion$Region),])
@@ -272,6 +354,6 @@ ggplot()+
   geom_sf(data= Europe_Plots, color="red", size=0.5)
 
 allPlotsWithRegion[(is.na(allPlotsWithRegion$Region)),]
-
+}
 ```
 
