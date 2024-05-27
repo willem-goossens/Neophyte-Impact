@@ -6,7 +6,7 @@ eva <- read_csv("fullPlotEva_cover_all_layer_cleaned.csv", show_col_types = FALS
 fullPlotData <- read_csv("fullPlotData_cover_all_layer_cleaned.csv", show_col_types = FALSE)
 
 # Downsample by a factor of 100 if fast is selected
-fast <- T
+fast <- F
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.90,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
@@ -66,6 +66,47 @@ species_vector <- c("Beta vulgaris", "Agrostis canina", "Agrostis gigantea", "Ag
 
 uniqueSpecies<- unique(eva$species)
 agro<- uniqueSpecies[uniqueSpecies %in% species_vector]
+
+# Data on which species are neophytes
+native_intra_analysis=F
+if(native_intra_analysis){
+  species_country_status <- read_csv("eva2_country_status_new.csv")
+} else{
+  species_country_status<- read_csv("species_country_status_new.csv")
+  # or if we want to do it with intra seperately
+}
+
+# Assign these names to the eva list
+extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
+intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
+native_intra <- unique(species_country_status$species[species_country_status$Neophyte=="native_intra"])
+
+
+
+remove<- read_csv("not_defined.csv",show_col_types = FALSE)
+remove<- as.vector(unlist(remove))
+eva<- eva[!(eva$species %in% remove),]
+
+# Only observation ID and Region
+fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
+# Right join to keep only species present in fullplot (otherwise a lot of NAs)
+eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
+# Join eva and classification
+eva_country_neophyte<- left_join(eva, species_country_status, 
+                                 by= c("Region"= "Region", "species"= "species"))
+eva<- eva_country_neophyte
+# Look at how much from every type are present
+tt<- as.data.frame(table(eva_country_neophyte$Neophyte))
+tt
+
+rm(fullPlot2, eva_country_neophyte, remove)
+
+test <- eva |> group_by(species, Neophyte) |> summarise(n=n())
+
+test <- test[test$species %in% agro, ]
+
+write.csv(test, "cultivated_species_status.csv")
+
 obs<- eva$PlotObservationID[eva$species %in% agro]
 test<- fullPlotData[fullPlotData$PlotObservationID %in% obs,]
 hist(test$numberOfVascularPlantSpecies[test$numberOfVascularPlantSpecies<=5])
