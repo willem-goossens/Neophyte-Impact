@@ -26,7 +26,7 @@ neophyte<- readxl::read_excel("../Neophyte-Impact/country_species-2024-01-30-IA-
 ###### 2.2 Eva and Header #####
 # Load and make smaller to conocate
 fullPlotEva <- read_csv("fullPlotEva_cover_all_layer.csv", show_col_types = FALSE)
-eva2<- fullPlotEva[,c("PlotObservationID","species")]
+eva2<- fullPlotEva[,c("PlotObservationID","species")] # ,"old.name"
 fullPlotData<- read_csv("fullPlotData_cover_all_layer.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
