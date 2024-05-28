@@ -103,9 +103,15 @@ plant_list$GROUP <- gsub("Angiosperms","Vascular plant",plant_list$GROUP)
 plant_list$GROUP <- gsub("Gymnosperms","Vascular plant",plant_list$GROUP)
 length(plant_list$YOUR_SEARCH[plant_list$GROUP =="Vascular plant"])
 
+plant_list <- plant_list[!duplicated(plant_list) & plant_list$GROUP=="Vascular plant",]
+plant_list<- plant_list[!is.na(plant_list$YOUR_SEARCH),]
+
 eva$`Taxon group`[eva$`Taxon group`=="Unknown"] <- plant_list$GROUP[match(eva$species[eva$`Taxon group`=="Unknown"], plant_list$YOUR_SEARCH)]
 unique(eva$`Taxon group`)
 ```
+
+
+
 
 
 We only keep vascular plants and remove the columns in which this data is designated.
@@ -115,12 +121,13 @@ eva <- eva[eva$`Taxon group` == "Vascular plant",!names(eva) %in% c("Taxon group
 eva <- eva[!is.na(eva$species),]
 ```
 
+
 ```{r}
 eva_names <- read.csv("eva_accepted_names_all.csv")
 eva_names <- eva_names[(eva_names$old.name %in% eva$species & eva_names$PlotObservationID %in% eva$PlotObservationID),]
 
 # all species are in boh lists, except the ones I removed myself.
-# unique(eva$species[!eva$species %in% eva_names$old.name])
+ unique(eva$species[!eva$species %in% eva_names$old.name])
 # we continue using eva_names
 eva <- eva_names
 colnames(eva)[5:6] <- c("Layer","Cover %")
@@ -782,18 +789,44 @@ eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 
 
 
+```{r}
+eva2 <- read_csv("fullPlotEva_cover_all_layer.csv", show_col_types = FALSE)
+
+# species that are now included and not previously
+extra <- unique(eva$old.name[!eva$old.name %in% eva2$species])
+extra
+
+unique(unknown$species[unknown$species %in% extra])
+
+# which species do we have now and not previously and was not designated as unknown 
+unique(extra[!extra %in% unknown$species])
+
+# species that were included and not now
+extra <- unique(eva2$species[!eva2$species %in% eva$old.name])
+extra
+# these are the species that we removed
+```
+
+
+
 
 ## 6.2 Check neophytes
 ```{r}
 # File for Irena
 # Eva
-eva2<- eva[,c("PlotObservationID","species")]
-# Header
+fullPlotEva <- read_csv("fullPlotEva_cover_all_layer_new.csv", show_col_types = FALSE)
+eva2<- fullPlotEva[,c("PlotObservationID","species","old.name")]
+fullPlotData<- read_csv("fullPlotData_cover_all_layer_new.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
+
 # Join and summarise
 eva_country<- left_join(eva2, fullPlot2)
-species_country<- eva_country |> group_by(Region) |> summarize(species= unique(species))
+species_country<- eva_country |> group_by(Region) |> summarize(old.name=unique(old.name))
 
+neophyte<- readxl::read_excel("../Neophyte-Impact/country_species-2024-01-30-IA-VK.xlsx", sheet="country_speciesWillem")
+
+# these are species that are not in the previously made dataset (1389)
+length(unique(neophyte$species[!neophyte$species %in% species_country$old.name]))
 #write.csv(species_country,"country_species.csv")
 ```
 
