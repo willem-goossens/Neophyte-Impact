@@ -26,6 +26,7 @@ library(doParallel)
 library(arsenal)
 library(pracma)
 library(vegdata)
+library(plantlist)
 ```
 
 
@@ -88,9 +89,41 @@ eva$species[is.na(eva$species)] <- eva$`Matched concept`[is.na(eva$species)]
 ```
 
 
+
+
+```{r}
+# how many observations have unknown taxon group
+length(eva$species[eva$`Taxon group`=="Unknown"])
+
+# check species
+unknown <- eva[eva$`Taxon group`=="Unknown",]
+plant_list <- TPL(unknown$species)
+unique(plant_list$GROUP)
+plant_list$GROUP <- gsub("Angiosperms","Vascular plant",plant_list$GROUP)
+plant_list$GROUP <- gsub("Gymnosperms","Vascular plant",plant_list$GROUP)
+length(plant_list$YOUR_SEARCH[plant_list$GROUP =="Vascular plant"])
+
+eva$`Taxon group`[eva$`Taxon group`=="Unknown"] <- plant_list$GROUP[match(eva$species[eva$`Taxon group`=="Unknown"], plant_list$YOUR_SEARCH)]
+unique(eva$`Taxon group`)
+```
+
+
 We only keep vascular plants and remove the columns in which this data is designated.
 ```{r}
+length(eva$species[!eva$`Taxon group`=="Vascular plant"])
 eva <- eva[eva$`Taxon group` == "Vascular plant",!names(eva) %in% c("Taxon group", "Taxon group ID")]
+eva <- eva[!is.na(eva$species),]
+```
+
+```{r}
+eva_names <- read.csv("eva_accepted_names_all.csv")
+eva_names <- eva_names[(eva_names$old.name %in% eva$species & eva_names$PlotObservationID %in% eva$PlotObservationID),]
+
+# all species are in boh lists, except the ones I removed myself.
+# unique(eva$species[!eva$species %in% eva_names$old.name])
+# we continue using eva_names
+eva <- eva_names
+colnames(eva)[5:6] <- c("Layer","Cover %")
 ```
 
 
@@ -109,7 +142,7 @@ if(Layerremove){
 numberOfRowsDuplicates<- sum((eva|> group_by(PlotObservationID)|> mutate(duplicated = duplicated(species)))$duplicated)
 Layersum=T
 if(Layersum){
-  eva <- eva |> group_by(PlotObservationID, species) |> summarise(`Cover %`= sum(`Cover %`))
+  eva <- eva |> group_by(PlotObservationID, species, old.name) |> summarise(`Cover %`= sum(`Cover %`))
 }
 
 # remove species with 0 cover
@@ -257,6 +290,27 @@ eva$EIVEnwR <- eive$`EIVEres-R.nw3`[match(eva$species, eive$TaxonConcept)]
 eva$EIVEnwL <- eive$`EIVEres-L.nw3`[match(eva$species, eive$TaxonConcept)]
 eva$EIVEnwT <- eive$`EIVEres-T.nw3`[match(eva$species, eive$TaxonConcept)]
 
+# check which is best name for EIVE matching
+length(unique(eva$species[match(eva$species, eive$TaxonConcept)]))
+length(unique(eva$old.name[match(eva$old.name, eive$TaxonConcept)]))
+
+# we clearly also need to incorporate the old names
+extra <- setdiff(unique(eva$old.name[match(eva$old.name, eive$TaxonConcept)]), unique(eva$species[match(eva$species, eive$TaxonConcept)]))
+
+# redo analysis
+eva$EIVEresM[eva$old.name %in% extra] <- eive$`EIVEres-M`[match(eva$old.name[eva$old.name %in% extra], eive$TaxonConcept)]
+eva$EIVEresN[eva$old.name %in% extra] <- eive$`EIVEres-N`[match(eva$old.name[eva$old.name %in% extra], eive$TaxonConcept)]
+eva$EIVEresR[eva$old.name %in% extra] <- eive$`EIVEres-R`[match(eva$old.name[eva$old.name %in% extra], eive$TaxonConcept)]
+eva$EIVEresL[eva$old.name %in% extra] <- eive$`EIVEres-L`[match(eva$old.name[eva$old.name %in% extra], eive$TaxonConcept)]
+eva$EIVEresT[eva$old.name %in% extra] <- eive$`EIVEres-T`[match(eva$old.name[eva$old.name %in% extra], eive$TaxonConcept)]
+
+# niche widths
+eva$EIVEnwM[eva$old.name %in% extra] <- eive$`EIVEres-M.nw3`[match(eva$old.name[eva$old.name %in% extra], eive$TaxonConcept)]
+eva$EIVEnwN[eva$old.name %in% extra] <- eive$`EIVEres-N.nw3`[match(eva$old.name[eva$old.name %in% extra], eive$TaxonConcept)]
+eva$EIVEnwR[eva$old.name %in% extra] <- eive$`EIVEres-R.nw3`[match(eva$old.name[eva$old.name %in% extra], eive$TaxonConcept)]
+eva$EIVEnwL[eva$old.name %in% extra] <- eive$`EIVEres-L.nw3`[match(eva$old.name[eva$old.name %in% extra], eive$TaxonConcept)]
+eva$EIVEnwT[eva$old.name %in% extra] <- eive$`EIVEres-T.nw3`[match(eva$old.name[eva$old.name %in% extra], eive$TaxonConcept)]
+
 # Look at number of observations not in EIVE
 numberOfPlantsInEvaFoundInEive <- sum(!(is.na(eva$EIVEresM) | 
                                               is.na(eva$EIVEresN) | 
@@ -325,6 +379,24 @@ eva$Soil.Disturbance <- div$Soil.Disturbance[match(eva$species, div$species)]
 
 numberOfPlantsInEvaFoundInDiv <- sum(!is.na(eva$Disturbance.Severity))
 percentEvaInDiv<- numberOfPlantsInEvaFoundInDiv/length(eva$Disturbance.Severity)
+
+
+# check length DIV matching
+length(unique(eva$species[match(eva$species, div$species)]))
+length(unique(eva$old.name[match(eva$old.name, div$species)]))
+
+# make list species
+extra <- setdiff(unique(eva$old.name[match(eva$old.name, div$species)]),unique(eva$species[match(eva$species, div$species)]))
+
+# redo for these species
+eva$Disturbance.Severity[eva$old.name %in% extra] <- div$Disturbance.Severity[match(eva$old.name[eva$old.name %in% extra], div$species)]
+eva$Disturbance.Severity.herblayer[eva$old.name %in% extra] <- div$Disturbance.Severity.herblayer[match(eva$old.name[eva$old.name %in% extra], div$species)]
+eva$Disturbance.Frequency[eva$old.name %in% extra] <- div$Disturbance.Frequency[match(eva$old.name[eva$old.name %in% extra], div$species)]
+eva$Disturbance.Frequency.herblayer[eva$old.name %in% extra] <- div$Disturbance.Frequency.herblayer[match(eva$old.name[eva$old.name %in% extra], div$species)]
+eva$Grazing.Pressure[eva$old.name %in% extra] <- div$Grazing.Pressure[match(eva$old.name[eva$old.name %in% extra], div$species)]
+eva$Mowing.Frequency[eva$old.name %in% extra] <- div$Mowing.Frequency[match(eva$old.name[eva$old.name %in% extra], div$species)]
+eva$Soil.Disturbance[eva$old.name %in% extra] <- div$Soil.Disturbance[match(eva$old.name[eva$old.name %in% extra], div$species)]
+
 ```
 
 `r numberOfPlantsInEvaFoundInDiv` of the `r length(eva$PlotObservationID)` plant observations in Eva have disturbance indicator value.
@@ -701,12 +773,14 @@ Looking at different datasets from a similar region exhibits quite large differe
 # Make sure all plot data is in eva
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
-#write_csv(fullPlotData, "fullPlotData_cover_all_layer.csv")
+# write_csv(fullPlotData, "fullPlotData_cover_all_layer_new.csv")
 
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
-#write_csv(eva, "fullPlotEva_cover_all_layer.csv")
+# write_csv(eva, "fullPlotEva_cover_all_layer_new.csv")
 ```
+
+
 
 
 ## 6.2 Check neophytes
@@ -718,14 +792,11 @@ eva2<- eva[,c("PlotObservationID","species")]
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 # Join and summarise
 eva_country<- left_join(eva2, fullPlot2)
-species_country<- eva_country |> group_by(Region) |> summarise(species= unique(species))
+species_country<- eva_country |> group_by(Region) |> summarize(species= unique(species))
 
 #write.csv(species_country,"country_species.csv")
 ```
-```{r}
-fullPlotData3<- fullPlotData
-eva3<- eva
-```
+
 
 
 # 7 FREQUENCY
@@ -734,7 +805,7 @@ This has become wrong, as we have some intra-european neophytes that are present
 Compute which species occurs how often in eva:
 ```{r}
 # For speed optimization we extract only the necessary information from EVA
-reducedEva <- eva |> select(PlotObservationID, species, `Cover %`)
+reducedEva <- eva |> select(PlotObservationID, species, old.name, `Cover %`)
 
 uniqueSpecies <- unique(reducedEva$species)
 
