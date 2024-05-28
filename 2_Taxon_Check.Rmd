@@ -5,6 +5,7 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
+# 1 LOAD
 ```{r clear, echo=F}
 rm(list = ls())
 ```
@@ -19,11 +20,12 @@ library(dplyr)
 library(magrittr)
 library(ggplot2)
 library(stringr)
+library(plantlist)
 ```
 
-# Data
-Here we load the data and chose which dataset we want to use.  
 
+# 2 DATA
+Here we load the data and chose which dataset we want to use.  
 We later remove all rows without a plot ID and check which taxa are present in the dataset
 ```{r Load data, message= F, warning=FALSE}
 fast <- T
@@ -40,6 +42,8 @@ eva <- eva[!is.na(eva$PlotObservationID),]
 unique(eva$`Taxon group`)
 ```
 
+# 3 KINGDOM
+## 3.1 Genus
 Make a new column with only the genus' name.  
 ```{r Matched concept,  message= F, warning=FALSE}
 # Fast method to extract the first string from the 'Matched concept' column e.g. Genus
@@ -52,17 +56,21 @@ eva$Genus <- gsub("([A-Za-z]+).*", "\\1", eva$`Matched concept`)
 # sum(is.na(eva$Genus))
 ```
 
-# Wrong taxa
+
+## 3.2 Functions
 We first create three functions required further in the computation. They do the following:  
 
 1.    Get the ID for each taxon group
 2.    Get the name of the taxon group, if it is unique it renders the correct one, if not it displays NA. We make sure that the NA's and Unknowns are not given as unique classes
 3.    Give the number of options for the taxon
+
 ```{r Functions, message= F, warning=FALSE}
+# get ID
 taxonGroupToId <- function(taxonGroup) {
   eva$`Taxon group ID`[match(taxonGroup, eva$`Taxon group`)]
 }
 
+# get name kingdom group, if there are multiple return NA
 computeTaxonGroup <- function(possibleTaxonGroups) {
   # get all possible groups for that specific genus
   uniqueTaxonGroups <- unique(possibleTaxonGroups[!(is.na(possibleTaxonGroups) | possibleTaxonGroups == "Unknown")])
@@ -74,6 +82,7 @@ computeTaxonGroup <- function(possibleTaxonGroups) {
   }
 }
 
+# get number of different taxa
 numberOfDifferentTaxonGroups <- function(possibleTaxonGroups) {
   # count number of possible groups
   length(unique(possibleTaxonGroups[!(is.na(possibleTaxonGroups) | possibleTaxonGroups == "Unknown")]))
@@ -81,6 +90,7 @@ numberOfDifferentTaxonGroups <- function(possibleTaxonGroups) {
 ```
 
 
+## 3.3 Wrong
 We create a matrix with the taxon group for each genus.  
 We later show all geni with multiple taxa, i.e. there is a wrong taxon in Eva. We combine all erroneous inputs in a dataframe per genus and taxon group.
 ```{r, message= F, warning=FALSE }
@@ -104,7 +114,7 @@ genusTaxonGroupCorrections <- data.frame(Genus = c("Hepatica", "Lamprothamnium",
 ```
 
 
-
+## 3.4 Assign wrong
 We combine all genus that need a new taxon group.  
 First we make a function to obtain a vector with TRUE if taxon starts with a specified genus.  
 We then make a new dataframe and store in this one the matched concept and old and new taxon.
@@ -135,29 +145,28 @@ for(i in seq(1,length(genusTaxonGroupCorrections$Genus))) {
 }
 ```
 
+
 We store the results in a new file
 ```{r}
 #write_csv(taxaTaxonGroupCorrections, "taxa_taxon_group_corrections.csv")
 ```
 
 
-# No taxon
+
+## 3.5 Missing
 We first load the data and check uniqueness of taxa
 ```{r, message= F, warning=FALSE}
+# Unknown kingdom
 taxonGroupForGeni <- read_csv("../Intermediate Data/taxon_group_for_unassigned_geni.csv")
+
 # check what we will actually change
 x<-eva[which(eva$Genus%in%taxonGroupForGeni$Genus),c(1,3,6,12)]
-# these are all species with apparently no taxon
-
-# check for sure
-y<-eva[eva$`Taxon group`=="Unknown", c(1,3,6,12)]
-# check difference and similarity two datasets just created
-setdiff(y,x)
-# chekc opposite --> the created database contains all eva species checked
-setdiff(x,y)
 # which taxa are in our dataset
 unique(taxonGroupForGeni$TaxonGroup)
+unique(x$`Taxon group`)
 ```
+
+
 
 Check all taxa that need to be assigned and save to file.
 First create empty dataset.
@@ -183,17 +192,21 @@ We store the results in a new file
 #write_csv(taxaTaxonGroupAssignments, "taxa_taxon_group_assignments.csv")
 ```
 
+
+## 3.6 Eva assign
 ```{r}
+# WRONG DATA
 # What is the location of the species in eva that are specified incorrectly
 index <- eva$`Matched concept` %in% taxaTaxonGroupCorrections$Matched.concept
 
 # Change to correct for each species
 eva$`Taxon group`[index] <- taxaTaxonGroupCorrections$NewTaxonGroup[match(eva$`Matched concept`[index], taxaTaxonGroupCorrections$Matched.concept)]
 
+# MISSING DATA
 index <- eva$`Matched concept` %in% taxaTaxonGroupAssignments$Matched.concept
 eva$`Taxon group`[index] <- taxaTaxonGroupAssignments$TaxonGroup[match(eva$`Matched concept`[index], taxaTaxonGroupAssignments$Matched.concept)]
 # Some taxon names seem incorrect
-taxonNameCorrections <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv")
+taxonNameCorrections <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv", show_col_types = FALSE)
 
 # give the species name from taxon name corrections to eva in the species column
 # to lower makes sure all data is written without capitals
@@ -202,7 +215,488 @@ eva$species <- taxonNameCorrections$species[match(tolower(eva$`Matched concept`)
 ```
 
 
-# 4 MONOSPECIFIC 
+# 4 TPL
+## 4.1 Prepare data
+We load the data
+```{r , message=FALSE, warning=FALSE}
+fast <- F
+if(fast) {
+  eva <- read_delim("../EVA Data/onePromilleEva.csv", "\t")
+} else {
+  eva <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_species.csv", "\t")
+}
+
+# Filter out all rows which don't have a plot ID
+eva <- eva[!is.na(eva$PlotObservationID),]
+```
+
+
+We update the taxa data
+```{r, warning=F, message=FALSE}
+# Update taxon group for some species where it was specified incorrectly
+taxonGroupCorrections <- read_csv("../Intermediate Data/taxa_taxon_group_corrections.csv")
+
+# What is the location of the species in eva that are specified incorrectly
+index <- eva$`Matched concept` %in% taxonGroupCorrections$Matched.concept
+
+# Change to correct for each species
+eva$`Taxon group`[index] <- taxonGroupCorrections$NewTaxonGroup[match(eva$`Matched concept`[index], taxonGroupCorrections$Matched.concept)]
+
+
+# Update taxon group for species that did not have one in EVA
+taxonGroupAssignments <- read_csv("../Intermediate Data/taxa_taxon_group_assignments.csv")
+index <- eva$`Matched concept` %in% taxonGroupAssignments$Matched.concept
+eva$`Taxon group`[index] <- taxonGroupAssignments$TaxonGroup[match(eva$`Matched concept`[index], taxonGroupAssignments$Matched.concept)]
+
+taxonGroupAssignments <- taxonGroupAssignments[taxonGroupAssignments$TaxonGroup=="Unknown",]
+
+
+# Some taxon names seem incorrect
+taxonNameCorrections <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv")
+
+# give the species name from taxon name corrections to eva in the species column
+# to lower makes sure all data is written without capitals
+# match gives vector with position of argument eva in taxonNameCorrections, and does this for the total length of eva
+eva$species <- taxonNameCorrections$species[match(tolower(eva$`Matched concept`), tolower(taxonNameCorrections$Matched.concept))]
+
+# some data of species is.na, we assign for these the values of the matched concept
+eva$species[is.na(eva$species)] <- eva$`Matched concept`[is.na(eva$species)] 
+```
+
+
+```{r}
+unknown <- eva[eva$`Taxon group`=="Unknown",]
+plant_list <- TPL(unknown$species)
+unique(plant_list$GROUP)
+plant_list$GROUP <- gsub("Angiosperms","Vascular plant",plant_list$GROUP)
+plant_list$GROUP <- gsub("Gymnosperms","Vascular plant",plant_list$GROUP)
+
+eva$`Taxon group`[eva$`Taxon group`=="Unknown"] <- plant_list$GROUP[match(eva$species[eva$`Taxon group`=="Unknown"], plant_list$YOUR_SEARCH)]
+unique(eva$`Taxon group`)
+```
+
+
+
+
+We only keep vascular plants and remove the columns in which this data is designated.
+```{r}
+eva <- eva[eva$`Taxon group` == "Vascular plant", names(eva) %in% c("PlotObservationID","Matched concept", "Layer","Cover %","species")]
+eva <- eva[!is.na(eva$species),]
+```
+
+
+## 4.2 Status 
+We first get the data for genus level interpretation
+```{r}
+# get genus --> very slow
+# eva$genus <- gsub("([A-Za-z]+).*", "\\1", eva$species)
+
+# get all unique names in eva
+eva_names <- unique(eva$species)
+# make dataframe and give name
+eva_names <- as.data.frame(eva_names)
+colnames(eva_names)[1] <- "species"
+# get genus data
+eva_names$genus <- gsub("([A-Za-z]+).*", "\\1", eva_names$species)
+
+# assign to eva
+eva$genus <- eva_names$genus[match(eva$species, eva_names$species)]
+
+# get new list of unique species
+eva_names <- unique(eva$species)
+
+# we remove the aggr part
+eva_names <- gsub(" aggr.", "", eva_names)
+eva$species <- gsub(" aggr.", "", eva$species)
+# some duplicates now --> remove
+eva_names <- unique(eva_names)
+
+
+# we will check names here quickly
+status_already <- read.csv("TPL_status_all_new.csv")
+status_already <- status_already[, -1]
+status_already <- status_already[!duplicated(status_already),]
+
+# names to calculate
+eva_status <- eva_names[!eva_names %in% status_already$SCIENTIFIC_NAME]
+
+# status calculation
+status <- status(eva_status)
+# remove dubble entries
+status <- status[!duplicated(status),]
+
+status <- rbind(status_already, status)
+status <- status[!duplicated(status),]
+
+#status<- status_already
+
+if(fast){
+  status<- status[status$SCIENTIFIC_NAME %in% eva_names,]
+}
+
+rm(list=c("status_already"))
+#write.csv(status, "TPL_status_all.csv")
+```
+
+
+## 4.3 Remove duplicates
+```{r}
+# change names to accepted
+accept_dup<- data.frame(species= character(), family= character(), old_name= character())
+# run for all species
+for(i in 1: length(eva_names)){ 
+  # first check if they exist in our status data, if not keep only old name
+  if(any(is.na(status$STATUS[status$SCIENTIFIC_NAME== eva_names[i]]))){
+    accept_dup <- add_row(accept_dup,
+                      species= NA, 
+                      family= NA,
+                      old_name= eva_names[i])
+  # then check if they exist in our status data with an accepted name
+  } else if(any(status$STATUS[status$SCIENTIFIC_NAME==eva_names[i]]=="Accepted")){
+    accept_dup <- add_row(accept_dup,
+                      species= status$ACCEPTED_SPECIES[status$STATUS=="Accepted" & status$SCIENTIFIC_NAME==eva_names[i]], 
+                      family= status$FAMILY[status$STATUS=="Accepted" & status$SCIENTIFIC_NAME==eva_names[i]],
+                      old_name= eva_names[i])
+  # check for species that are present only once and are designated as 'synonym'
+  } else if(all(!any(status$STATUS[status$SCIENTIFIC_NAME==eva_names[i]]=="Accepted"),
+            length(status$STATUS[status$SCIENTIFIC_NAME==eva_names[i]])==1 &
+            status$STATUS[status$SCIENTIFIC_NAME==eva_names[i]]=="Synonym")){
+    accept_dup <- add_row(accept_dup,
+                      species= status$ACCEPTED_SPECIES[status$STATUS=="Synonym" & status$SCIENTIFIC_NAME==eva_names[i]], 
+                      family= status$FAMILY[status$STATUS=="Synonym" & status$SCIENTIFIC_NAME==eva_names[i]],
+                      old_name= eva_names[i]) 
+  # if no other options, give NA  
+  }  else {
+   accept_dup <- add_row(accept_dup,
+                      species= NA, 
+                      family= NA,
+                      old_name= eva_names[i])
+  }
+}
+
+# make data frame
+accept_dup<- as.data.frame(accept_dup)
+# check if there are still duplicated species in the old name list --> no
+dup<- accept_dup[accept_dup$old_name %in% accept_dup$species[duplicated(accept_dup$old_name)],]
+
+# count number of species without a species name and retrieve them
+sum(is.na(accept_dup$species))
+accept_dup_na <- accept_dup[is.na(accept_dup$species),]
+# check how much observations these are
+length(eva$PlotObservationID[eva$species %in% accept_dup_na$old_name])/ length(eva$PlotObservationID)
+
+
+# also retrieve all status values for these species
+status_na <- status[status$SCIENTIFIC_NAME %in% accept_dup_na$old_name, ]
+
+# look which species are in eva but not in the accept_dup list
+eva_names[!eva_names %in% accept_dup$old_name]
+# this list are species that are also not present in the status list
+eva_names[!eva_names %in% status$SCIENTIFIC_NAME]
+# and there are also species in status that are not in eva but in status
+status[!status$SCIENTIFIC_NAME %in% eva_names,]
+
+# we create a list with crop species that can be removed
+crops <- c("crop rye","crop spelt","crop barley","crop potato", "crop wheat", "crop vineyard", "crop radish","crop lettuce","crop gladiolus",
+           "crop salsify","crop zucchini","crop parsley","crop clover","crop tobacco", "crop maize","crop rye","crop canola","crop wheat", 
+           "crop potato", "crop oat","crop pea","crop onion","crop asparagus" ,"crop tomato","crop strawberry" ,"crop carrot" ,"crop cabbage",
+           "crop spelt" ,"crop rhubarb", "crop hops","crop beet","crop flax","crop bean","crop digitalis", "crop celery" ,"crop currant",
+           "crop buckwheat","crop millet")
+eva_names <- eva_names[!eva_names %in% crops]
+eva <- eva[!eva$species %in% crops,]
+
+# check length of number of occurences of these species
+length(eva$PlotObservationID[eva$species %in% eva_names[!eva_names %in% status$SCIENTIFIC_NAME]])/ length(eva$PlotObservationID)
+
+# we will just add them to the existing list
+accept_dup <- add_row(accept_dup, 
+                      species= NA, 
+                      family= NA,
+                      old_name= eva_names[!eva_names %in% status$SCIENTIFIC_NAME])
+
+
+# we check whether we now have every species in eva in our new list
+all.equal(sort(accept_dup$old_name), sort(eva_names))
+# count number of species without a species name
+sum(is.na(accept_dup$family))
+
+# add accepted species names and family
+eva$new_species <- accept_dup$species[match(eva$species,accept_dup$old_name)]
+eva$family <- accept_dup$family[match(eva$species,accept_dup$old_name)]
+
+# list of all species in dataset
+eva_family <- eva[!duplicated(eva$species),]
+eva_family$species[!eva_family$species %in% eva_names]
+# remove all species without a family name
+genus_family <- eva_family[!is.na(eva_family$family),]
+# get all unique geni with a family
+genus_family <- genus_family[!duplicated(genus_family$genus),]
+
+
+# match geni with families
+eva$family[is.na(eva$family)] <- genus_family$family[match(eva$genus[is.na(eva$family)], genus_family$genus)]
+```
+
+
+## 4.4 TPL and own
+Now we will use TPL
+```{r}
+# we still have some species left
+eva_family <- eva[is.na(eva$family), ]
+# we get all unique species
+eva_family <- eva_family[!duplicated(eva_family$species),]
+
+
+# TPL
+plant_list <- TPL(eva_family$species)
+
+# link with data
+eva$family[is.na(eva$family)] <- plant_list$FAMILY[match(eva$species[is.na(eva$family)], plant_list$YOUR_SEARCH)]
+
+# check species without family name
+# we still have some species left
+eva_family <- eva[is.na(eva$family),]
+eva_family <- eva_family[!duplicated(eva_family$species),]
+
+
+# we make a dataframe for the species
+own_class <- data.frame(species= c("Pseudopodospermum hispanicum", 
+                                   "Calamagrostis × baltica", 
+                                    "Archanthemis marschalliana",
+                                   "Pseudopodospermum elatum",
+                                   "Willemetia stipitata",
+                                   "Parthenocissus quinquefolia",
+                                   "Elaeagnus angustifolia",
+                                   "Astragalus angustifolius subsp. angustifolius",
+                                   "Cyathophylla chlorifolia",
+                                   "Anthemis cretica subsp. cretica",
+                                   "Teucrium chamaedrys subsp. tauricola",
+                                   "Arenaria pamphylica subsp. alpestris",
+                                   "Achillea formosa subsp. formosa",
+                                   "Pilosella piloselloides subsp. magyarica",
+                                   "Centaurea idaea",
+                                   "Torminalis glaberrima",
+                                   "Ajuga",
+                                   "Achillea sivasica",
+                                   "Melanortocarya obtusifolia",
+                                   "Achillea formosa subsp. amanica",
+                                   "Archanthemis marschalliana subsp. pectinata",
+                                   "Malus florentina",
+                                   "Phrynella ortegioides",
+                                   "Chaloupkaea chrysantha",
+                                   "Dorystoechas hastata",
+                                   "Archanthemis marschalliana subsp. sosnovskyana",
+                                   "Xatardia scabra","Lolium",
+                                   "Hormuzakia aggregata",
+                                   "× Agropogon lutosus",
+                                   "Resetnikia triquetra",
+                                   "Lolium × elongatum",
+                                   "Vahlodea atropurpurea",
+                                   "Vogtia annua",
+                                   "Aizoanthemopsis hispanica",
+                                   "Arthrocaulon meridionalis",
+                                   "Myriolimon ferulaceum",
+                                   "Aloiampelos ciliaris",
+                                   "Vogtia microphylla",
+                                   "Lolium × holmbergii",
+                                   "Parapholis cylindrica",
+                                   "Anchusa variegata",
+                                   "Phyllolepidum cyclocarpum",
+                                   "Sinapis pubescens",
+                                   "Lonicera kabylica",
+                                   "Noccaea cypria",
+                                   "Smyrnium olusatrum",
+                                   "Anthericum",
+                                   "Astartoseris triquetra",
+                                   "Archanthemis fruticulosa",
+                                   "Micromeria maderensis",
+                                   "Malva phoenicea",
+                                   "Heliotropium crispum",
+                                   "Mairetis microsperma",
+                                   "× Pseudorhiza nieschalkii",
+                                   "Achillea millefolium subsp. collina",
+                                   "× Dactylodenia st-quintini",
+                                   "Limnanthes douglasii",
+                                   "Myriolimon diffusum",
+                                   "× Pucciphippsia vacillans",
+                                   "Sphenopus divaricatus",
+                                   "Hormuzakia aggregata"),
+                           family= c("Asteraceae", "Poaceae",
+                                     "Asteraceae","Asteraceae",
+                                     "Asteraceae", "Vitaceae",
+                                     "Elaeagnaceae","Fabaceae",
+                                     "Caryophyllaceae","Asteraceae",
+                                     "Lamiaceae","Caryophyllaceae",
+                                     "Asteraceae","Asteraceae",
+                                     "Asteraceae","Rosaceae",
+                                     "Lamiaceae","Asteraceae",
+                                     "Boraginaceae","Asteraceae",
+                                     "Asteraceae","Rosaceae",
+                                     "Caryophyllaceae","Crassulaceae",
+                                     "Lamiaceae","Asteraceae",
+                                     "Apiaceae","Poaceae",
+                                     "Boraginaceae","Poaceae",
+                                     "Brassicaceae","Poaceae",
+                                     "Poaceae","Asteraceae",
+                                     "Aizoaceae","Amaranthaceae",
+                                     "Plumbaginaceae","Asphodelaceae",
+                                     "Asteraceae","Poaceae",
+                                     "Poaceae","Boraginaceae",
+                                     "Brassicaceae","Brassicaceae",
+                                     "Caprifoliaceae", "Brassicaceae",
+                                     "Apiaceae","Asparagaceae",
+                                     "Asteraceae","Asteraceae",
+                                     "Lamiaceae","Malvaceae",
+                                     "Boraginaceae","Boraginaceae",
+                                     "Orchidaceae","Asteraceae",
+                                     "Orchidaceae","Limnanthaceae",
+                                     "Plumbaginaceae","Poaceae",
+                                     "Poaceae","Boraginaceae"),
+                           old_name=c("Pseudopodospermum hispanicum",
+                                      "x_Calammophila baltica", 
+                                      "Archanthemis marschalliana",
+                                      "Pseudopodospermum elatum",
+                                      "Calycocorsusástipitatus* species",
+                                      "Partenocissus quinquefolia",
+                                      "Elaeagnos angustifolia",
+                                      "Astragals angustifolius subsp. angustifolius",
+                                      "Saponasia chlorifolia",
+                                      "Antemis cretica subsp. pontica",
+                                      "Teuchrium chamaedrys subsp. tauricola",
+                                      "Arenari pamphylica subsp. alpestris",
+                                      "Leucocylus formosus subsp. formosus",
+                                      "Pllosella piloselloides subsp. megalomastix",
+                                      "Cenaturea idaea",
+                                      "Srbus torminalis var. orientalis",
+                                      "Chamaepitys",
+                                      "Chrysocamela noeana",
+                                      "Melanortocarya obtusifolia",
+                                      "Leucocyclus formosus subsp. amanicus",
+                                      "Archanthemis marschalliana subsp. pectinata",
+                                      "x_Malosorbus florentina",
+                                      "Phrynella ortegioides",
+                                      "Chaloupkaea chrysantha",
+                                      "Dorystoechas hastata",
+                                      "Archanthemis marschalliana subsp. sosnovskyana",
+                                      "Xatartia scabra",
+                                      "x_Schedolium",
+                                      "Hormuzakia aggregata",
+                                      "x_Agropogon littoralis",
+                                      "Resetnikia triquetra",
+                                      "x_Schedolium loliaceum",
+                                      "Vahlodea atropurpurea",
+                                      "Vogtia annua",
+                                      "Aizoanthemopsis hispanica",
+                                      "Arthrocaulon meridionalis",
+                                      "Myriolimon ferulaceum",
+                                      "Aloiampelos ciliaris",
+                                      "Vogtia microphylla",
+                                      "x_Schedolium holmbergii",
+                                      "Haynardia cylindrica",
+                                      "Anchusella variegata",
+                                      "Phyllolepidum cyclocarpum subsp. cyclocarpum",
+                                      "Sinapsis pubescens",
+                                      "Lonciera kabylica",
+                                      "Thlapsi cyprium",
+                                      "Smirnium oluzatrum",
+                                      "Phalangium species",
+                                      "Astartoseris triquetra",
+                                      "Archanthemis fruticulosa",
+                                      "Mycromeria thymoides",
+                                      "Navaea phoenicia",
+                                      "Heiotropium erosum var. prostratum",
+                                      "Mairetis microsperma",
+                                      "x-Pseudorhiza nieschalkii",
+                                      "Achilea millefolium subsp. collina f. rubriflora",
+                                      "x-Dactylodenia st-quintini",
+                                      "Limnanthus douglasii",
+                                      "Myriolimon diffusum",
+                                      "x-Pucciphippsia vacillans",
+                                      "Sphaenopus divaricatus",
+                                      "Hormuzakiagata"
+                                      ))
+
+
+
+remove <- c("Eontodon concinnus","Guadinopsis macra subsp. macra","Chelianthes fragrans","Avenochloa cycladica",
+            "Dycot spec","Keimling species 1","Keimling species 2","Chinaschilf* species","Sturmia species",
+            "Magnoliophyta species", "Tracheophyta species","Planta indeterminate","Pteridophyta species",
+            "Polypodiopsida species","Chenopodiaceae","Spermatophyta species","Liliopsida","Magnoliopsida species",
+            "Gefaesspflanze species","Hypanthium glabre","Kiemplant species","Dipsacaceae","Filicopsida species",
+            "Liliopsida species", "Cephalophysis species", "Dicot sp.1","Dicot sp.2","Gras species", 
+            "Hakvrucht cultuurgewas", "Graan cultuurgewas","Crucifer species","Rubiales species",
+            "Dicotyledone species","Monocotyledonae* species","Balansae glaberrima","Poales species",
+            "Microspermae species","Pinopsida species","Pteropsida species","crop millet","Liana indet.",
+            "Rubiacee species","Ombellifere species","Myriophorum insulare","Decumbens species","Seedlings of",
+            "Cyclotella comta","Dichodonti pellucidum var. flavescens","Teilingia granulata","Kale bodem",
+            "Dicotyledones species","Thorea ramossissima","Plant onbekend","Lygopus species","Onchophorus virens"
+            )
+
+unclear <- c("Cardueae","x_Sorbaronia mitschurinii","x_Triticosecale","× Triticosecale rimpaui",
+             "Mycelis tinctoria","x_Triticosecale rimpaui","Allopecurus littoralis","Echilops ovata",
+             "Cirsiun acanthoides","Nardurus myosuroides","Thymelae garganica",
+             "Acantholimum pulverulentum var. pulverulentum","Poligonum piperitum","x-Festulpia hubbardii",
+             "Phyllirea","Reamuria vermiculata")
+
+
+# we add our own classification
+eva$new_species[eva$species %in% own_class$old_name] <- 
+  own_class$species[match(eva$species[eva$species %in% own_class$old_name], own_class$old_name)]
+# family
+eva$family[eva$species %in% own_class$old_name] <- 
+  own_class$family[match(eva$species[eva$species %in% own_class$old_name], own_class$old_name)]
+
+# remove the species
+eva<- eva[!eva$species %in% remove,]
+eva<- eva[!eva$species %in% unclear,]
+
+
+# we check whether we still have family data left
+eva[is.na(eva$family),]
+any(is.na(eva$family))
+```
+
+
+
+
+
+## 4.5 Official names
+```{r}
+# get all unique names in eva
+eva_names <- unique(eva$new_species)
+# make dataframe and give name
+eva_names <- as.data.frame(eva_names)
+colnames(eva_names)[1] <- "species"
+# get genus data
+eva_names$genus <- gsub("([A-Za-z]+).*", "\\1", eva_names$species)
+
+# assign to eva
+eva$new_genus <- eva_names$genus[match(eva$new_species, eva_names$species)]
+
+# get new list of unique species
+eva_names <- unique(eva$species)
+
+
+# make official species list with also genus and family
+eva$official <- ifelse(!is.na(eva$new_species), eva$new_species, eva$species)
+eva$official_genus <- ifelse(!is.na(eva$new_species), eva$new_genus, eva$genus)
+
+# new data set with different order
+new_eva <- eva[, c(1,10,11, 8, 3,4 , 5)]
+colnames(new_eva)[1:7]<- c("PlotObservationID","species","genus","family","layer","cover","old name")
+
+# check difference in number of species
+length(unique(new_eva$species))
+length(unique(new_eva$`old name`))
+
+new_eva
+
+# write csv
+#write_csv(new_eva, "eva_accepted_names_all.csv")
+```
+
+
+# 5 MONOSPECIFIC 
 Here is a test to see which species are subspecies and which are genus names for species with also subspecies
 We do not use this part
 ```{r}
