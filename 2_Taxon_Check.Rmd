@@ -306,8 +306,8 @@ eva$genus <- eva_names$genus[match(eva$species, eva_names$species)]
 eva_names <- unique(eva$species)
 
 # we remove the aggr part
-eva_names <- gsub(" aggr.", "", eva_names)
-eva$species <- gsub(" aggr.", "", eva$species)
+#eva_names <- gsub(" aggr.", "", eva_names)
+#eva$species <- gsub(" aggr.", "", eva$species)
 # some duplicates now --> remove
 eva_names <- unique(eva_names)
 
@@ -402,8 +402,8 @@ crops <- c("crop rye","crop spelt","crop barley","crop potato", "crop wheat", "c
            "crop potato", "crop oat","crop pea","crop onion","crop asparagus" ,"crop tomato","crop strawberry" ,"crop carrot" ,"crop cabbage",
            "crop spelt" ,"crop rhubarb", "crop hops","crop beet","crop flax","crop bean","crop digitalis", "crop celery" ,"crop currant",
            "crop buckwheat","crop millet")
-eva_names <- eva_names[!eva_names %in% crops]
-eva <- eva[!eva$species %in% crops,]
+# eva_names <- eva_names[!eva_names %in% crops]
+# eva <- eva[!eva$species %in% crops,]
 
 # check length of number of occurences of these species
 length(eva$PlotObservationID[eva$species %in% eva_names[!eva_names %in% status$SCIENTIFIC_NAME]])/ length(eva$PlotObservationID)
@@ -653,6 +653,7 @@ eva<- eva[!eva$species %in% unclear,]
 
 # we check whether we still have family data left
 eva[is.na(eva$family),]
+unique(eva$species[is.na(eva$family)])
 any(is.na(eva$family))
 ```
 
@@ -692,7 +693,7 @@ length(unique(new_eva$`old name`))
 new_eva
 
 # write csv
-#write_csv(new_eva, "eva_accepted_names_all.csv")
+# write_csv(new_eva, "eva_accepted_names_all.csv")
 ```
 
 
