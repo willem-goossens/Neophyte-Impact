@@ -781,7 +781,11 @@ Looking at different datasets from a similar region exhibits quite large differe
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
 # write_csv(fullPlotData, "fullPlotData_cover_all_layer_new.csv")
+ 
+test <- read.csv("fullPlotEva_cover_all_layer_new.csv")
+test2 <- read.csv("fullPlotEva_cover_all_layer.csv")
 
+length(unique(test$old.name[!test$old.name %in% test2$species]))
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 # write_csv(eva, "fullPlotEva_cover_all_layer_new.csv")
