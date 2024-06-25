@@ -1,0 +1,512 @@
+---
+title: "Taxon check"
+author: "Willem Goossens"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# 1 LOAD
+```{r clear, echo=F}
+#rm(list = ls())
+```
+
+
+
+```{r, echo=F, warning=F, message=FALSE}
+#Load required packages
+library(readr)
+library(tidyr)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(stringr)
+library(plantlist)
+library(vegdata)
+library(kewr)
+library(RSQLite)
+```
+
+
+# 2 DATA
+Here we load the data and chose which dataset we want to use.  
+We later remove all rows without a plot ID and check which taxa are present in the dataset
+```{r Load data, message= F, warning=FALSE}
+fast <- F
+if(fast) {
+  eva <- read_delim("../EVA Data/onePromilleEva.csv", "\t")
+} else {
+  eva <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_species.csv", "\t")
+}
+
+# Filter out all rows which don't have a plot ID
+eva <- eva[!is.na(eva$PlotObservationID),]
+
+# Which taxon groups are there in EVA?
+unique(eva$`Taxon group`)
+# there are quite some groups not to be included
+# only vascular plants will be studied
+```
+
+
+
+# 3 EURO+MED
+## 3.1 Load database
+```{r}
+# connect to the database
+con <- dbConnect(drv=RSQLite::SQLite(), dbname="C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/EIVE Data/EuroSL.sqlite")
+
+# list all tables
+tables <- dbListTables(con)
+tables <- tables[tables != "sqlite_sequence"]
+
+lDataFrames <- vector("list", length=length(tables))
+for (i in seq(along=tables)) {
+  lDataFrames[[i]] <- dbGetQuery(conn=con, statement=paste("SELECT * FROM '", tables[[i]], "'", sep=""))
+}
+
+# retrieve data with euro med classification
+Euro <- lDataFrames[[1]]
+
+rm(lDataFrames,tables,con)
+```
+
+
+## 3.2 Groups
+First we will make sure that all taxon groups correspond per species
+```{r}
+# unique names in database
+eva_names <- eva |> select(`Matched concept`, `Taxon group`)
+eva_names <- eva_names[!duplicated(eva_names),]
+
+# compare with length unique matched concept
+length(unique(eva_names$`Matched concept`))
+# there is a deviation between the number of unique species and number of unique species-taxon combinations
+
+# we look at the duplicated species
+# retrieve duplicated species
+dup <- eva_names[eva_names$`Matched concept` %in% eva_names$`Matched concept`[duplicated(eva_names$`Matched concept`)],]
+# get all species with known taxon group
+dup_known <- dup[!dup$`Taxon group`=="Unknown",]
+# change unkown taxa groups to known
+dup$`Taxon group`[dup$`Taxon group`=="Unknown"]<- dup_known$`Taxon group`[match(dup$`Matched concept`[dup$`Taxon group`=="Unknown"],
+                                                                                dup_known$`Matched concept`)]
+
+# look at which species are still duplicated
+no_dup <- dup[!(dup$`Matched concept` %in% dup$`Matched concept`[duplicated(dup)]),]
+no_dup <- no_dup[!duplicated(no_dup),]
+
+# these species are wrong and should be changed
+false <- data.frame(Genus = c("Hepatica nobilis", "Lamprothamnium papulosum", "Leptorhaphis epidermidis", "Mycoblastus fucatus", 
+                              "Peltaria alliacea", "Peltaria emarginata", "Hepatica species"),
+                    TaxonGroup = c("Vascular plant", "Alga", "Lichen", "Lichen", "Vascular plant","Vascular plant", "Vascular plant"))
+
+# change the taxon groups to those are false
+dup$`Taxon group`[dup$`Matched concept` %in% false$Genus] <- 
+  false$TaxonGroup[match(dup$`Matched concept`[dup$`Matched concept` %in% false$Genus], false$Genus)]
+
+# check whether all species are now better
+no_dup <- dup[(dup$`Matched concept` %in% dup$`Matched concept`[duplicated(dup)]),]
+no_dup <- no_dup[!duplicated(no_dup),]
+
+# check whether all were changed
+any(duplicated(dup$`Taxon group`[dup$`Matched concept` %in% unique(dup$`Taxon group`)]))
+
+# change in eva and eva_names these taxons
+eva_names$`Taxon group`[eva_names$`Matched concept` %in% no_dup$`Matched concept`] <- 
+  no_dup$`Taxon group`[match(eva_names$`Matched concept`[eva_names$`Matched concept` %in% no_dup$`Matched concept`],no_dup$`Matched concept`)]
+eva$`Taxon group`[eva$`Matched concept` %in% no_dup$`Matched concept`] <- 
+  no_dup$`Taxon group`[match(eva$`Matched concept`[eva$`Matched concept` %in% no_dup$`Matched concept`],no_dup$`Matched concept`)]
+```
+
+
+We now check whether the taxon groups correspond to TPL
+```{r}
+# get again unique eva_names
+eva_names <- eva_names[!duplicated(eva_names),]
+colnames(eva_names)<- c("species","taxon")
+
+# take the TPL groups
+plant_list <- TPL(eva_names$species)
+
+# append species and taxon names
+plant_list$species <- eva_names$species[match(plant_list$YOUR_SEARCH, eva_names$species)]
+plant_list$taxon <- eva_names$taxon[match(plant_list$species, eva_names$species)]
+
+# change names angiosperms, gymnosperms and ferns to Vascular plants
+plant_list$GROUP <- gsub("Angiosperms","Vascular plant",plant_list$GROUP)
+plant_list$GROUP <- gsub("Gymnosperms","Vascular plant",plant_list$GROUP)
+plant_list$GROUP <- gsub("Ferns and lycophytes","Vascular plant",plant_list$GROUP)
+
+# which species are vascular plant delineated by us and not by TPL
+vasc <- plant_list[plant_list$taxon=="Vascular plant" & plant_list$GROUP != "Vascular plant" & !is.na(plant_list$GROUP),]
+# no problem, all are gnetales which are also plants
+
+# which are vascular plant by TPL and not unknown or vascular plant by EVA
+no_vasc <- plant_list[ (plant_list$taxon !="Unknown"& plant_list$taxon !="Vascular plant" ) & 
+                         plant_list$GROUP == "Vascular plant" & !is.na(plant_list$GROUP),]
+# 23 --> wrong TPL
+```
+
+
+Remove all other groups
+```{r}
+# check which are in there
+unique(eva$`Taxon group`)
+# remove
+sum(eva$`Taxon group` %in% c("Lichen", "Moss", "Alga", "Stonewort", "Mushroom"))
+eva <- eva[!eva$`Taxon group` %in% c("Lichen", "Moss", "Alga", "Stonewort", "Mushroom"),]
+# check which are in there
+unique(eva$`Taxon group`)
+```
+
+## 3.3 Euro+Med
+```{r}
+# unique names and taxon group combinations (same length as unique species)
+eva_names <- as.data.frame(unique(eva$`Matched concept`))
+colnames(eva_names)<- c("species")
+eva_names$taxon <- eva$`Taxon group`[match(eva_names$species, eva$`Matched concept`)]
+
+# we check length
+length(unique(eva$`Matched concept`))
+
+# add other data from euro+med
+eva_names$euro <- Euro$TaxonConcept[match(vegdata::taxname.abbr(eva_names$species), vegdata::taxname.abbr(Euro$TaxonName))]
+
+# check how many unknown species are in euro+med
+sum(!is.na(eva_names$euro[eva_names$taxon=="Unknown"]))
+# how many in total
+sum(!is.na(eva_names$euro))
+# how many not
+sum(is.na(eva_names$euro))
+
+# add to eva
+eva$species <-eva_names$euro[match(eva$`Matched concept`, eva_names$species)]
+```
+
+
+# 4 POWO
+## 4.1 Powo search
+Search internet
+```{r}
+# which species are not in data
+eva_names <- as.data.frame(unique(eva$`Matched concept`[is.na(eva$species)]))
+colnames(eva_names)<- "species"
+# add taxon
+eva_names$taxon <- eva$`Taxon group`[match( eva_names$species, eva$`Matched concept`)]
+
+
+if(fast){
+  # search powo and store results in list if we find a direct match
+  mybiglist <- list()
+  for(i in 1: length(eva_names$species)){
+    # powo
+    r<- search_powo(eva_names$species[6550])
+    # only if there is a match store result in data, otherwise put NA
+    if(length(r$results)>0){
+      # make dataframe
+      tmp <- tidy(r)
+      # add to list
+      mybiglist[[i]] <- tmp
+    } else {
+      mybiglist[[i]] <- NA
+    }
+  } 
+} else {
+    # read all data
+    mybiglist<- readRDS("species_powo.RData")
+}
+```
+
+
+## 4.2 Accepted names
+```{r}
+# empty dataframe
+accepted <- data.frame(new_name = character(), old_name = character(), number= numeric(), taxon= character())
+
+# give the accepted name to the old species name
+for(i in 1: length(eva_names$species)){
+  # first check if there is an accepted name
+  if(!all(is.na(mybiglist[[i]]))){
+    # check whether there are accepted names
+    if(any(mybiglist[[i]]$accepted==T)){
+      accepted <- add_row(accepted, new_name= mybiglist[[i]]$name[mybiglist[[i]]$accepted==T], old_name =eva_names$species[i],  
+                          number= i, taxon= eva_names$taxon[i])
+    } else {
+      accepted <- add_row(accepted, new_name= NA, old_name =eva_names$species[i] ,  number= i, taxon=eva_names$taxon[i])
+    }
+  } else {
+      accepted <- add_row(accepted, new_name= NA,old_name = eva_names$species[i],  number= i, taxon= eva_names$taxon[i] )
+  } 
+}
+
+
+# some species have multiple accepted names
+accepted_dup <- accepted[accepted$old_name %in% accepted$old_name[duplicated(accepted$old_name)],]
+length(unique(accepted_dup$number))
+
+# check the unique names
+extra<- as.data.frame(unique(accepted_dup$old_name))
+# use TPL to make work easier
+plant_list<- TPL(extra$`unique(accepted_dup$old_name)`)
+
+# these are definetely wrong so remove
+remove <- c("unknown* species","Grass species","? species", "Mos ?", "Unknown species", "Moss species","Fungus species", 
+            "unknown species", "Unknown species 3", "Unknown species 5", "moss* species", "Unknown* species", "Other mosses", 
+            "Gray lichen", "Small grass", "Spec species", "Tuberous plant")
+
+# remove these species from the duplicates and eva
+accepted_dup <- accepted_dup[!accepted_dup$old_name %in% remove,]
+eva <- eva[!eva$`Matched concept` %in% remove,]
+
+# some species were not found
+accepted_na <- accepted[is.na(accepted$new_name),]
+
+
+# only retain unique new names
+accepted<- accepted[!(accepted$old_name %in% accepted$old_name[duplicated(accepted$old_name)] | is.na(accepted$new_name)),]
+
+# check which species are no vascular plants and are assigned
+accepted_no_vasc <- accepted[!accepted$taxon=="Vascular plant",]
+
+# not even necessary step to check if they are all vascular plants --> powo only has plants
+plant_list<- TPL(accepted_no_vasc$new_name)
+any(plant_list$GROUP=="Bryophytes")
+
+# assign taxon 'vascular plant'
+accepted_no_vasc$taxon <- rep("Vascular plant", times=length(accepted_no_vasc$taxon))
+
+# assign taxon to all accepted species
+accepted$taxon[accepted$old_name %in% accepted_no_vasc$old_name]<- 
+  accepted_no_vasc$taxon[match(accepted$old_name[accepted$old_name %in% accepted_no_vasc$old_name], accepted_no_vasc$old_name)]
+
+
+eva_names <- as.data.frame(unique(eva$`Matched concept`[is.na(eva$species)]))
+colnames(eva_names)<- "species"
+# add taxon
+eva_names$taxon <- eva$`Taxon group`[match( eva_names$species, eva$`Matched concept`)]
+
+# add to eva
+eva$species[eva$`Matched concept` %in% accepted$old_name] <- 
+  accepted$new_name[match(eva$`Matched concept`[eva$`Matched concept` %in% accepted$old_name], accepted$old_name)]
+```
+
+
+# 5 NAs
+## 5.1 Mosses Euro Med
+```{r}
+# which species are present and unknown taxon group --> mosses from euro+med
+unknown <- eva[!is.na(eva$species)& eva$`Taxon group`=="Unknown",]
+plant_list <- TPL(unknown$species)
+remove <- plant_list$YOUR_SEARCH[plant_list$GROUP=="Bryophytes" & !is.na(plant_list$GROUP)]
+length(unique(remove))
+
+# remove these from database
+eva <- eva[!eva$species %in% remove,]
+```
+
+
+
+## 5.2 Irena file
+```{r}
+# load file 
+taxonNameCorrections <- read_csv("../Neophyte-Impact/Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv", show_col_types = FALSE)
+
+
+# add column
+eva$irena <- taxonNameCorrections$species[match(tolower(eva$`Matched concept`),
+                                                    tolower(taxonNameCorrections$Matched.concept))]
+
+# create list species irena not we
+irena <- as.data.frame(unique(eva$irena[is.na(eva$species)]))
+colnames(irena)<-"species"
+irena$old_names <- eva$`Matched concept`[match(irena$species, eva$irena)]
+irena$taxon <- eva$`Taxon group`[match(irena$species, eva$irena)]
+
+# use tpl to delineate species which are certainly not relevant for us
+plant_list <- TPL(vegdata::taxname.abbr(irena$old_names))
+
+# append species and taxon names
+plant_list$species <- irena$species[match(plant_list$YOUR_SEARCH, irena$old_names)]
+plant_list$taxon <- irena$taxon[match(plant_list$YOUR_SEARCH, irena$old_names)]
+
+# check file for irena species
+check <- plant_list[is.na(plant_list$GROUP),]
+
+remove <- c("Hakvrucht cultuurgewas","Graan cultuurgewas","Gras species",
+            "Monocotyledonae* species","Liana indet.","Planta indeterminate","Dicot sp.2",
+            "Hepaticae (overig)","Keimling species 1","Dycot spec","Kale bodem",
+            "Dicot sp.1","Keimling species 2","Plant onbekend","Dicotyledone species",
+            "Spermatophyta species","Kiemplant species","Gefaesspflanze species",
+            "Dicotyledones species","Microspermae species","Pteridophyta species",
+            "Crucifer species")
+
+# check again
+check <- check[!check$YOUR_SEARCH %in% remove,]
+
+# remove indefinetely
+eva<- eva[!eva$irena %in% remove,]
+
+# give na species irena names
+eva$species[is.na(eva$species)] <- eva$irena[is.na(eva$species)]
+```
+
+
+```{r}
+# some species are incorrectly assigned by powo previously and have to be removed, this can be checked by comparing old name and assigned name
+remove <- c("bryophytes* species","Hepaticopsida species","Nostoc species", "Bryophyta sp","Nostocaceae species","Algae species",
+            "Unknown species 4","Unknown sp","Algae* species","Poaceae, leguminosae...","crustaceous lichens","Biota species",
+            "Parmeliaceae species")
+eva <- eva[!eva$`Matched concept`%in% remove,]
+```
+
+
+
+# 6 TPL
+## 6.1 Unknowns
+```{r}
+# look at unknowns without species from POWO or Euro+Med
+unknown <- eva[is.na(eva$species)& eva$`Taxon group`=="Unknown",]
+unknown <- unknown[!duplicated(unknown$`Matched concept`),]
+
+# Check against TPL
+plant_list <- TPL(vegdata::taxname.abbr(unknown$`Matched concept`))
+# append species and taxon names
+plant_list$species <- unknown$`Matched concept`[match(plant_list$YOUR_SEARCH, vegdata::taxname.abbr(unknown$`Matched concept`))]
+
+# check file for wrong species
+check <- plant_list[is.na(plant_list$GROUP),]
+
+# remove these from eva --> not reasonable checking all of them
+eva <- eva[!eva$`Matched concept`%in% check$species,]
+
+# here are some species that should be changed
+own_class <- data.frame(species= c("Centaurea bimorpha",
+                                   "Aconitum anthora subsp. anthora",
+                                   "Ostericum maximowiczii",
+                                   "Saccharum ravennae",
+                                   "Monanthes brachycaulos",
+                                   "Sinapidendron gymnocalyx",
+                                   "Betula pendula subsp. pendula",
+                                   "Bunium bulbocastanum",
+                                   "Asphodelus cerasiferus",
+                                   "Rosmarinus eriocalyx",
+                                   "Muehlenbeckia platyclada",
+                                   "Gypsophila tomentosa",
+                                   "Pseudognaphalium luteoalbum",
+                                   "Myosotis decumbens subsp. rifana",
+                                   "Lonicera kabylica"),
+                        old_name=c("Centaurea dimorpha", 
+                                  "Aconitum anthoroidetum",
+                                  "Angelica maximoviczii",
+                                  "Saccharum ravenae",
+                                  "Monanthes brachycaulon",
+                                  "Sinapidendron gymnocalix",
+                                  "Betula xpubescens subsp. xverrucosa",
+                                  "Bunium bulbostanum",
+                                  "Asphodelus cerasifera",
+                                  "Rosmarinus eriocalix",
+                                  "Muehlenbeckia platyclados",
+                                  "Gypsophila tomentosa L.",
+                                  "Pseudognaphalium luteo-album",
+                                  "Myosotis alpestre var. rifana",
+                                  "Lonicera aborea var. kabylica"))
+
+
+# change these names in eva
+eva$species[eva$`Matched concept` %in% own_class$old_name]<- 
+  own_class$species[match(eva$`Matched concept`[eva$`Matched concept` %in% own_class$old_name], own_class$old_name)]
+```
+
+
+
+## 6.2 Mosses unknown
+```{r}
+# all species that are still unknown
+unknown <- eva[is.na(eva$species) & eva$`Taxon group`=="Unknown",]
+unknown <- unknown[!duplicated(unknown$`Matched concept`),]
+
+# check whether we can apply them or not
+plant_list <- TPL(unknown$`Matched concept`)
+plant_list$species <- unknown$`Matched concept`[match(plant_list$YOUR_SEARCH, unknown$`Matched concept`)]
+plant_list$taxon <- unknown$`Taxon group`[match(plant_list$YOUR_SEARCH, unknown$`Matched concept`)]
+
+# remove na and 
+remove <- plant_list$species[plant_list$GROUP=="Bryophytes" | is.na(plant_list$GROUP)]
+remove <- as.data.frame(remove)
+
+# we remove these species from eva
+eva <- eva[!eva$`Matched concept` %in% remove$remove,]
+```
+
+
+## 6.3 Rest
+```{r}
+# how many species are now still present with no species designation
+vasc <- eva[!duplicated(eva$`Matched concept`) & is.na(eva$species),]
+# how many of these are vascular species
+sum(!vasc$`Taxon group`=="Unknown")
+
+# how many observations will we remove
+length(eva$species[eva$`Taxon group`=="Unknown" & is.na(eva$species)])
+check <- as.data.frame(eva$`Matched concept`[eva$`Taxon group`=="Unknown" & is.na(eva$species)])
+colnames(check)<- "species"
+check <- check |> group_by(species) |> summarise(n=n())
+# remove all unknown species with no name
+eva <- eva[!eva$`Matched concept` %in% vasc$`Matched concept`[vasc$`Taxon group`=="Unknown"], ]
+
+# check unique names we will assign
+names <- vasc$`Matched concept`[!vasc$`Taxon group`=="Unknown"]
+
+# Assign all species 
+eva$species[is.na(eva$species)]<- eva$`Matched concept`[is.na(eva$species)]
+
+# check all species left whether there are still mosses etc
+eva_names <- eva[!duplicated(eva$species) & eva$`Taxon group`=="Unknown",]
+plant_list <- TPL(eva_names$species)
+
+# assign plant_list
+plant_list$species <- eva_names$species[match(plant_list$YOUR_SEARCH, eva_names$species)]
+
+# check whether there are species
+remove_mosses <- plant_list$species[plant_list$GROUP=="Bryophytes" & !is.na(plant_list$GROUP)]
+
+# remove
+eva <- eva[!eva$`Matched concept` %in% remove_mosses,]
+```
+
+
+
+# 7 CHECK
+```{r}
+# check whether there still are na species 
+any(is.na(eva$species))
+
+# check how much species we have now
+length(unique(eva$species))
+
+# check whether we have the dupplicated species from the accepted names
+check <- eva[eva$`Matched concept` %in% accepted_dup$old_name,]
+check <- check[!duplicated(check$`Matched concept`),]
+# 200 from the 241 species with multiple entries were given their matched concept name or the name from Irena
+# 41 species were removed
+
+# check against old file
+new <- read_csv("eva_euro_own.csv")
+
+# here present
+check<- eva[!eva$species %in% new$species,]
+# new present
+check<- new[!new$species %in% eva$species,]
+
+# check difference
+setdiff(new, eva[,1:12])
+setdiff(eva[,1:12], new)
+```
+
+
+# 8 SAVE
+```{r}
+#write_csv(eva, "eva_euro_own.csv")
+#write_csv(eva, "eva_euro_own2.csv")
+```
+
