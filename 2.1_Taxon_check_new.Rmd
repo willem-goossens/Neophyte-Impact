@@ -359,6 +359,9 @@ remove <- c("bryophytes* species","Hepaticopsida species","Nostoc species", "Bry
 eva <- eva[!eva$`Matched concept`%in% remove,]
 ```
 
+```{r}
+eva_names <- unique(eva[, c(6,12:13, 3)])
+```
 
 
 # 6 TPL
@@ -439,7 +442,27 @@ eva <- eva[!eva$`Matched concept` %in% remove$remove,]
 ```
 
 
-## 6.3 Rest
+## 6.3 File Christian
+```{r}
+# read file delineation taxa Christian to check whether some of our unknown species have to be changed
+taxonGroupAssignments <- read_csv("../Intermediate Data/taxa_taxon_group_assignments.csv", show_col_types = FALSE)
+
+# only names here for assessment to make it quicker
+eva_names <- unique(eva[, c(6,12:13, 3)])
+
+# check assessment
+check <- eva_names[eva_names$`Matched concept` %in% taxonGroupAssignments$Matched.concept[taxonGroupAssignments$TaxonGroup=="Vascular plant"] &
+                     eva_names$`Taxon group`=="Unknown",]
+check <- taxonGroupAssignments[taxonGroupAssignments$Matched.concept %in% eva_names$`Matched concept`,]
+
+# assign taxa group
+eva$`Taxon group`[eva_names$`Matched concept` %in% taxonGroupAssignments$Matched.concept[taxonGroupAssignments$TaxonGroup=="Vascular plant"]] <-
+  "Vascular plant"
+```
+
+
+
+## 6.4 Rest
 ```{r}
 # how many species are now still present with no species designation
 vasc <- eva[!duplicated(eva$`Matched concept`) & is.na(eva$species),]
@@ -454,7 +477,7 @@ check <- check |> group_by(species) |> summarise(n=n())
 # remove all unknown species with no name
 eva <- eva[!eva$`Matched concept` %in% vasc$`Matched concept`[vasc$`Taxon group`=="Unknown"], ]
 
-# check unique names we will assign
+# check unique names we will assign (172)
 names <- vasc$`Matched concept`[!vasc$`Taxon group`=="Unknown"]
 
 # Assign all species 
@@ -483,8 +506,9 @@ any(is.na(eva$species))
 
 # check how much species we have now
 length(unique(eva$species))
+length(unique(eva$`Matched concept`))
 
-# check whether we have the dupplicated species from the accepted names
+# check whether we have the duplicated species from the accepted names
 check <- eva[eva$`Matched concept` %in% accepted_dup$old_name,]
 check <- check[!duplicated(check$`Matched concept`),]
 # 200 from the 241 species with multiple entries were given their matched concept name or the name from Irena

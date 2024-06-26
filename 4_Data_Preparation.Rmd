@@ -124,6 +124,7 @@ not_irena_eva <- not_eva[!not_eva$irena %in% eva_names$species,]
 not_irena_eva_old <- not_irena_eva[not_irena_eva$old_name %in% eva_names$old_name,]
 # true for 145 species
 # so overall only 464 - 149= 315 species were new in our database and not in the old one
+# new database --> 324 species
 check <- not_irena_eva[!not_irena_eva$old_name %in% eva_names$old_name,]
 
 # there are some inherent problems with our classification, as some species are classified wrong by POWO
@@ -154,7 +155,7 @@ not_irena_new_old <- not_irena_new[not_irena_new$old_name %in% new_names$old_nam
 # so overall only 43 species were in old database and not in the new one
 check <- not_irena_new[!not_irena_new$old_name %in% new_names$old_name,]
 
-# we check how many observations these are
+# we check how many observations these are 
 check <- eva[eva$species %in% check$species,]
 check <- check |> group_by(species, `Matched concept`) |> summarise(n=n())
 
@@ -990,14 +991,12 @@ fullPlotEva <- eva
 # File for Irena
 # Eva
 fullPlotEva2 <- read_csv("fullPlotEva_euro.csv", show_col_types = FALSE)
-eva2<- fullPlotEva2[,c("PlotObservationID","species","irena", "Matched concept")]
+eva2<- fullPlotEva[,c("PlotObservationID","species","irena", "Matched concept")]
 fullPlotData2<- read_csv("fullPlotData_euro.csv", show_col_types = FALSE)
-fullPlot2<- fullPlotData2[,c("PlotObservationID","Region")]
+fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
 # eva names
-eva_names2 <- unique(new[, c(6,12:13,3)])
-eva_names3 <- unique(eva2[, c(2:4)])
-
+eva_names <- unique(eva[, c(2:4)])
 
 # Join and summarise
 eva_country<- left_join(eva2, fullPlot2)
@@ -1020,17 +1019,19 @@ not <- species_country[is.na(species_country$Neophyte),]
 not[!duplicated(not$species),]
 
 # check whether all our new species are in the old data (2715 not)
-not_species <- neophyte[!neophyte$species %in% eva_names3$species,]
-not_irena <- not_species[! not_species$species %in% eva_names3$irena,]
-# still 1449 not
-not_not <- not_irena[!not_irena$species %in% eva_names3$`Matched concept`,]
+not_species <- neophyte[!neophyte$species %in% eva_names$species,]
+not_irena <- not_species[! not_species$species %in% eva_names$irena,]
+# still 1449 not (1418)
+not_not <- not_irena[!not_irena$species %in% eva_names$`Matched concept`,]
+# 1354 not (1323)
 not_not <- not_not[!duplicated(not_not$species),]
 
 # the species not present here and yes previously were removed due to eg date etc
+# can be checked by merging with original header data
 unique(not_not$species[!not_not$species %in% eva_names$irena])
-unique(not_not$species[!not_not$species %in% eva_names2$irena])
-unique(not_not$species[!not_not$species %in% eva_names3$species])
+
 ```
+
 
 
 ```{r}
@@ -1039,7 +1040,7 @@ species <- unique(species_country$species[species_country$species %in% neophyte$
 # remove species that are present
 not_species <- species_country[!species_country$species %in% species,]
 taxonNameCorrections$statusEurope[taxonNameCorrections$species %in% not_species$species] 
-# some are additionally present in irena (205 left)
+# some are additionally present in irena (205 left) -_> 223
 not_irena <- not_species[!not_species$irena %in% neophyte$species,]
 unique(not_irena$irena) 
 # 14 species were present in Irena but not anymore 
@@ -1050,115 +1051,20 @@ length(unique(not_irena$`Matched concept`[is.na(not_irena$irena)]))
 # or matched concept
 not_not <- not_irena[not_irena$`Matched concept` %in% neophyte$species,]
 # 2 species were matched using the Matched concept
-# This leaves 202 region species observations with no status assigned
+# This leaves 202 (205) region species observations with no status assigned
 not_not <- not_irena[!not_irena$`Matched concept` %in% neophyte$species &
                        is.na(not_irena$irena),]
+species_country <- species_country[!is.na(species_country$n),]
 
+species_assign <- species_country[is.na(species_country$Neophyte),]
 
+#write_csv(species_country,"country_species_euro.csv")
 
-#write.csv(species_country,"country_species.csv")
 ```
 
 
 
-# 7 FREQUENCY
-## 7.1 Analysis
-This has become wrong, as we have some intra-european neophytes that are present in one part and not in another 
-Compute which species occurs how often in eva:
-```{r}
-# For speed optimization we extract only the necessary information from EVA
-reducedEva <- eva |> select(PlotObservationID, species, old.name, `Cover %`)
-
-uniqueSpecies <- unique(reducedEva$species)
-
-# Empty dataset
-plotsPerSpecies <- data.frame(names = character(), numberOfPlots = integer())
-
-# Prepare parallel
-parallel::detectCores()
-n.cores <- parallel::detectCores() - 2
-my.cluster <- parallel::makeCluster(
-  n.cores, 
-  type = "PSOCK"
-)
-print(my.cluster)
-doParallel::registerDoParallel(cl = my.cluster)
-foreach::getDoParRegistered()
-foreach::getDoParWorkers()
-
-
-# Count in how many plots a species occurs
-begin<- Sys.time()
-plotsPerSpecies<-foreach(i= 1:length(uniqueSpecies), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
-  tmp <- reducedEva$PlotObservationID[reducedEva$species == uniqueSpecies[i]]
-  names=uniqueSpecies[i]
-  numberOfPlots= length(unique(tmp))
-  plotsPerSpecies[i,]<- c(names, numberOfPlots)
-}
-plotsPerSpecies<- as.data.frame(plotsPerSpecies)
-plotsPerSpecies<-setNames(plotsPerSpecies, c("names", "numberOfPlots"))
-row.names(plotsPerSpecies)<- c(1: length(uniqueSpecies))
-end<- Sys.time()
-round(end-begin)
-
-parallel::stopCluster(cl = my.cluster)
-#write_csv(plotsPerSpecies, "plotsPerSpeciesInEurope.csv")
-```
-
-
-## 7.2 Downsample
-Determine which plant species have more than 10 plots with cover > 50% and cover < 1% for analysis:
-```{r, message=F}
-# Load data previously made with the number of plots per species across the dataset
-
-# plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv")
-
-parallel::detectCores()
-n.cores <- parallel::detectCores() - 2
-my.cluster <- parallel::makeCluster(
-  n.cores, 
-  type = "PSOCK"
-)
-print(my.cluster)
-doParallel::registerDoParallel(cl = my.cluster)
-foreach::getDoParRegistered()
-foreach::getDoParWorkers()
-
-# Get the names of the species which have at least 20 plots (since we want 10 smaller and 10 bigger)
-candidatesForCoverClassAnalysis <- plotsPerSpecies$names[plotsPerSpecies$numberOfPlots >= 20]
-
-# create empty vector
-taxaForCoverClassAnalysis <- c()
-# run for all candidates
-begin<- Sys.time()
-taxaForCoverAnalysis<- foreach(i= 1: length(candidatesForCoverClassAnalysis), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar%  {
-  # if the sum of all species with a cover of 50% for a species and less than 1% each are more than 10 
-  # && makes sure to only look at the second if it is already T
-  taxon<- candidatesForCoverClassAnalysis[i]
-  if(sum(eva$species == taxon & eva$`Cover %` >= 50) > 10 && sum(eva$species == taxon & eva$`Cover %` < 1) > 10) {
-    # write the species name to the list
-    taxaForCoverClassAnalysis[i] <- c(taxon)
-  }
-}
-end<- Sys.time()
-round(end-begin)
-
-parallel::stopCluster(cl = my.cluster)
-##write_csv(data.frame(taxa = taxaForCoverClassAnalysis), "taxaForCoverClassAnalysis.csv")
-```
-
-## 7.3 New method
-```{r}
-plotsPerSpecies <- read_csv("speciesDominance_new_categorization_10.csv", show_col_types = FALSE)
-
-taxa_new<- plotsPerSpecies[plotsPerSpecies$numberOfPlots >=50,]
-
-#write_csv(data.frame(taxa = taxa_new), "taxa_new.csv")
-```
-
-
-
-# 8 LATER
+# 7 LATER
 ```{r}
 test<- read.csv("fullPlotData.csv")
 

@@ -1044,3 +1044,98 @@ unknown <- eva[eva$`Taxon group`=="Unknown",]
 ```
 
 
+# 6 FILE 4
+## 6.1 Analysis
+This has become wrong, as we have some intra-european neophytes that are present in one part and not in another 
+Compute which species occurs how often in eva:
+```{r}
+
+# For speed optimization we extract only the necessary information from EVA
+reducedEva <- eva |> select(PlotObservationID, species, old.name, `Cover %`)
+
+uniqueSpecies <- unique(reducedEva$species)
+
+# Empty dataset
+plotsPerSpecies <- data.frame(names = character(), numberOfPlots = integer())
+
+# Prepare parallel
+parallel::detectCores()
+n.cores <- parallel::detectCores() - 2
+my.cluster <- parallel::makeCluster(
+  n.cores, 
+  type = "PSOCK"
+)
+print(my.cluster)
+doParallel::registerDoParallel(cl = my.cluster)
+foreach::getDoParRegistered()
+foreach::getDoParWorkers()
+
+
+# Count in how many plots a species occurs
+begin<- Sys.time()
+plotsPerSpecies<-foreach(i= 1:length(uniqueSpecies), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
+  tmp <- reducedEva$PlotObservationID[reducedEva$species == uniqueSpecies[i]]
+  names=uniqueSpecies[i]
+  numberOfPlots= length(unique(tmp))
+  plotsPerSpecies[i,]<- c(names, numberOfPlots)
+}
+plotsPerSpecies<- as.data.frame(plotsPerSpecies)
+plotsPerSpecies<-setNames(plotsPerSpecies, c("names", "numberOfPlots"))
+row.names(plotsPerSpecies)<- c(1: length(uniqueSpecies))
+end<- Sys.time()
+round(end-begin)
+
+parallel::stopCluster(cl = my.cluster)
+#write_csv(plotsPerSpecies, "plotsPerSpeciesInEurope.csv")
+```
+
+
+## 6.2 Downsample
+Determine which plant species have more than 10 plots with cover > 50% and cover < 1% for analysis:
+```{r, message=F}
+# Load data previously made with the number of plots per species across the dataset
+
+# plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv")
+
+parallel::detectCores()
+n.cores <- parallel::detectCores() - 2
+my.cluster <- parallel::makeCluster(
+  n.cores, 
+  type = "PSOCK"
+)
+print(my.cluster)
+doParallel::registerDoParallel(cl = my.cluster)
+foreach::getDoParRegistered()
+foreach::getDoParWorkers()
+
+# Get the names of the species which have at least 20 plots (since we want 10 smaller and 10 bigger)
+candidatesForCoverClassAnalysis <- plotsPerSpecies$names[plotsPerSpecies$numberOfPlots >= 20]
+
+# create empty vector
+taxaForCoverClassAnalysis <- c()
+# run for all candidates
+begin<- Sys.time()
+taxaForCoverAnalysis<- foreach(i= 1: length(candidatesForCoverClassAnalysis), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar%  {
+  # if the sum of all species with a cover of 50% for a species and less than 1% each are more than 10 
+  # && makes sure to only look at the second if it is already T
+  taxon<- candidatesForCoverClassAnalysis[i]
+  if(sum(eva$species == taxon & eva$`Cover %` >= 50) > 10 && sum(eva$species == taxon & eva$`Cover %` < 1) > 10) {
+    # write the species name to the list
+    taxaForCoverClassAnalysis[i] <- c(taxon)
+  }
+}
+end<- Sys.time()
+round(end-begin)
+
+parallel::stopCluster(cl = my.cluster)
+##write_csv(data.frame(taxa = taxaForCoverClassAnalysis), "taxaForCoverClassAnalysis.csv")
+```
+
+## 6.3 New method
+```{r}
+plotsPerSpecies <- read_csv("speciesDominance_new_categorization_10.csv", show_col_types = FALSE)
+
+taxa_new<- plotsPerSpecies[plotsPerSpecies$numberOfPlots >=50,]
+
+#write_csv(data.frame(taxa = taxa_new), "taxa_new.csv")
+```
