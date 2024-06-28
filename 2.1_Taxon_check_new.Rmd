@@ -188,6 +188,10 @@ eva$species <-eva_names$euro[match(eva$`Matched concept`, eva_names$species)]
 ## 4.1 Powo search
 Search internet
 ```{r}
+
+change <- data.frame(old= c("Carex divulsa  subsp. coriogyne"), new= c("Carex divulsa subsp. coriogyne"))
+eva$`Matched concept`[eva$`Matched concept` %in% change$old] <- change$new
+
 # which species are not in data
 eva_names <- as.data.frame(unique(eva$`Matched concept`[is.na(eva$species)]))
 colnames(eva_names)<- "species"
@@ -195,12 +199,14 @@ colnames(eva_names)<- "species"
 eva_names$taxon <- eva$`Taxon group`[match( eva_names$species, eva$`Matched concept`)]
 
 
+fast=F
+
 if(fast){
   # search powo and store results in list if we find a direct match
   mybiglist <- list()
   for(i in 1: length(eva_names$species)){
     # powo
-    r<- search_powo(eva_names$species[6550])
+    r<- search_powo(vegdata::taxname.abbr(eva_names$species[i]))
     # only if there is a match store result in data, otherwise put NA
     if(length(r$results)>0){
       # make dataframe
@@ -211,9 +217,11 @@ if(fast){
       mybiglist[[i]] <- NA
     }
   } 
+  #saveRDS(mybiglist, "species_powo_new.RData")
 } else {
     # read all data
-    mybiglist<- readRDS("species_powo.RData")
+    #mybiglist<- readRDS("species_powo.RData")
+    mybiglist<- readRDS("species_powo_new.RData")
 }
 ```
 
@@ -222,6 +230,8 @@ if(fast){
 ```{r}
 # empty dataframe
 accepted <- data.frame(new_name = character(), old_name = character(), number= numeric(), taxon= character())
+
+
 
 # give the accepted name to the old species name
 for(i in 1: length(eva_names$species)){
@@ -252,7 +262,7 @@ plant_list<- TPL(extra$`unique(accepted_dup$old_name)`)
 # these are definetely wrong so remove
 remove <- c("unknown* species","Grass species","? species", "Mos ?", "Unknown species", "Moss species","Fungus species", 
             "unknown species", "Unknown species 3", "Unknown species 5", "moss* species", "Unknown* species", "Other mosses", 
-            "Gray lichen", "Small grass", "Spec species", "Tuberous plant")
+            "Gray lichen", "Small grass", "Spec species", "Tuberous plant","Rubiales species","Orchidaceae* species","Asteraceae* species","Cruciferae* species","Boraginaceae* species","Morio species", "Decumbens species","Fusarium species","Pteridophyta species","Nostoc species","Genus species","Liverworts* species","Unknown sp", "bryophytes* species","Algae species","Mos species","Orchidacea sp","Gras species","Sponge species","Algae* species", "Algas species", "Liverwort species","Palustris species")
 
 # remove these species from the duplicates and eva
 accepted_dup <- accepted_dup[!accepted_dup$old_name %in% remove,]
@@ -338,7 +348,7 @@ remove <- c("Hakvrucht cultuurgewas","Graan cultuurgewas","Gras species",
             "Dicot sp.1","Keimling species 2","Plant onbekend","Dicotyledone species",
             "Spermatophyta species","Kiemplant species","Gefaesspflanze species",
             "Dicotyledones species","Microspermae species","Pteridophyta species",
-            "Crucifer species")
+            "Crucifer species","Rubiales species")
 
 # check again
 check <- check[!check$YOUR_SEARCH %in% remove,]

@@ -21,63 +21,136 @@ library(arsenal)
 ##### 2 DATA ####
 ###### 2.1 neophytes ######
 neophyte<- readxl::read_excel("../Neophyte-Impact/country_species-2024-01-30-IA-VK.xlsx", sheet="country_speciesWillem")
+neophyte <- read_csv("neophyte_euro.csv", show_col_types = FALSE)
 
 
 ###### 2.2 Eva and Header #####
 # Load and make smaller to conocate
-fullPlotEva <- read_csv("fullPlotEva_cover_all_layer.csv", show_col_types = FALSE)
-eva2<- fullPlotEva[,c("PlotObservationID","species")] # ,"old.name"
-fullPlotData<- read_csv("fullPlotData_cover_all_layer.csv", show_col_types = FALSE)
+fullPlotEva <- read_csv("fullPlotEva_euro.csv", show_col_types = FALSE)
+eva2<- fullPlotEva[,c("PlotObservationID","species", "irena","Matched concept")]
+fullPlotData<- read_csv("fullPlotData_euro.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
+
+# Load summarized data
+species_country <- read_csv("country_species_euro_cover.csv", show_col_types = FALSE)
 
 # Join eva and header (species per plot and plot info respectively)
 eva_country<- left_join(eva2, fullPlot2)
 # Join eva_country with neophyte data from Irena --> gives all alien species per country
-eva_country_neophyte<- left_join(eva_country, neophyte, by= c("Region"= "Region", "species"= "species"))
-eva_country_neophyte<- subset(eva_country_neophyte, select=-c(SeqID, FloraVegSpecies))
+eva_country_neophyte<- left_join(eva_country, species_country, by= c("Region"= "Region", "species"= "species", "irena"="irena","Matched concept"= "Matched concept"))
+eva_country_neophyte<- subset(eva_country_neophyte, select=-c(n))
+head(eva_country_neophyte)
 
 # Take dataset with all neophytes within EU
-neophyteDefEU<- (eva_country_neophyte[(!is.na(eva_country_neophyte$Neophyte)),])
+neophyteDefEU<- (eva_country_neophyte[(!(eva_country_neophyte$Neophyte=="native")& !is.na(eva_country_neophyte$Neophyte)),])
 # Retrieve all names of all alien species to Europe
 neophyteNamesEU<- unique(neophyteDefEU$species)
-#In total, we have 1772 alien species in European countries (before removing NA dates, after doing so 1686)
+#In total, we have 1772 alien species in European countries (before removing NA dates, after doing so 1686, (1699))
 
 # Check whether joining worked fine
-length(unique(neophyteDefEU$species[neophyteDefEU$Region=="Poland"]))
-length(unique(neophyte$species[neophyte$Region== "Poland"& neophyte$Neophyte=="neo"]))
+Poland <- unique(sort(neophyteDefEU$species[neophyteDefEU$Region=="Poland"]))
+Poland2 <-(unique(neophyte$species[neophyte$Region== "Poland"& neophyte$Neophyte=="neo"]))
+setdiff(Poland, Poland2)
+setdiff(Poland2, Poland)
+
 # Difference --> there is a NA species in the second --> but not if checked --> weird that it comes up --> CHECK!
 
 
 ###### 2.3 extra-EU #######
 # Data on which species are neophytes from outside of Europe
-neophyteDefinitions <- read_csv("../Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv", show_col_types = FALSE)
-# Assign these names to the eva list
-neophyteNames <- neophyteDefinitions$species[neophyteDefinitions$statusEurope == "neo"]
-neophyteNames <- unique(neophyteNames[neophyteNames %in% fullPlotEva$species])
+neophyteDefinitions <- read_csv("../Neophyte-Impact/Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv", show_col_types = FALSE)
+
+# get names eva
+eva_names <- unique(eva2[, c(2:4)])
+
+# change names to all accepted
+neophyteDefinitions$name <- eva_names$species[match(neophyteDefinitions$Matched.concept, eva_names$species)]
+neophyteDefinitions$name[is.na(neophyteDefinitions$name)] <- eva_names$species[match(neophyteDefinitions$Matched.concept[is.na(neophyteDefinitions$name)], 
+                                                                                     eva_names$irena)]
+neophyteDefinitions$name[is.na(neophyteDefinitions$name)] <- eva_names$species[match(neophyteDefinitions$Matched.concept[is.na(neophyteDefinitions$name)], 
+                                                                                     eva_names$`Matched concept`)]
+neophyteDefinitions$name[is.na(neophyteDefinitions$name)] <- eva_names$species[match(neophyteDefinitions$species[is.na(neophyteDefinitions$name)], 
+                                                                                     eva_names$species)]
+neophyteDefinitions$name[is.na(neophyteDefinitions$name)] <- eva_names$species[match(neophyteDefinitions$species[is.na(neophyteDefinitions$name)], 
+                                                                                     eva_names$irena)]
+neophyteDefinitions$name[is.na(neophyteDefinitions$name)] <- eva_names$species[match(neophyteDefinitions$species[is.na(neophyteDefinitions$name)], 
+                                                                                     eva_names$`Matched concept`)]
+
+
+neophyteDefinitions <- neophyteDefinitions[, c(7, 4,6,3)]
+colnames(neophyteDefinitions)<- c("species","name","neophyte","exclude")
+neophyteDefinitions <- neophyteDefinitions[!duplicated(neophyteDefinitions),]
+# check duplicates
+
+# we check again whether our change was successful
+x <- neophyteDefinitions[(duplicated(neophyteDefinitions[,c(1)])| duplicated(neophyteDefinitions[,c(1)], fromLast=TRUE)),]
+x <- x[!(duplicated(x[,c(1,3)]) | duplicated(x[,c(1,3)], fromLast=TRUE)),]
+
+change<- data.frame(species= c("Avena sativa","Cynara scolymus", "Fragaria moschata","Gnaphalium",
+                               "Raphanus raphanistrum subsp. raphanistrum","Rubus canadensis"),
+                    status= c("arch","native","native","native","native","neo"))
+
+# assign to neophyte
+neophyteDefinitions$neophyte[neophyteDefinitions$species %in% change$species] <- 
+  change$status[match(neophyteDefinitions$species[neophyteDefinitions$species %in% change$species],change$species)]
+
+
+# we check again whether our change was successful
+x <- neophyteDefinitions[(duplicated(neophyteDefinitions[,c(1)])| duplicated(neophyteDefinitions[,c(1)], fromLast=TRUE)),]
+x <- x[!(duplicated(x[,c(1,3)]) | duplicated(x[,c(1,3)], fromLast=TRUE)),]
+
+# remove all complete duplicates
+neophyteDefinitions <- neophyteDefinitions[!(duplicated(neophyteDefinitions)),]
+
+# check duplicates of species definitions
+dup<- neophyteDefinitions[duplicated(neophyteDefinitions$species)| duplicated(neophyteDefinitions, fromLast=TRUE),]
+# remove
+neophyteDefinitions <- neophyteDefinitions[!duplicated(neophyteDefinitions$species),]
+neophyteDefinitions<- neophyteDefinitions[!is.na(neophyteDefinitions$species),]
+
+
+# join eva names and neophyte 
+species <- left_join(eva_names, neophyteDefinitions, by= c("species"="species"))
+species[is.na(species$neophyte),] <- left_join(species[is.na(species$neophyte),-c(4:6)], neophyteDefinitions, by= c("irena"="species"))
+
+# 196 --> same as previously
+unique(species$species[is.na(species$neophyte)])
 
 # Some species should be excluded --> Check which 
-exclude <- neophyteDefinitions$species[neophyteDefinitions$statusEurope == "exclude"]
+exclude <- neophyteDefinitions$species[neophyteDefinitions$neophyte == "exclude"]
 exclude <- exclude[exclude %in% fullPlotEva$species]
 # Maybe best to remove these from eva --> otherwise bias in application of names
 # But first check how they are incorporated in the new file --> not neophyte
-neophyteDefEU[(neophyteDefEU$species %in% exclude),]
+neophyteDefEU <- neophyteDefEU[!(neophyteDefEU$species %in% exclude),]
+neophyteNamesEU <- neophyteNamesEU[!(neophyteNamesEU %in% exclude)]
 eva_country_neophyte <- eva_country_neophyte[!(eva_country_neophyte$species %in% exclude),]
+neophyteDefinitions <- neophyteDefinitions[!(neophyteDefinitions$species %in% exclude),]
+neophyteNames <- neophyteDefinitions$species[neophyteDefinitions$neophyte=="neo"]
 
 # Some species are archeophytes
-arch <- neophyteDefinitions$species[neophyteDefinitions$statusEurope == "arch"]
+arch <- neophyteDefinitions$species[neophyteDefinitions$neophyte == "arch"]
 arch <- arch[arch %in% fullPlotEva$species]
-# We will not do anything with them now, but it is possible to adjust the code in the end to also check archeophytes and whether they different
+# We will not do anything with them now, but it is possible to adjust the code in the end to also check archeophytes and whether they different (85, 70)
+
+
+###### 2.4 SUMMARY #####
+# All extra EU neophytes defined neo
+neophyteDefinitions
+neophyteNames
+# All aliens and the region they are present
+neophyte
+neophyteNamesEU
 
 
 #### 3 ANALYSIS ####
 ###### 3.1 intra-EU ######
-# Take names all intra-EU species --> also possible (setdiff(neophyteNamesEU, neophyteNames))
+# Take names all intra-EU species --> also possible (setdiff(neophyteNamesEU, neophyteNames)) (899)
 intra_EU<- neophyteNamesEU[!(neophyteNamesEU %in% neophyteNames)]
 
-# The sums do not add up to all species in neophyteNamesEU, we check which species are present in neophyteNames and not in neophyteNamesEU
+# The sums do not add up to all species in neophyteNamesEU, we check which species are present in neophyteNames and not in neophyteNamesEU (1723)
 all<- c(intra_EU, neophyteNames)
 not_defined<-setdiff(all, neophyteNamesEU) # we checked other way around, is empty character vector: setdiff(neophyteNamesEU, all)
-# CONCLUSION: there are 25 species that were defined extra-European in the old dataset but were now included in the list as native, causing the
+# CONCLUSION: there are 25 (21, 24) species that were defined extra-European in the old dataset but were now included in the list as native, causing the
 # mismatch between both datasets. 
 
 # Extra test to see where they can be found
@@ -99,10 +172,10 @@ test<- test[!(test$species=="Cephalophysis species"),]
 
 # Remove the species for which we are certain that they are from Turkey (based on KEW (and minor proportion CABI) from NeophyteNames)
 # Only for species not present in other countries except for Turkey of course
-Turkey_not_neophyte <- c("Camelina laxa","Fritillaria persica","Crocus kotschyanus subsp. suworowianus","Lepyrodiclis holosteoides", 
+Turkey_not_neophyte <- c("Camelina laxa","Fritillaria persica","Crocus suworowianus","Lepyrodiclis holosteoides", 
                          "Moluccella laevis","Potentilla divaricata", "Roemeria refracta","Sisymbrium septulatum",
                          "Sorghum halepense var. muticum", "Sternbergia vernalis","Thlaspi huetii","Trigonella capitata", 
-                         "Tripleurospermum decipiens", "Tripleurospermum disciforme", "Vicia noeana" , "Gypsophila pilosa" )
+                         "Tripleurospermum decipiens", "Tripleurospermum disciforme", "Vicia noeana" , "Gypsophila pilosa","Vicia johannis" )
 Georgia_not_neophye<- c("Veronica ceratocarpa", "Schoenoplectus juncoides")
 # we check our previous number of strange species against these only in countries where they are native
 setdiff(not_defined, c(Turkey_not_neophyte,Georgia_not_neophye))
@@ -112,7 +185,7 @@ others_not_neophyte<- c("Delphinium obcordatum")
 others_not_neophyte<- c(others_not_neophyte, "Galanthus elwesii", "Galanthus elwesii subsp. elwesii",
                         "Oplismenus hirtellus subsp. undulatifolius")
 
-add_extra<- as.character(c("Citrus x limon","Cucumis melo","Phoenix dactylifera"))
+add_extra<- as.character(c("Citrus x limon","Citrus × limon","Cucumis melo","Phoenix dactylifera"))
 add_intra<- as.character(c("Cuscuta epilinum"))
 
 # We remove all species that were wrongly indicated in the first dataset from our list
@@ -123,7 +196,6 @@ extra_EU<- c(extra_EU,add_extra )
 intra_EU<- c(intra_EU, add_intra)
 
 # We now retrieve the six species that have to be checked
-all<- c(intra_EU, extra_EU)
 all<- c(intra_EU, extra_EU)
 not_defined<-setdiff(all,neophyteNamesEU)
 not_defined<- c(not_defined, "Cephalophysis species")
@@ -138,25 +210,46 @@ eva_country_neophyte<- eva_country_neophyte[!(eva_country_neophyte$species %in% 
 ###### 3.2 re-classify ######
 # We now reclassify the data of eva_country to the newest version, where all species from the old file (extra-EU) are categorised as extra
 # The rest of the species are considered intra-EU neophytes
-eva_country_neophyte$Neophyte[is.na(eva_country_neophyte$Neophyte)] <- "native"
+#eva_country_neophyte$Neophyte[is.na(eva_country_neophyte$Neophyte)] <- "native"
 eva_country_neophyte$Neophyte[eva_country_neophyte$species %in% extra_EU] <- "extra"
 eva_country_neophyte$Neophyte[eva_country_neophyte$Neophyte=="neo"]<- "intra"
-unique(eva_country_neophyte$Neophyte)
+
+# unknowns
+length(unique(eva_country_neophyte$species[is.na(eva_country_neophyte$Neophyte)]))
+unknown <- (eva_country_neophyte[is.na(eva_country_neophyte$Neophyte),])
+unknown <- unknown[!duplicated(unknown[, c(2:8)]),]
+unknown$species[!unknown$species %in% neophyte$species]
 
 # Check archeophytes
-eva_country_neophyte$Neophyte[eva_country_neophyte$species %in% arch]
+unique(eva_country_neophyte$Neophyte[eva_country_neophyte$species %in% arch])
+unique(eva_country_neophyte$species[(eva_country_neophyte$species %in% arch & eva_country_neophyte$Neophyte=="intra")])
+
+# make it native
+eva_country_neophyte$Neophyte[eva_country_neophyte$species=="x_Triticosecale rimpaui"]<- "native"
+
 # Check number of intra and extra European species and all natives
-length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="extra"])) #807
-length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="intra"])) #883 (915 previously)
-length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])) #19327 #19292 (after removing some additional plots)
+length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="extra"])) #807 (815)
+length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="intra"])) #883 (915 previously) (889)
+length(unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])) #19327 #19292 (after removing some additional plots) (19617)
 
 # Summarise again now only number and region in order to see how the data varies in European countries
 country_neophyte<- eva_country_neophyte |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
 table(country_neophyte['Neophyte'])
 
+# summarise again based on region and species -_> this time we have extra and intra instead of neo
+country_status <- eva_country_neophyte |> group_by(Region, species, irena, `Matched concept`, Neophyte) |> summarise(n=n())
+
+country_status[is.na(country_status$Neophyte),]
+
+# check against old 
+#old<- read_csv("species_country_status_new.csv", show_col_types = FALSE)
+
+# check difference with previously made data --> we removed one species (see exclude)
+setdiff(country_species_number[, c(1:2,4)], country_status[, c(1:2,4)] )
+
 # Check whether some intra_EU species are native in other regions
 native_names<-unique(eva_country_neophyte$species[eva_country_neophyte$Neophyte=="native"])
-sum(native_names %in% intra_EU) #818 (before around 848)
+sum(native_names %in% intra_EU) #818 (before around 848) (823)
 native_intra<- native_names[native_names %in% intra_EU]
 
 intra_analysis=F
@@ -187,13 +280,13 @@ nativeSpR <- aggregatedEVA[aggregatedEVA$Neophyte=="native" | aggregatedEVA$Neop
 nativeSpR <- subset(nativeSpR, select= -c(Neophyte))
 names(nativeSpR)[names(nativeSpR)=="numberOfVascularPlantSpecies"]<- "nativeSR"
 
-# Are there some plots that do not have any native SR (544)
+# Are there some plots that do not have any native SR (544) (548)
 fullPlotData[!(fullPlotData$PlotObservationID %in% nativeSpR$PlotObservationID),]
 
 # Count number of plots with alien species
-plots_with_intra <- sum(aggregatedEVA$Neophyte=="intra")
-plots_with_extra <- sum(aggregatedEVA$Neophyte=="extra")
-plots_with_native<-  sum(aggregatedEVA$Neophyte=="native")
+plots_with_intra <- sum(aggregatedEVA$Neophyte=="intra", na.rm=T)
+plots_with_extra <- sum(aggregatedEVA$Neophyte=="extra", na.rm=T)
+plots_with_native<-  sum(aggregatedEVA$Neophyte=="native", na.rm=T)
 
 nativeSR_calculation=F
 if(nativeSR_calculation){
@@ -201,22 +294,23 @@ if(nativeSR_calculation){
 fullPlotData<- left_join(fullPlotData, nativeSpR, by="PlotObservationID")
 fullPlotData <- fullPlotData |> relocate(nativeSR, .after = numberOfVascularPlantSpecies)
 fullPlotData$nativeSR[is.na(fullPlotData$nativeSR)] <- 0
-}
-
 # Check if overview is correct --> difference 19
 sum(fullPlotData$numberOfVascularPlantSpecies-fullPlotData$nativeSR)
-sum(eva_country_neophyte$Neophyte=="extra")+sum(eva_country_neophyte$Neophyte=="intra")
+}
+
+sum(eva_country_neophyte$Neophyte=="extra", na.rm=T)+sum(eva_country_neophyte$Neophyte=="intra", na.rm=T)
 # check with natives as well
-sum(fullPlotData$numberOfVascularPlantSpecies)
-sum(eva_country_neophyte$Neophyte=="native")+ sum(eva_country_neophyte$Neophyte=="extra"| eva_country_neophyte$Neophyte=="intra")
+sum(fullPlotData$numberOfVascularPlantSpecies, na.rm=T)
+sum(eva_country_neophyte$Neophyte=="native", na.rm=T)+ sum(eva_country_neophyte$Neophyte=="extra"| eva_country_neophyte$Neophyte=="intra", na.rm=T)
+
 # there is a variance in number of intra and extra species vs the total number of species --> but no NA values
 any(is.na(eva_country_neophyte$Neophyte)) 
 # difference is also present in difference eva_country and eva_country_neophyte --> check!
 # difference is caused by the removal of species with the exclude and not defined part --> check where it is present and reduce with 1
 remove<- c(not_defined, exclude)
 if(nativeSR_calculation){
-remove_observations <- eva_country$PlotObservationID[eva_country$species %in% remove]
-fullPlotData$numberOfVascularPlantSpecies[fullPlotData$PlotObservationID %in% remove_observations]<-
+  remove_observations <- eva_country$PlotObservationID[eva_country$species %in% remove]
+  fullPlotData$numberOfVascularPlantSpecies[fullPlotData$PlotObservationID %in% remove_observations]<-
   fullPlotData$numberOfVascularPlantSpecies[fullPlotData$PlotObservationID %in% remove_observations]-1
 }
 # checked --> correct
@@ -236,6 +330,9 @@ eva2_country_status<- eva2_country_status[,-4]
 
 remove<- c(not_defined, exclude)
 #write.csv(remove, "not_defined.csv", row.names=FALSE)
+
+#write_csv(new_names, "new_names.csv")
+#write_csv(country_status, "species_status_region.csv")
 
 ##### 4 MAP ####
 ###### 4.1 MED regions #####

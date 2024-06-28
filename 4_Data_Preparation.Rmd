@@ -185,7 +185,7 @@ if(Layerremove){
 
 # Which rows contain duplicates
 numberOfRowsDuplicates<- sum((eva|> group_by(PlotObservationID)|> mutate(duplicated = duplicated(species)))$duplicated)
-Layersum=F
+Layersum=T
 if(Layersum){
   eva <- eva |> group_by(PlotObservationID, species, `Matched concept`, irena) |> summarise(`Cover %`= sum(`Cover %`))
 } else {
@@ -197,7 +197,7 @@ if(Layersum){
 numberOfZeroCover <- length(eva$PlotObservationID[eva$`Cover %`=="0"])
 # look at from which datasets these come --> "Belgium-forest" "Belgium-INBOVEG" "GrassVeg.DE" "Turkey NFVDT"--> wrong entering --> remove
 # unique(header$Dataset[header$PlotObservationID %in% (eva$PlotObservationID[eva$`Cover %`=="0"])])
-coverzero=F
+coverzero=T
 if(coverzero){
   eva<- eva[!eva$`Cover %`=="0", ]
 }
@@ -1004,67 +1004,74 @@ species_country<- eva_country |> group_by(Region, species, irena, `Matched conce
 
 # load neophyte data
 neophyte<- readxl::read_excel("../Neophyte-Impact/country_species-2024-01-30-IA-VK.xlsx", sheet="country_speciesWillem")
-neophyte <- neophyte[, c(2:3,5)]
+neophyte <- neophyte[, c(2:5)]
 neophyte$Neophyte[is.na(neophyte$Neophyte)] <- "native"
+
+# change names to all accepted
+neophyte$name <- eva_names$species[match(neophyte$species, eva_names$species)]
+neophyte$name[is.na(neophyte$name)]<- eva_names$species[match(neophyte$species[is.na(neophyte$name)], eva_names$irena)]
+neophyte$name[is.na(neophyte$name)]<- eva_names$species[match(neophyte$species[is.na(neophyte$name)], eva_names$`Matched concept`)]
+
+# some (1450) species not in dataset now
+
+# some species are not anymore in dataset so we check against original species list
+new_names <- unique(new[, c(6,12:13)])
+neophyte$name[is.na(neophyte$name)]<- new_names$species[match(neophyte$species[is.na(neophyte$name)], new_names$species)]
+neophyte$name[is.na(neophyte$name)]<- new_names$species[match(neophyte$species[is.na(neophyte$name)], new_names$irena)]
+neophyte$name[is.na(neophyte$name)]<- new_names$species[match(neophyte$species[is.na(neophyte$name)], new_names$`Matched concept`)]
+
+# check rest
+neophyte$species[is.na(neophyte$name)]
+# looks fine
+colnames(neophyte) <- c("Region","name","FloraVegSpecies","Neophyte","species")
+
+# are there some duplicates
+x <- neophyte[(duplicated(neophyte[,c(1,5)])| duplicated(neophyte[,c(1,5)], fromLast=TRUE)),]
+x <- x[!(duplicated(x[,c(1,4:5)]) | duplicated(x[,c(1,4:5)], fromLast=TRUE)),]
+
+# check x and change wrong classifications
+change <- data.frame(species= c("Quercus rubra", "Gentianella aspera","Salix gmelinii"),
+                     status= c("neo", "native", "neo"))
+# assign to neophyte
+neophyte$Neophyte[neophyte$species %in% change$species] <- change$status[match(neophyte$species[neophyte$species %in% change$species],
+                                                                           change$species)]
+
+# we check again whether our change was successful
+x <- neophyte[(duplicated(neophyte[,c(1,5)])| duplicated(neophyte[,c(1,5)], fromLast=TRUE)),]
+x <- x[!(duplicated(x[,c(1,4:5)]) | duplicated(x[,c(1,4:5)], fromLast=TRUE)),]
+
+# we remove all duplicates to be able to join with species_country without many-to-many relationships
+neophyte <- neophyte[!duplicated(neophyte[,c(1,5)]),]
 
 # join
 species_country <- full_join(species_country, neophyte, by= c("species"="species", "Region"="Region"))
-species_country$Neophyte[is.na(species_country$Neophyte)] <- 
-  neophyte$Neophyte[match(species_country$irena[is.na(species_country$Neophyte)], neophyte$species)]
-species_country$Neophyte[is.na(species_country$Neophyte)] <- 
-  neophyte$Neophyte[match(species_country$`Matched concept`[is.na(species_country$Neophyte)], neophyte$species)]
+species_country[is.na(species_country$Neophyte),] <- left_join(species_country[is.na(species_country$Neophyte), -c(6:8)], neophyte,
+                                                               by= c("irena"="species", "Region"="Region"))
+species_country[is.na(species_country$Neophyte),] <- left_join(species_country[is.na(species_country$Neophyte), -c(6:8)], neophyte,
+                                                               by= c("Matched concept"="species", "Region"="Region"))
+
+# check NAs
+unique(species_country$species[is.na(species_country$Neophyte)])
+
 
 # not
 not <- species_country[is.na(species_country$Neophyte),]
-not[!duplicated(not$species),]
+not<- not[!duplicated(not$species),]
 
-# check whether all our new species are in the old data (2715 not)
-not_species <- neophyte[!neophyte$species %in% eva_names$species,]
-not_irena <- not_species[! not_species$species %in% eva_names$irena,]
-# still 1449 not (1418)
-not_not <- not_irena[!not_irena$species %in% eva_names$`Matched concept`,]
-# 1354 not (1323)
-not_not <- not_not[!duplicated(not_not$species),]
-
-# the species not present here and yes previously were removed due to eg date etc
-# can be checked by merging with original header data
-unique(not_not$species[!not_not$species %in% eva_names$irena])
-
+# save
+#write_csv(neophyte, "neophyte_euro.csv")
 ```
 
 
 
 ```{r}
-# opposite (1112 are in our new database and not previous one)
-species <- unique(species_country$species[species_country$species %in% neophyte$species])
-# remove species that are present
-not_species <- species_country[!species_country$species %in% species,]
-taxonNameCorrections$statusEurope[taxonNameCorrections$species %in% not_species$species] 
-# some are additionally present in irena (205 left) -_> 223
-not_irena <- not_species[!not_species$irena %in% neophyte$species,]
-unique(not_irena$irena) 
-# 14 species were present in Irena but not anymore 
-# check status in original file --> all native so no problem
-taxonNameCorrections$statusEurope[taxonNameCorrections$species %in% unique(not_irena$irena)] 
-# check all species with NA
-length(unique(not_irena$`Matched concept`[is.na(not_irena$irena)]))
-# or matched concept
-not_not <- not_irena[not_irena$`Matched concept` %in% neophyte$species,]
-# 2 species were matched using the Matched concept
-# This leaves 202 (205) region species observations with no status assigned
-not_not <- not_irena[!not_irena$`Matched concept` %in% neophyte$species &
-                       is.na(not_irena$irena),]
-species_country <- species_country[!is.na(species_country$n),]
-
-species_assign <- species_country[is.na(species_country$Neophyte),]
-
 #write_csv(species_country,"country_species_euro.csv")
-
+#write_csv(species_country,"country_species_euro_cover.csv")
 ```
 
 
 
-# 7 LATER
+# 8 LATER
 ```{r}
 test<- read.csv("fullPlotData.csv")
 
