@@ -166,7 +166,7 @@ check <- check |> group_by(species, `Matched concept`) |> summarise(n=n())
 ## 1.3 New data
 ```{r}
 rm(list = setdiff(ls(), "eva"))
-new <- read_csv("eva_euro_own2.csv", show_col_types = FALSE)
+new <- read_csv("eva_ESy.csv", show_col_types = FALSE)
 eva <- new
 ```
 
@@ -187,11 +187,12 @@ if(Layerremove){
 numberOfRowsDuplicates<- sum((eva|> group_by(PlotObservationID)|> mutate(duplicated = duplicated(species)))$duplicated)
 Layersum=T
 if(Layersum){
-  eva <- eva |> group_by(PlotObservationID, species, `Matched concept`, irena) |> summarise(`Cover %`= sum(`Cover %`))
+  eva <- eva |> group_by(PlotObservationID, species, `Matched concept`, irena, name, source) |> summarise(`Cover %`= sum(`Cover %`))
 } else {
-  eva <- eva |> select(PlotObservationID, species, `Matched concept`, irena,`Cover %`)
-  
+  eva <- eva |> select(PlotObservationID, species, `Matched concept`, irena, name, source,`Cover %`)
 }
+
+head(eva)
 
 # remove species with 0 cover
 numberOfZeroCover <- length(eva$PlotObservationID[eva$`Cover %`=="0"])
@@ -220,7 +221,7 @@ numberOfTooLargeCover<- length(totalCover$totalCover[totalCover$totalCover> 900]
 # unique(header$Dataset[header$PlotObservationID %in% (totalCover$PlotObservationID[totalCover$totalCover> 900])])
 
 # We check the plots (only largest subset)
-eva[eva$PlotObservationID %in% totalCover$PlotObservationID[totalCover$totalCover> 20000],]
+eva[eva$PlotObservationID %in% totalCover$PlotObservationID[totalCover$totalCover> 9000],]
 
 maxcover=T
 if(maxcover){
@@ -329,30 +330,71 @@ Extend eva with columns from EIVE.
 # First we match our own 'species column', which has the Euro Med data added with powo and some data from Irena
 # Later 'the matched concept' was added
 # positions
-eva$EIVEresM <- eive$`EIVEres-M`[match(eva$species, eive$TaxonConcept)]
-eva$EIVEresN <- eive$`EIVEres-N`[match(eva$species, eive$TaxonConcept)]
-eva$EIVEresR <- eive$`EIVEres-R`[match(eva$species, eive$TaxonConcept)]
-eva$EIVEresL <- eive$`EIVEres-L`[match(eva$species, eive$TaxonConcept)]
-eva$EIVEresT <- eive$`EIVEres-T`[match(eva$species, eive$TaxonConcept)]
+eva$EIVEresM <- eive$`EIVEres-M`[match(eva$name, eive$TaxonConcept)]
+eva$EIVEresN <- eive$`EIVEres-N`[match(eva$name, eive$TaxonConcept)]
+eva$EIVEresR <- eive$`EIVEres-R`[match(eva$name, eive$TaxonConcept)]
+eva$EIVEresL <- eive$`EIVEres-L`[match(eva$name, eive$TaxonConcept)]
+eva$EIVEresT <- eive$`EIVEres-T`[match(eva$name, eive$TaxonConcept)]
 
 # niche widths
-eva$EIVEnwM <- eive$`EIVEres-M.nw3`[match(eva$species, eive$TaxonConcept)]
-eva$EIVEnwN <- eive$`EIVEres-N.nw3`[match(eva$species, eive$TaxonConcept)]
-eva$EIVEnwR <- eive$`EIVEres-R.nw3`[match(eva$species, eive$TaxonConcept)]
-eva$EIVEnwL <- eive$`EIVEres-L.nw3`[match(eva$species, eive$TaxonConcept)]
-eva$EIVEnwT <- eive$`EIVEres-T.nw3`[match(eva$species, eive$TaxonConcept)]
+eva$EIVEnwM <- eive$`EIVEres-M.nw3`[match(eva$name, eive$TaxonConcept)]
+eva$EIVEnwN <- eive$`EIVEres-N.nw3`[match(eva$name, eive$TaxonConcept)]
+eva$EIVEnwR <- eive$`EIVEres-R.nw3`[match(eva$name, eive$TaxonConcept)]
+eva$EIVEnwL <- eive$`EIVEres-L.nw3`[match(eva$name, eive$TaxonConcept)]
+eva$EIVEnwT <- eive$`EIVEres-T.nw3`[match(eva$name, eive$TaxonConcept)]
 
 # check names
-eva$eive_name <- eive$TaxonConcept[match(eva$species, eive$TaxonConcept)]
+eva$eive_name <- eive$TaxonConcept[match(eva$name, eive$TaxonConcept)]
 new_names <- eva[is.na(eva$eive_name),]
 
 
-# which species are additionally present when using 'Matched concept'
+
+
+# which species are additionally present when using species --> 345 additional species
+extra<- new_names[!is.na(match(new_names$`species`, eive$TaxonConcept)),]
+extra <- unique(extra[,2:6])
+extra_species <- extra
+
+# Second we add species data for these species
+eva$EIVEresM[eva$species %in% extra$species] <- eive$`EIVEres-M`[match(eva$`species`[eva$species %in% extra$species],
+                                                                           eive$TaxonConcept)]
+eva$EIVEresN[eva$species %in% extra$species] <- eive$`EIVEres-N`[match(eva$`species`[eva$species %in% extra$species],
+                                                                           eive$TaxonConcept)]
+eva$EIVEresR[eva$species %in% extra$species] <- eive$`EIVEres-R`[match(eva$`species`[eva$species %in% extra$species],
+                                                                           eive$TaxonConcept)]
+eva$EIVEresL[eva$species %in% extra$species] <- eive$`EIVEres-L`[match(eva$`species`[eva$species %in% extra$species],
+                                                                           eive$TaxonConcept)]
+eva$EIVEresT[eva$species %in% extra$species] <- eive$`EIVEres-T`[match(eva$`species`[eva$species %in% extra$species],
+                                                                           eive$TaxonConcept)]
+
+# niche widths
+eva$EIVEnwM[eva$species %in% extra$species] <- eive$`EIVEres-M.nw3`[match(eva$`species`[eva$species %in% extra$species],
+                                                                           eive$TaxonConcept)]
+eva$EIVEnwN[eva$species %in% extra$species] <- eive$`EIVEres-N.nw3`[match(eva$`species`[eva$species %in% extra$species],
+                                                                           eive$TaxonConcept)]
+eva$EIVEnwR[eva$species %in% extra$species] <- eive$`EIVEres-R.nw3`[match(eva$`species`[eva$species %in% extra$species],
+                                                                           eive$TaxonConcept)]
+eva$EIVEnwL[eva$species %in% extra$species] <- eive$`EIVEres-L.nw3`[match(eva$`species`[eva$species %in% extra$species],
+                                                                           eive$TaxonConcept)]
+eva$EIVEnwT[eva$species %in% extra$species] <- eive$`EIVEres-T.nw3`[match(eva$`species`[eva$species %in% extra$species],
+                                                                           eive$TaxonConcept)]
+
+# check new names
+eva$eive_name[eva$species %in% extra$species]  <- eive$TaxonConcept[match(eva$species[eva$species %in% extra$species] , eive$TaxonConcept)]
+length(eive$TaxonConcept[match(eva$irena[eva$species %in% extra_species$species] , eive$TaxonConcept)])
+new_names <- eva[is.na(eva$eive_name),]
+# check previous annotation
+extra<- new_names[!is.na(match(new_names$`species`, eive$TaxonConcept)),]
+
+
+
+
+# which species are additionally present when using irena --> 132 additional species
 extra<- new_names[!is.na(match(new_names$`irena`, eive$TaxonConcept)),]
-extra <- unique(extra[,2:4])
+extra <- unique(extra[,2:6])
 extra_irena <- extra
 
-# Second we add Irena data for these species
+# Third we add eva irena data for these species
 eva$EIVEresM[eva$species %in% extra$species] <- eive$`EIVEres-M`[match(eva$`irena`[eva$species %in% extra$species],
                                                                            eive$TaxonConcept)]
 eva$EIVEresN[eva$species %in% extra$species] <- eive$`EIVEres-N`[match(eva$`irena`[eva$species %in% extra$species],
@@ -375,16 +417,17 @@ eva$EIVEnwL[eva$species %in% extra$species] <- eive$`EIVEres-L.nw3`[match(eva$`i
                                                                            eive$TaxonConcept)]
 eva$EIVEnwT[eva$species %in% extra$species] <- eive$`EIVEres-T.nw3`[match(eva$`irena`[eva$species %in% extra$species],
                                                                            eive$TaxonConcept)]
-
 # check new names
-eva$eive_name[eva$species %in% extra$species]  <- eive$TaxonConcept[match(eva$irena[eva$species %in% extra$species] , eive$TaxonConcept)]
-length(eive$TaxonConcept[match(eva$irena[eva$species %in% extra_irena$species] , eive$TaxonConcept)])
+eva$eive_name[eva$species %in% extra$species]  <- eive$TaxonConcept[match(eva$`irena`[eva$species %in% extra$species],
+                                                                          eive$TaxonConcept)]
+length(eive$TaxonConcept[match(eva$`irena`[eva$species %in% extra$species],eive$TaxonConcept)])
 new_names <- eva[is.na(eva$eive_name),]
-
 # check previous annotation
 extra<- new_names[!is.na(match(new_names$`irena`, eive$TaxonConcept)),]
 
-# which species are additionally present when using 'Matched concept'
+
+
+# finally lets check the 'Matched concept' name --> 6 additional species
 extra<- new_names[!is.na(match(new_names$`Matched concept`, eive$TaxonConcept)),]
 extra <- unique(extra[,2:4])
 extra_matched <- extra
@@ -425,21 +468,23 @@ extra<- new_names[!is.na(match(new_names$`Matched concept`, eive$TaxonConcept)),
 
 ```{r, fig.show = "hide"}
 # look at total number of species in eive
+length(unique(eive$TaxonConcept[match(eva$name, eive$TaxonConcept)]))
 length(unique(eive$TaxonConcept[match(eva$species, eive$TaxonConcept)]))
 length(unique(eive$TaxonConcept[match(eva$irena, eive$TaxonConcept)]))
 length(unique(eive$TaxonConcept[match(eva$`Matched concept`,eive$TaxonConcept)]))
 
 # check total amount of observations
+sum(!is.na(eva$species[match(eva$name, eive$TaxonConcept)]))
 sum(!is.na(eva$species[match(eva$species, eive$TaxonConcept)]))
 sum(!is.na(eva$species[match(eva$irena, eive$TaxonConcept)]))
 sum(!is.na(eva$species[match(eva$`Matched concept`, eive$TaxonConcept)]))
 
 # no names
 no_eive <-  eva[is.na(eva$eive_name),]
-no_eive <- unique(no_eive[, 2:4])
+no_eive <- unique(no_eive[, 2:6])
 
-# checl against the length of eva names
-eva_names <- unique(eva[,2:4])
+# check against the length of eva names
+eva_names <- unique(eva[,2:6])
 
 percentOfSpeciesEvaInEive <- 1- nrow(no_eive)/ nrow(eva_names)
 
@@ -509,20 +554,54 @@ Extend eva with columns from disturbance indicator values:
 ```{r}
 # expand first with our species classification
 eva$Disturbance.Severity <- div$Disturbance.Severity[match(eva$species, div$species)]
-eva$Disturbance.Severity.herblayer <- div$Disturbance.Severity.herblayer[match(eva$species, div$species)]
-eva$Disturbance.Frequency <- div$Disturbance.Frequency[match(eva$species, div$species)]
-eva$Disturbance.Frequency.herblayer <- div$Disturbance.Frequency.herblayer[match(eva$species, div$species)]
-eva$Grazing.Pressure <- div$Grazing.Pressure[match(eva$species, div$species)]
-eva$Mowing.Frequency <- div$Mowing.Frequency[match(eva$species, div$species)]
-eva$Soil.Disturbance <- div$Soil.Disturbance[match(eva$species, div$species)]
+eva$Disturbance.Severity.herblayer <- div$Disturbance.Severity.herblayer[match(eva$name, div$species)]
+eva$Disturbance.Frequency <- div$Disturbance.Frequency[match(eva$name, div$species)]
+eva$Disturbance.Frequency.herblayer <- div$Disturbance.Frequency.herblayer[match(eva$name, div$species)]
+eva$Grazing.Pressure <- div$Grazing.Pressure[match(eva$name, div$species)]
+eva$Mowing.Frequency <- div$Mowing.Frequency[match(eva$name, div$species)]
+eva$Soil.Disturbance <- div$Soil.Disturbance[match(eva$name, div$species)]
 
 
 # check names
-eva$div_name <- div$species[match(eva$species, div$species)]
+eva$div_name <- div$species[match(eva$name, div$species)]
+length(eva$div_name[!is.na(eva$div_name)])
 new_names <- eva[is.na(eva$div_name),]
 
 
-# which species are additionally present when using 'Matched concept'
+
+
+# which species are additionally present when using species
+extra<- new_names[!is.na(match(new_names$`irena`, div$species)),]
+extra <- unique(extra[,2:4])
+extra_species_div <- extra
+
+# expand second with species species classification
+eva$Disturbance.Severity[eva$species %in% extra$species] <- 
+  div$Disturbance.Severity[match(eva$species[eva$species %in% extra$species], div$species)]
+eva$Disturbance.Severity.herblayer[eva$species %in% extra$species] <- 
+  div$Disturbance.Severity.herblayer[match(eva$species[eva$species %in% extra$species], div$species)]
+eva$Disturbance.Frequency[eva$species %in% extra$species] <- 
+  div$Disturbance.Frequency[match(eva$species[eva$species %in% extra$species], div$species)]
+eva$Disturbance.Frequency.herblayer[eva$species %in% extra$species] <- 
+  div$Disturbance.Frequency.herblayer[match(eva$species[eva$species %in% extra$species], div$species)]
+eva$Grazing.Pressure[eva$species %in% extra$species] <- 
+  div$Grazing.Pressure[match(eva$species[eva$species %in% extra$species], div$species)]
+eva$Mowing.Frequency[eva$species %in% extra$species] <- 
+  div$Mowing.Frequency[match(eva$species[eva$species %in% extra$species], div$species)]
+eva$Soil.Disturbance[eva$species %in% extra$species] <- 
+  div$Soil.Disturbance[match(eva$species[eva$species %in% extra$species], div$species)]
+
+# check names
+eva$div_name[eva$species %in% extra$species] <- div$species[match(eva$species[eva$species %in% extra$species], div$species)]
+length(div$species[match(eva$species[eva$species %in% extra$species], div$species)])
+new_names <- eva[is.na(eva$div_name),]
+extra<- new_names[!is.na(match(new_names$`species`, div$species)),]
+
+
+
+
+
+# which species are additionally present when using irena
 extra<- new_names[!is.na(match(new_names$`irena`, div$species)),]
 extra <- unique(extra[,2:4])
 extra_irena_div <- extra
@@ -548,6 +627,9 @@ eva$div_name[eva$species %in% extra$species] <- div$species[match(eva$irena[eva$
 length(div$species[match(eva$irena[eva$species %in% extra$species], div$species)])
 new_names <- eva[is.na(eva$div_name),]
 extra<- new_names[!is.na(match(new_names$`irena`, div$species)),]
+
+
+
 
 # which species are additionally present when using 'Matched concept'
 extra<- new_names[!is.na(match(new_names$`Matched concept`, div$species)),]
@@ -580,11 +662,13 @@ extra<- new_names[!is.na(match(new_names$`Matched concept`, div$species)),]
 
 ```{r}
 # look at total number of species in eive
+length(unique(div$species[match(eva$name, div$species)]))
 length(unique(div$species[match(eva$species, div$species)]))
 length(unique(div$species[match(eva$irena, div$species)]))
 length(unique(div$species[match(eva$`Matched concept`,div$species)]))
 
 # check total amount of observations
+sum(!is.na(eva$species[match(eva$name, div$species)]))
 sum(!is.na(eva$species[match(eva$species, div$species)]))
 sum(!is.na(eva$species[match(eva$irena, div$species)]))
 sum(!is.na(eva$species[match(eva$`Matched concept`,div$species)]))
@@ -975,12 +1059,12 @@ Looking at different datasets from a similar region exhibits quite large differe
 # Make sure all plot data is in eva
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
-#write_csv(fullPlotData, "fullPlotData_euro.csv")
+#write_csv(fullPlotData, "fullPlotData_ESy.csv")
  
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 fullPlotEva <- eva
-#write_csv(eva, "fullPlotEva_euro.csv")
+#write_csv(eva, "fullPlotEva_ESy.csv")
 ```
 
 
@@ -990,22 +1074,21 @@ fullPlotEva <- eva
 ```{r}
 # File for Irena
 # Eva
-fullPlotEva2 <- read_csv("fullPlotEva_euro.csv", show_col_types = FALSE)
-eva2<- fullPlotEva[,c("PlotObservationID","species","irena", "Matched concept")]
-fullPlotData2<- read_csv("fullPlotData_euro.csv", show_col_types = FALSE)
+#fullPlotEva2 <- read_csv("fullPlotEva_ESy.csv", show_col_types = FALSE)
+eva2<- fullPlotEva[,c("PlotObservationID","species","irena", "Matched concept", "name","source")]
+#fullPlotData2<- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
 # eva names
-eva_names <- unique(eva[, c(2:4)])
+eva_names <- unique(eva[, c(2:6)])
 
 # Join and summarise
 eva_country<- left_join(eva2, fullPlot2)
-species_country<- eva_country |> group_by(Region, species, irena, `Matched concept`) |> summarize(n=n())
+species_country<- eva_country |> group_by(Region, species, irena, `Matched concept`, name, source) |> summarize(n=n())
 
 # load neophyte data
-neophyte<- readxl::read_excel("../Neophyte-Impact/country_species-2024-01-30-IA-VK.xlsx", sheet="country_speciesWillem")
-neophyte <- neophyte[, c(2:5)]
-neophyte$Neophyte[is.na(neophyte$Neophyte)] <- "native"
+neophyte<-readxl::read_excel("species_status_region-VK-IA.xlsx")
+
 
 # change names to all accepted
 neophyte$name <- eva_names$species[match(neophyte$species, eva_names$species)]
