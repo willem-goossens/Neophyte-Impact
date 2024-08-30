@@ -26,20 +26,21 @@ library(foreach)
 library(tidyverse)
 library(geometry)
 library(factoextra)
+library(ggpubr)
 ```
 
 
 Here we set some parameters that are useful in the script
 ```{r}
-correctArea<- T
+correctArea<- F
 ```
 
 
 ## 1.2 Data
 Load eva and plot data
 ```{r, warnings=F, message=F}
-eva <- read_csv("fullPlotEva_cover_all_layer_cleaned.csv")
-fullPlotData <- read_csv("fullPlotData_cover_all_layer_cleaned.csv")
+eva <- read_csv("fullPlotEva_ESy.csv")
+fullPlotData <- read_csv("fullPlotData_ESy.csv")
 ```
 
 
@@ -47,7 +48,7 @@ Downsample by a factor of 100 if fast is selected
 ```{r}
 fast <- T
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.90,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 
@@ -63,9 +64,10 @@ Load the neophyte definitions:
 # Data on which species are neophytes
 native_intra_analysis=F
 if(native_intra_analysis){
-  species_country_status <- read_csv("eva2_country_status_new.csv")
+  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
 } else{
-species_country_status<- read_csv("species_country_status_new.csv")
+  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
 # or if we want to do it with intra seperately
 }
 
@@ -76,13 +78,6 @@ native_intra <- unique(species_country_status$species[species_country_status$Neo
 ```
 
 
-Remove species that are not defined or to be excluded
-```{r, warnings=F}
-remove<- read_csv("not_defined.csv",show_col_types = FALSE)
-remove<- as.vector(unlist(remove))
-eva<- eva[!(eva$species %in% remove),]
-```
-
 
 Assign classification to species
 ```{r}
@@ -91,15 +86,12 @@ fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 # Right join to keep only species present in fullplot (otherwise a lot of NAs)
 eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
 # Join eva and classification
-eva_country_neophyte<- left_join(eva, species_country_status, 
-                                 by= c("Region"= "Region", "species"= "species"))
-eva<- eva_country_neophyte
+eva_country_neophyte<- left_join(eva, species_country_status[, -c(2:4,6:8)], by= c("Region"= "Region", "name"= "name"))
 # Look at how much from every type are present
-tt<- as.data.frame(table(eva_country_neophyte$Neophyte))
-tt
-
-rm(fullPlot2, eva_country_neophyte, remove)
+table(eva_country_neophyte$Neophyte)
 ```
+
+
 
 
 ## 1.4 Number of plots
@@ -107,7 +99,8 @@ Reduce EVA to a smaller dataset to accelerate computations.
 Count the number of plots in which the species in the dataset exist.  
 ```{r, message=F}
 if(fast) {
-  reducedEva <- eva |> select(PlotObservationID, species, `Cover %`, Neophyte)
+  eva <- eva_country_neophyte
+  reducedEva <- eva |> select(PlotObservationID, name, `Cover %`, Neophyte, Layer)
 
   uniqueSpecies <- unique(reducedEva[, c(2,4)])
   
@@ -126,17 +119,18 @@ if(fast) {
                                 numberOfPlots = integer(), 
                                 Neophyte= character())
   
-  # Count in how many plots a native species occurs
+  # Count in how many plots a species occurs
   begin<- Sys.time()
-plotsPerSpecies<-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind',
+  plotsPerSpecies<-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind',
                          .packages=c("dplyr","mgcv")) %dopar% {
-    tmp <- reducedEva$PlotObservationID[reducedEva$species == uniqueSpecies$species[i] &
+    tmp <- reducedEva$PlotObservationID[reducedEva$name == uniqueSpecies$name[i] &
                                           reducedEva$Neophyte == uniqueSpecies$Neophyte[i]]
-    names=uniqueSpecies$species[i]
+    names=uniqueSpecies$name[i]
     numberOfPlots= length(unique(tmp))
     plotsPerSpecies[i,]<- c(names, numberOfPlots,
                             Neophyte=uniqueSpecies$Neophyte[i] )
-}
+  }
+  
   plotsPerSpecies<- as.data.frame(plotsPerSpecies)
   plotsPerSpecies<-setNames(plotsPerSpecies, c("names", "numberOfPlots","Neophyte"))
   plotsPerSpecies$numberOfPlots <- as.numeric(plotsPerSpecies$numberOfPlots)
@@ -163,48 +157,38 @@ We want all species that are present in at least 50 plots, we order this set fro
 # If you want to have a look at the distribution of the species richness per plot: hist(plotsPerSpecies$numberOfPlots[plotsPerSpecies$numberOfPlots>1000])
 
 # determine which plant species should be computed
-minimumNumberOfPlots<- 50
+minimumNumberOfPlots<- 10
 allPlants <- plotsPerSpecies[plotsPerSpecies$numberOfPlots >= minimumNumberOfPlots,]
 allPlants <- allPlants[order(-allPlants$numberOfPlots),]
-
-# function to give the species cover per species in a plot
-computeSpeciesCover <- function(name, species, cover) {
-  result <- sum(cover[species==name]) # we use the sum here, since otherwise the total cover / species cover cannot reach one.
-  if(is.na(result)) {
-    0
-  } else {
-    result
-  }
-}
-```
-
-
-Test the function
-```{r, warnings=F, message=F, results='hide'}
-# Tests of the above function
-computeSpeciesCover("nonExistentPlant", c("plant1", "plant2"), c(1,2)) # If the plant is not present 0 is returned.
-computeSpeciesCover("plant1", c("plant1", "plant2"), c(1,2)) # If the is present the right value is returned
-computeSpeciesCover("plant2", c("plant1", "plant2"), c(1,2))
-computeSpeciesCover("plant2", c("plant1", "plant2", "plant2"), c(1,2,3)) # If the plant is present multiple times the sum is returned
-
-reducedEva <- eva[,c("PlotObservationID", "species", "Cover %", "Neophyte")]
+rownames(allPlants)<- c(1: nrow(allPlants))
 ```
 
 ## 1.6 Total cover
 Compute total cover for each plot.
 ```{r}
+# create
+reducedEva <- eva |> select(PlotObservationID, name, `Cover %`, Neophyte, Layer)
+
+reducedEva <- reducedEva |> group_by(PlotObservationID, name, Neophyte, Layer) |> summarise(cover= sum(`Cover %`))
+
+
+reducedEva_official <- reducedEva|> group_by(PlotObservationID, name, Neophyte) |> 
+  summarise(cover = (1-prod((1-ifelse(cover/100>1, 1, cover/100 ))))*100)
+
+
 fullPlotData <- 
-  eva %>% 
+  reducedEva %>% 
   group_by(PlotObservationID) %>% 
-  summarise(totalCover = sum(`Cover %`)) %>% 
+  summarise(totalCover = sum(cover)) %>% 
   left_join(fullPlotData, by = "PlotObservationID")
 ```
 
 
 ## 1.7 PCA
 ```{r}
+head(fullPlotData)
 # Perform PCA with scaled (i.e. unit variance) variables on all EIVE and DIV variables in base model + chelsa P and hfp
-PCA<- prcomp(fullPlotData[, c(27:36, 56,58)  ], scale=T)
+PCA<- prcomp(fullPlotData[, c(26:31, 33:35, 51,53)  ], scale=T)
   
 # get amount of variance explained by top 4 axes
 eig.val <- get_eigenvalue(PCA)
@@ -212,6 +196,7 @@ eig.val<- eig.val[4,3]
   
 # get coordinates of first 4 axes and bind to the dataset
 PCA<- PCA$x[,1:4]
+dim(PCA)
 fullPlotData <- cbind(fullPlotData, PCA)
 ```
 
@@ -224,178 +209,43 @@ fullPlotData <- cbind(fullPlotData, PCA)
 plantName = allPlants$names[1]
 plantStatus= allPlants$Neophyte[1]
 
-
-# Function to compute the impact for each species, so we only need the plant name as input
-computePlantImpact <- function(plantName, plantStatus) {
-  
-  # Copy dataset temporarily to be able to make changes
-  tmpFullPlotData <- fullPlotData
-  
-  # Select only explanatory variables
-  tmpFullPlotData <- tmpFullPlotData %>% 
-    select(numberOfVascularPlantSpecies,PlotObservationID, Area, 
-           EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
-           DistSeverity.sqrt, DistFrequency.sqrt, Soil.Disturbance.sqrt, 
-           Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
-           Latitude, Longitude, Dataset, totalCover, chelsaP, elev, hfp)
-  
-  # Copy the full dataset without aberrant totalCover
-  tmpFullPlotData <- tmpFullPlotData %>% filter(totalCover <= 900)
-  reducedEva <- eva %>% filter(PlotObservationID %in% tmpFullPlotData$PlotObservationID)
-
-  # Get the indices of the plant in the eva dataset
-  indexOfPlant <- reducedEva$species == plantName & reducedEva$Neophyte== plantStatus
-  
-  # We select only the rows containing the species first because this is much faster than doing it for all plots.
-  # We make the dataset smaller (only those plots where the species is present), group the data per plot and compute the total cover (all     species) and cover of the species we are highlighting now
-  plotsWherePlantOccurs <- reducedEva[reducedEva$PlotObservationID %in%
-                                      reducedEva$PlotObservationID[indexOfPlant],] |>
-                           group_by(PlotObservationID) |>
-                           summarise(speciesCover = computeSpeciesCover(plantName, species, `Cover %`))
-  
-  
-  # Join the computed cover plots with the full data
-  tmpFullPlotData <- left_join(tmpFullPlotData, plotsWherePlantOccurs, 
-                             by = "PlotObservationID")
-  
-  # Identify all plots where the species investigated occurs
-  tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in%
-    reducedEva$PlotObservationID[indexOfPlant]
-  
-
-  # If species is not present:
-  # Make 100 total cover and 0 species cover
-  tmpFullPlotData$totalCover[is.na(tmpFullPlotData$totalCover)] <- 100.0
-  tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
-  
-  # Exclude all plots which have 0 total cover
-  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover >=1,] 
-  
-  # Do SR - 1 for all plots in which the species is present
-  tmpFullPlotData$numberOfVascularPlantSpecies <- tmpFullPlotData$numberOfVascularPlantSpecies - tmpFullPlotData$plantOccurs
-  
-  # Correct area: if true we calculate the area that is reserved for the other plant species. 
-  if(correctArea) {
-    tmpFullPlotData$Area <- tmpFullPlotData$Area*(1.0 - tmpFullPlotData$speciesCover/tmpFullPlotData$totalCover)
-  }
-
-  # There is a numerical problem in the bam function if we provide empty plots...
-  tmpFullPlotData <- tmpFullPlotData |> filter(numberOfVascularPlantSpecies > 0, Area > 0)
-  
-  # Make dataset a factor to add it as a random variable
-  tmpFullPlotData$Dataset <- as.factor(tmpFullPlotData$Dataset)
-  
-  # Add relative species cover
-  tmpFullPlotData <- tmpFullPlotData %>% 
-    mutate(relSpeciesCover = 100 * speciesCover / totalCover)
-  
-  
-  # Species occurrence as factor (not logical)
-  tmpFullPlotData$plantOccursF <- factor(tmpFullPlotData$plantOccurs)
-  
-  # Base model
-  model<-  numberOfVascularPlantSpecies ~ 
-              s(log(Area),bs='tp') + 
-              s(EIVEresM, bs = 'tp') +
-              s(EIVEresN, bs = 'tp') +
-              s(EIVEresR, bs = 'tp') +
-              s(EIVEresL, bs = 'tp') +
-              s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
-              s(Latitude, Longitude, bs = 'tp') +
-              s(Dataset, bs = 're')+
-              plantOccurs
-
-  base <- bam(model,family = poisson, 
-              data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, 
-              nthreads=4)
-
-
-  library(DHARMa)
-  library(mgcViz)
-
-  test<- simulateResiduals(base)
-  plot(test) 
-  testDispersion(base)
-  
-  # Get summary from model
-  baseModel <- summary(base)
-  baseModel
-  
-  # Make a dataframe to add the residuals to
-  res <- data.frame(taxa = character(), Estimate = numeric(), 
-                    StdErr = numeric(), `zValue` = numeric(), 
-                    pr = numeric(), numberOfPlots = integer(), 
-                    Neophyte= character(),
-                    RelDiff= numeric())
-  
-  res <- add_row(res, 
-                 taxa = plantName, Estimate = baseModel$p.table[2,1], 
-                 StdErr = baseModel$p.table[2,2], 
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4], 
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$plantOccursF == TRUE]) -
-                    mean(fitted(base)[tmpFullPlotData$plantOccursF == FALSE])) /
-                    mean(fitted(base)[tmpFullPlotData$plantOccursF == FALSE]))
-  
-  res
-}
-```
-
-
-## 2.1 Function 1.1
-```{r, meassage=F}
-# The name of the first species (to test the function)
-plantName = allPlants$names[1]
-plantStatus= allPlants$Neophyte[1]
-
-
 # Function to compute the impact for each species, so we only need the plant name as input
 computePlantImpact1 <- function(plantName, plantStatus) {
   
   # Copy dataset temporarily to be able to make changes
   tmpFullPlotData <- fullPlotData
   
+  reducedEva <- reducedEva_official
   # Select only explanatory variables
   tmpFullPlotData <- tmpFullPlotData %>% 
     select(numberOfVascularPlantSpecies,PlotObservationID, Area, 
            EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
-           DistSeverity.sqrt, DistFrequency.sqrt, Soil.Disturbance.sqrt, 
+           DistSeverity.sqrt, Soil.Disturbance.sqrt, 
            Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
-           Latitude, Longitude, Dataset, totalCover, chelsaP, elev, hfp, PC1,PC2,PC3,PC4)
+           Latitude, Longitude, Dataset, totalCover, chelsaP, hfp, PC1,PC2,PC3,PC4)
   
   # Copy the full dataset without aberrant totalCover
   tmpFullPlotData <- tmpFullPlotData %>% filter(totalCover <= 900)
-  reducedEva <- eva %>% filter(PlotObservationID %in% tmpFullPlotData$PlotObservationID)
+  reducedEva <- reducedEva[reducedEva$PlotObservationID %in% tmpFullPlotData$PlotObservationID,]
 
   # Get the indices of the plant in the eva dataset
-  indexOfPlant <- reducedEva$species == plantName & reducedEva$Neophyte== plantStatus
+  indexOfPlant <- reducedEva$name == plantName & reducedEva$Neophyte== plantStatus
   
   # We select only the rows containing the species first because this is much faster than doing it for all plots.
-  # We make the dataset smaller (only those plots where the species is present), group the data per plot and compute the total cover (all     species) and cover of the species we are highlighting now
-  plotsWherePlantOccurs <- reducedEva[reducedEva$PlotObservationID %in%
-                                      reducedEva$PlotObservationID[indexOfPlant],] |>
-    group_by(PlotObservationID) |>
-    summarise(speciesCover = computeSpeciesCover(plantName, species, `Cover %`))
-  
+  # We make the dataset smaller (only those plots where the species is present), group the data per plot and compute the total cover     (all species) and cover of the species we are highlighting now
+  plotsWherePlantOccurs <- reducedEva[indexOfPlant,c(1,4)]
+  colnames(plotsWherePlantOccurs)[2]<- "speciesCover"
   
   # Join the computed cover plots with the full data
   tmpFullPlotData <- left_join(tmpFullPlotData, plotsWherePlantOccurs, 
                              by = "PlotObservationID")
   
   # Identify all plots where the species investigated occurs
-  tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in%
-    reducedEva$PlotObservationID[indexOfPlant]
+  tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant]
   
   
   # reduce the dataset to obtain only those plots in which the species is present
-  species_plots <- tmpFullPlotData[tmpFullPlotData$plantOccurs, c(21:24)  ]
+  species_plots <- tmpFullPlotData[tmpFullPlotData$plantOccurs, c(19:22)  ]
   # make matrix and reduce duplicated columns
   species_plots<- as.matrix(species_plots)
   duplicated<- duplicated(species_plots)
@@ -403,11 +253,11 @@ computePlantImpact1 <- function(plantName, plantStatus) {
   
   # take ConvexHull around the PCA coordinates in which the species is present
   convex_hull <- convhulln((species_plots))
-
   # Extract all points from the dataset that are additionally within this ConvexHull and do not contain the species
-  is_within_hull <- inhulln(convex_hull, as.matrix(tmpFullPlotData[, c(21:24)]))
+  is_within_hull <- inhulln(convex_hull, as.matrix(tmpFullPlotData[, c(19:22)]))
   subset_data <- tmpFullPlotData[is_within_hull, ]
   
+
   # Take size of subset data
   size<- length(subset_data$plantOccurs)
   # change name tmpFullPlotData
@@ -419,11 +269,12 @@ computePlantImpact1 <- function(plantName, plantStatus) {
   tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
   
   # Exclude all plots which have 0 total cover
-  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover >=1,] 
+  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover >0,] 
   
   # Do SR - 1 for all plots in which the species is present
   tmpFullPlotData$numberOfVascularPlantSpecies <- tmpFullPlotData$numberOfVascularPlantSpecies - tmpFullPlotData$plantOccurs
   
+  correctArea= F
   # Correct area: if true we calculate the area that is reserved for the other plant species. 
   if(correctArea) {
     tmpFullPlotData$Area <- tmpFullPlotData$Area*(1.0 - tmpFullPlotData$speciesCover/tmpFullPlotData$totalCover)
@@ -456,8 +307,10 @@ computePlantImpact1 <- function(plantName, plantStatus) {
               s(Grazing.Pressure.sqrt, bs = 'tp')+
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
+              s(hfp, bs='tp')+
+              s(chelsaP, bs='tp')+
               s(Dataset, bs = 're')+
-              plantOccurs
+              plantOccursF
 
   base <- bam(model,family = poisson, 
               data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, 
@@ -494,413 +347,39 @@ computePlantImpact1 <- function(plantName, plantStatus) {
 
 
 
-
 ## 2.2 Function 2
 ```{r, meassage=F}
 # The name of the first species (to test the function)
-plantName = allPlants$names[1]
-plantStatus= allPlants$Neophyte[1]
-i=1
+plantName = allPlants$names[9]
+allPlants[allPlants$names=="Achillea millefolium aggr.",]
+plantStatus= allPlants$Neophyte[9]
 
 # Function to compute the impact for each species, so we only need the plant name as input
 computePlantImpact2 <- function(plantName, plantStatus) {
   
   
   # Copy the full dataset without aberrant totalCover
-  tmpFullPlotData <- fullPlotData %>% filter(totalCover < 850)
-  reducedEva <- eva %>% filter(PlotObservationID %in% tmpFullPlotData$PlotObservationID)
-  
-  # Select only explanatory variables
-  tmpFullPlotData <- tmpFullPlotData %>% 
-    select(PlotObservationID, numberOfVascularPlantSpecies, Area, 
-           EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
-           DistSeverity.sqrt, DistFrequency.sqrt, Soil.Disturbance.sqrt, 
-           Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
-           Latitude, Longitude, Dataset, totalCover)
-  
-  # Get the indices of the plant in the eva dataset
-  indexOfPlant <- eva$species == plantName & eva$Neophyte== plantStatus
-  
-  # We select only the rows containing the species first because this is much faster than doing it for all plots.
-  # We make the dataset smaller (only those plots where the species is present), group the data per plot and 
-  # compute the cover of the species we are highlighting now
-  plotsWherePlantOccurs <- reducedEva[reducedEva$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant],] |>
-    group_by(PlotObservationID) |>
-    summarise(speciesCover = computeSpeciesCover(plantName, species, `Cover %`))
-  
-  # Join the computed cover plots with the full data
-  tmpFullPlotData <- left_join(tmpFullPlotData, plotsWherePlantOccurs, by = "PlotObservationID")
-  # Identify all plots where the species investigated occurs
-  tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant]
-  
-  # If species is not present:
-  tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
-  
-  # Exclude all plots which have 0 total cover
-  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover >= 1,] 
-  
-  # Do SR - 1 for all plots in which the species is present
-  tmpFullPlotData$numberOfVascularPlantSpecies <- tmpFullPlotData$numberOfVascularPlantSpecies - tmpFullPlotData$plantOccurs
-  
-  # Correct area: if true we calculate the area that is reserved for the other plant species. 
-  if(correctArea) {
-    tmpFullPlotData$Area <- tmpFullPlotData$Area*(1.0 - tmpFullPlotData$speciesCover/tmpFullPlotData$totalCover)
-  }
-  
-  # There is a numerical problem in the bam function if we provide empty plots...
-  tmpFullPlotData <- tmpFullPlotData %>% filter(numberOfVascularPlantSpecies > 0, Area > 0)
-  
-  # Make dataset a factor to add it as a random variable
-  tmpFullPlotData$Dataset <- as.factor(tmpFullPlotData$Dataset)
-
-  # Add relative species cover
-  tmpFullPlotData <- tmpFullPlotData %>% mutate(relSpeciesCover = 100 * speciesCover / totalCover)
-
-  # Species occurrence as factor (not logical)
-  tmpFullPlotData$plantOccursF <- factor(tmpFullPlotData$plantOccurs)
-  
-  # Base model
-  model<-  (numberOfVascularPlantSpecies) ~ 
-              s(log(Area),bs='tp') + 
-              s(EIVEresM, bs = 'tp') +
-              s(EIVEresN, bs = 'tp') +
-              s(EIVEresR, bs = 'tp') +
-              s(EIVEresL, bs = 'tp') +
-              s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
-              s(Latitude, Longitude, bs = 'tp') +
-              s(Dataset, bs="re")+
-              (relSpeciesCover)+ I(relSpeciesCover^2)
-  
-  
-  base <- bam(model,family = poisson, data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4, link= "identity")
-  baseModel<- summary(base)
-  baseModel
-  
-    
-  visreg::visreg(base, xvar="relSpeciesCover", type="conditional", scale='response')
-  
-  # Make a dataframe to add the residuals to
-  res <- data.frame(taxa = character(), Estimate = numeric(),Estimate2 = numeric(), 
-                    StdErr = numeric(),StdErr2 = numeric(), 
-                    `zValue` = numeric(),`zValue2` = numeric(), 
-                    pr = numeric(),pr2 = numeric(), 
-                    Intercept= numeric(), 
-                    numberOfPlots = integer(), 
-                    Neophyte= character(),
-                    minx= numeric(), maxx= numeric())
-  
-  res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],Estimate2 = baseModel$p.table[3,1],
-                 StdErr = baseModel$p.table[2,2],StdErr2 = baseModel$p.table[3,2], 
-                 zValue = baseModel$p.table[2,3], zValue2 = baseModel$p.table[3,3], 
-                 pr = baseModel$p.table[2,4],pr2 = baseModel$p.table[3,4], 
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 minx= min(tmpFullPlotData$relSpeciesCover),
-                 maxx=max(tmpFullPlotData$relSpeciesCover))
-  res
-}
-```
-
-
-## 2.3 Function 3
-```{r, meassage=F}
-# The name of the first species (to test the function)
-plantName = allPlants$names[1]
-plantStatus= allPlants$Neophyte[1]
-i=1
-
-# Function to compute the impact for each species, so we only need the plant name as input
-computePlantImpact3 <- function(plantName, plantStatus) {
-  
-  
-  # Copy the full dataset without aberrant totalCover
-  tmpFullPlotData <- fullPlotData %>% filter(totalCover < 850)
-  reducedEva <- eva %>% filter(PlotObservationID %in% tmpFullPlotData$PlotObservationID)
-  
-  # Select only explanatory variables
-  tmpFullPlotData <- tmpFullPlotData %>% 
-    select(PlotObservationID, numberOfVascularPlantSpecies, Area, 
-           EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
-           DistSeverity.sqrt, DistFrequency.sqrt, Soil.Disturbance.sqrt, 
-           Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
-           Latitude, Longitude, Dataset, totalCover)
-  
-  # Get the indices of the plant in the eva dataset
-  indexOfPlant <- eva$species == plantName & eva$Neophyte== plantStatus
-  
-  # We select only the rows containing the species first because this is much faster than doing it for all plots.
-  # We make the dataset smaller (only those plots where the species is present), group the data per plot and 
-  # compute the cover of the species we are highlighting now
-  plotsWherePlantOccurs <- reducedEva[reducedEva$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant],] |>
-    group_by(PlotObservationID) |>
-    summarise(speciesCover = computeSpeciesCover(plantName, species, `Cover %`))
-  
-  # Join the computed cover plots with the full data
-  tmpFullPlotData <- left_join(tmpFullPlotData, plotsWherePlantOccurs, by = "PlotObservationID")
-  # Identify all plots where the species investigated occurs
-  tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant]
-  
-  # If species is not present:
-  tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
-  
-  # Exclude all plots which have 0 total cover
-  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover >= 1,] 
-  
-  # Do SR - 1 for all plots in which the species is present
-  tmpFullPlotData$numberOfVascularPlantSpecies <- tmpFullPlotData$numberOfVascularPlantSpecies - tmpFullPlotData$plantOccurs
-  
-  # Correct area: if true we calculate the area that is reserved for the other plant species. 
-  if(correctArea) {
-    tmpFullPlotData$Area <- tmpFullPlotData$Area*(1.0 - tmpFullPlotData$speciesCover/tmpFullPlotData$totalCover)
-  }
-  
-  # There is a numerical problem in the bam function if we provide empty plots...
-  tmpFullPlotData <- tmpFullPlotData %>% filter(numberOfVascularPlantSpecies > 0, Area > 0)
-  
-  # Make dataset a factor to add it as a random variable
-  tmpFullPlotData$Dataset <- as.factor(tmpFullPlotData$Dataset)
-
-  # Add relative species cover
-  tmpFullPlotData <- tmpFullPlotData %>% mutate(relSpeciesCover = 100 * speciesCover / totalCover)
-
-  # Species occurrence as factor (not logical)
-  tmpFullPlotData$plantOccursF <- factor(tmpFullPlotData$plantOccurs)
-  tmpFullPlotData
-}
-
-# Make a dataframe to add the residuals to
-  res <- data.frame(taxa = character(), Estimate = numeric(),Estimate2 = numeric(), StdErr = numeric(),StdErr2 = numeric(), `zValue` = numeric(),`zValue2` = numeric(), pr = numeric(),pr2 = numeric(), Intercept= numeric(), numberOfPlots = integer(), Neophyte= character(), minx=numeric(), maxx=numeric())
-```
-
-
-## 2.4 Function 4
-```{r, meassage=F}
-# The name of the first species (to test the function)
-plantName = allPlants$names[1]
-plantStatus= allPlants$Neophyte[1]
-i=1
-
-# Function to compute the impact for each species, so we only need the plant name as input
-computePlantImpact4 <- function(plantName, plantStatus) {
-  
-  
-  # Copy the full dataset without aberrant totalCover
   tmpFullPlotData <- fullPlotData %>% filter(totalCover <=900)
-  reducedEva <- eva %>% filter(PlotObservationID %in% tmpFullPlotData$PlotObservationID)
+  reducedEva <- reducedEva_official
+  reducedEva <- reducedEva[reducedEva$PlotObservationID %in% tmpFullPlotData$PlotObservationID,]
   
   # Select only explanatory variables
   tmpFullPlotData <- tmpFullPlotData %>% 
     select(PlotObservationID, numberOfVascularPlantSpecies, Area, 
            EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
-           DistSeverity.sqrt, DistFrequency.sqrt, Soil.Disturbance.sqrt, 
+           DistSeverity.sqrt, Soil.Disturbance.sqrt, 
            Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
-           Latitude, Longitude, Dataset, elev, chelsaP, hfp, totalCover)
+           Latitude, Longitude, Dataset, chelsaP, hfp, totalCover, PC1, PC2, PC3,PC4)
   
   # Get the indices of the plant in the eva dataset
-  indexOfPlant <- reducedEva$species == plantName & reducedEva$Neophyte== plantStatus
-  
+  indexOfPlant <- reducedEva$name == plantName & reducedEva$Neophyte== plantStatus
+  any(indexOfPlant)
   # We select only the rows containing the species first because this is much faster than doing it for all plots.
   # We make the dataset smaller (only those plots where the species is present), group the data per plot and 
   # compute the cover of the species we are highlighting now
-  plotsWherePlantOccurs <- reducedEva[reducedEva$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant],] |>
-    group_by(PlotObservationID) |>
-    summarise(speciesCover = computeSpeciesCover(plantName, species, `Cover %`)) 
+  plotsWherePlantOccurs <- reducedEva[indexOfPlant,c(1,4)]
+  colnames(plotsWherePlantOccurs)[2]<- "speciesCover"
   
-  # Join the computed cover plots with the full data
-  tmpFullPlotData <- left_join(tmpFullPlotData, plotsWherePlantOccurs, by = "PlotObservationID")
-  # Identify all plots where the species investigated occurs
-  tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant]
-  
-  # If species is not present:
-  tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
-  
-  # Exclude all plots which have 0 total cover
-  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover >= 1,] 
-  
-  # Do SR - 1 for all plots in which the species is present
-  tmpFullPlotData$numberOfVascularPlantSpecies <- tmpFullPlotData$numberOfVascularPlantSpecies - tmpFullPlotData$plantOccurs
-  
-  # Correct area: if true we calculate the area that is reserved for the other plant species. 
-  if(correctArea) {
-    tmpFullPlotData$Area <- tmpFullPlotData$Area*(1.0 - tmpFullPlotData$speciesCover/tmpFullPlotData$totalCover)
-  }
-  
-  # There is a numerical problem in the bam function if we provide empty plots...
-  tmpFullPlotData <- tmpFullPlotData %>% filter(numberOfVascularPlantSpecies > 0, Area > 0)
-  
-  # Make dataset a factor to add it as a random variable
-  tmpFullPlotData$Dataset <- as.factor(tmpFullPlotData$Dataset)
-
-  # Add relative species cover
-  tmpFullPlotData <- tmpFullPlotData %>% 
-    mutate(relSpeciesCover = 100 * speciesCover / totalCover) |>
-    mutate(coverClass = cut(relSpeciesCover,breaks = c(-1, 0, 1, 10, 30, 50, 70, 101), 
-                            labels = c("0%", "0%-1%", "1%-10%", "10%-30%", "30%-50%","50%-70%","70%-100%")))
-  
-  tmpFullPlotData$coverClass<- as.character( tmpFullPlotData$coverClass)
-  tmpFullPlotData$coverClass[(tmpFullPlotData$speciesCover==0.0)] <- c("0%")
-  
-  # Species occurrence as factor (not logical)
-  tmpFullPlotData$plantOccursF <- factor(tmpFullPlotData$plantOccurs)
-  tmpFullPlotData$coverClass <- factor(tmpFullPlotData$coverClass)
-  
-  # Base model
-  model<-  (numberOfVascularPlantSpecies) ~ 
-              s(log(Area),bs='tp') + 
-              s(EIVEresM, bs = 'tp') +
-              s(EIVEresN, bs = 'tp') +
-              s(EIVEresR, bs = 'tp') +
-              s(EIVEresL, bs = 'tp') +
-              s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
-              s(Latitude, Longitude, bs = 'tp') +
-              s(chelsaP, bs='tp')+
-              s(hfp, bs='tp')+
-              s(elev, bs='tp')+
-              s(Dataset, bs="re")+
-              coverClass
-  
-  
-  base <- bam(model,family = poisson, data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4, link= "identity")
-  baseModel<- summary(base)
-  baseModel
-  
-  # Make a dataframe to add the residuals to
-  res <- data.frame(taxa = character(), Estimate = numeric(),
-                    StdErr = numeric(),
-                    `zValue` = numeric(),
-                    pr = numeric(),
-                    Intercept= numeric(), 
-                    numberOfPlots = integer(), 
-                    Neophyte= character(),
-                    RelDiff= numeric(),
-                    class= character(), n=numeric())
-  
-  res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "0%-1%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class= "0%-1%", n= sum(tmpFullPlotData$coverClass == "0%-1%"))
-   res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "1%-10%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class= "1%-10%", n= sum(tmpFullPlotData$coverClass == "1%-10%"))
-   
-   res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "10%-30%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class= "10%-30%", n= sum(tmpFullPlotData$coverClass == "10%-30%"))
-  res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "30%-50%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class= "30%-50%", n= sum(tmpFullPlotData$coverClass == "30%-50%"))
-   res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "50%-70%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class="50%-70%", n= sum(tmpFullPlotData$coverClass == "50%-70%"))
-  
-  res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff = 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "70%-100%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class= "70%-100%", n= sum(tmpFullPlotData$coverClass == "70%-100%"))
-  
-res
-}
-```
-
-## 2.5 Function 5
-```{r, meassage=F}
-# The name of the first species (to test the function)
-plantName = allPlants$names[1]
-plantStatus= allPlants$Neophyte[1]
-
-# Function to compute the impact for each species, so we only need the plant name as input
-computePlantImpact5 <- function(plantName, plantStatus) {
-  
-  
-  # Copy the full dataset without aberrant totalCover
-  tmpFullPlotData <- fullPlotData %>% filter(totalCover <=900)
-  reducedEva <- eva %>% filter(PlotObservationID %in% tmpFullPlotData$PlotObservationID)
-  
-  # Select only explanatory variables
-  tmpFullPlotData <- tmpFullPlotData %>% 
-    select(PlotObservationID, numberOfVascularPlantSpecies, Area, 
-           EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
-           DistSeverity.sqrt, DistFrequency.sqrt, Soil.Disturbance.sqrt, 
-           Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
-           Latitude, Longitude, Dataset, elev, chelsaP, hfp, totalCover, PC1, PC2, PC3,PC4)
-  
-  # Get the indices of the plant in the eva dataset
-  indexOfPlant <- reducedEva$species == plantName & reducedEva$Neophyte== plantStatus
-  
-  # We select only the rows containing the species first because this is much faster than doing it for all plots.
-  # We make the dataset smaller (only those plots where the species is present), group the data per plot and 
-  # compute the cover of the species we are highlighting now
-  plotsWherePlantOccurs <- reducedEva[reducedEva$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant],] |>
-    group_by(PlotObservationID) |>
-    summarise(speciesCover = computeSpeciesCover(plantName, species, `Cover %`)) 
   
   # Join the computed cover plots with the full data
   tmpFullPlotData <- left_join(tmpFullPlotData, plotsWherePlantOccurs, by = "PlotObservationID")
@@ -908,25 +387,22 @@ computePlantImpact5 <- function(plantName, plantStatus) {
   tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant]
   
    # reduce the dataset to obtain only those plots in which the species is present
-  species_plots <- tmpFullPlotData[tmpFullPlotData$plantOccurs, c(21:24)  ]
+  species_plots <- tmpFullPlotData[tmpFullPlotData$plantOccurs, c(19:22)  ]
   # make matrix and reduce duplicated columns
   species_plots<- as.matrix(species_plots)
   duplicated<- duplicated(species_plots)
-  species_plots<- species_plots[!duplicated, ]
+  species_plots<- species_plots[!duplicated,]
   
   # take ConvexHull around the PCA coordinates in which the species is present
   convex_hull <- convhulln((species_plots))
 
   # Extract all points from the dataset that are additionally within this ConvexHull and do not contain the species
-  is_within_hull <- inhulln(convex_hull, as.matrix(tmpFullPlotData[, c(21:24)]))
+  is_within_hull <- inhulln(convex_hull, as.matrix(tmpFullPlotData[, c(19:22)]))
   subset_data <- tmpFullPlotData[is_within_hull, ]
   
   # Take size of subset data
   size<- length(subset_data$plantOccurs)
-  # change name tmpFullPlotData
-  tmpFullPlotData <- subset_data
-  
-  
+
   # If species is not present:
   tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
   tmpFullPlotData$totalCover[is.na(tmpFullPlotData$speciesCover)] <- 100.0
@@ -976,7 +452,6 @@ computePlantImpact5 <- function(plantName, plantStatus) {
               s(Latitude, Longitude, bs = 'tp') +
               s(chelsaP, bs='tp')+
               s(hfp, bs='tp')+
-              s(elev, bs='tp')+
               s(Dataset, bs="re")+
               coverClass
   
@@ -996,118 +471,75 @@ computePlantImpact5 <- function(plantName, plantStatus) {
                     RelDiff= numeric(),
                     class= character(), n=numeric())
   
-  res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "0%-1%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class= "0%-1%", n= sum(tmpFullPlotData$coverClass == "0%-1%"))
-   res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "1%-10%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class= "1%-10%", n= sum(tmpFullPlotData$coverClass == "1%-10%"))
-   
-   res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "10%-30%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class= "10%-30%", n= sum(tmpFullPlotData$coverClass == "10%-30%"))
-  res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "30%-50%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class= "30%-50%", n= sum(tmpFullPlotData$coverClass == "30%-50%"))
-   res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff= 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "50%-70%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class="50%-70%", n= sum(tmpFullPlotData$coverClass == "50%-70%"))
+
   
-  res <- add_row(res, taxa = plantName, 
-                 Estimate = baseModel$p.table[2,1],
-                 StdErr = baseModel$p.table[2,2],
-                 zValue = baseModel$p.table[2,3], 
-                 pr = baseModel$p.table[2,4],
-                 Intercept= baseModel$p.table[1,1],  
-                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
-                 Neophyte= plantStatus,
-                 RelDiff = 100* 
-                   (mean(fitted(base)[tmpFullPlotData$coverClass == "70%-100%"]) -
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
-                    mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
-                 class= "70%-100%", n= sum(tmpFullPlotData$coverClass == "70%-100%"))
+  # Helper function to add rows if the index is within bounds
+  add_row_if_exists <- function(res, baseModel, idx, class, coverClass, plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs) {
+    if (idx <= nrow(baseModel$p.table)) {
+      res <- add_row(res, 
+                     taxa = plantName, 
+                     Estimate = baseModel$p.table[idx, 1],
+                     StdErr = baseModel$p.table[idx, 2],
+                     zValue = baseModel$p.table[idx, 3], 
+                     pr = baseModel$p.table[idx, 4],
+                     Intercept = baseModel$p.table[1, 1],  
+                     numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
+                     Neophyte = plantStatus,
+                     RelDiff = 100 * 
+                       (mean(fitted(base)[tmpFullPlotData$coverClass == coverClass]) -
+                        mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
+                        mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
+                     class = class, n = sum(tmpFullPlotData$coverClass == coverClass))
+    }
+    return(res)
+  }
   
-res
+  # Add rows with checks
+  res <- add_row_if_exists(res, baseModel, 2, "0%-1%", "0%-1%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
+  res <- add_row_if_exists(res, baseModel, 3, "1%-10%", "1%-10%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
+  res <- add_row_if_exists(res, baseModel, 4, "10%-30%", "10%-30%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
+  res <- add_row_if_exists(res, baseModel, 5, "30%-50%", "30%-50%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
+  res <- add_row_if_exists(res, baseModel, 6, "50%-70%", "50%-70%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
+  res <- add_row_if_exists(res, baseModel, 7, "70%-100%", "70%-100%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
+  
+  res
+
 }
+
+
 ```
 
 
-## 2.5 Impact
+## 2.3 Impact
 Use foreach to speed up computations
 ```{r}
 if(fast){
 
 # prepare parallel
-n.cores<- parallel::detectCores()-2
+n.cores<- parallel::detectCores()-2.
 my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK" )
 print(my.cluster)
 doParallel::registerDoParallel(cl = my.cluster)
 foreach::getDoParRegistered()
 foreach::getDoParWorkers()
 
+i=1
 # run for all and time
 begin<-Sys.time()
 x<- foreach(i= 1:length(allPlants$names), 
             .combine = "rbind", 
             .packages = c("dplyr","mgcv","geometry","factoextra")) %dopar% {
-  res <- computePlantImpact5(allPlants$names[i], allPlants$Neophyte[i])
-}
+  res <- computePlantImpact2(allPlants$names[i], allPlants$Neophyte[i])
+            }
+
 end<-Sys.time()
 round(end-begin, 2)
 
 parallel::stopCluster(cl = my.cluster)
 #write.csv(x, 'Impact2_new70%_ENS0_reldiff_PCA.csv')
 }
+
+x <- x[!x$RelDiff=="NaN",]
 ```
 
 
@@ -1123,88 +555,335 @@ for(i in 1:length(allPlants$names)) {
    allPlantsImpact <- rbind(allPlantsImpact, res)
 }
 end<- Sys.time()
-round(end-begin)
-}
-
+round(end-begin)µ
 x<- allPlantsImpact
-#write.csv(x, 'Impact2_new100%_ENS0_squared.csv')
+
+}
+
+#write.csv(x, 'Impact2_new1%_ENS0_squared.csv')
 
 ```
 
 
-```{r}
-if(method==3){
-# prepare parallel
-n.cores<- parallel::detectCores()-6
-my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK" )
-print(my.cluster)
-doParallel::registerDoParallel(cl = my.cluster)
-foreach::getDoParRegistered()
-foreach::getDoParWorkers()
-i<-1
-# run for all and time
-begin<-Sys.time()
-
-x<- foreach(i= 1:length(allPlants$names), .combine = "rbind", .packages = c("dplyr","mgcv")) %dopar% {
-  tmpFullPlotData <- computePlantImpact3(allPlants$names[i], allPlants$Neophyte[i])
-
-  # Base model
-  model<-  (numberOfVascularPlantSpecies) ~ 
-              s(log(Area),bs='tp') + 
-              s(EIVEresM, bs = 'tp') +
-              s(EIVEresN, bs = 'tp') +
-              s(EIVEresR, bs = 'tp') +
-              s(EIVEresL, bs = 'tp') +
-              s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
-              s(Latitude, Longitude, bs = 'tp') +
-              s(Dataset, bs="re")+
-              (speciesCover)+ I(speciesCover^2)
-  
-  
-  base <- bam(model,family = poisson, data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4, link= "identity")
-  baseModel<- summary(base)
-
-  # Make a dataframe to add the residuals to
-  res <- data.frame(taxa = character(), Estimate = numeric(),Estimate2 = numeric(), StdErr = numeric(),StdErr2 = numeric(), `zValue` = numeric(),`zValue2` = numeric(), pr = numeric(),pr2 = numeric(), Intercept= numeric(), numberOfPlots = integer(), Neophyte= character(), minx=numeric(), maxx=numeric())
-  
-  res <- add_row(res, taxa = allPlants$names[i], Estimate = baseModel$p.table[2,1],Estimate2 = baseModel$p.table[3,1], StdErr = baseModel$p.table[2,2],StdErr2 = baseModel$p.table[3,2], zValue = baseModel$p.table[2,3], zValue2 = baseModel$p.table[3,3], pr = baseModel$p.table[2,4],pr2 = baseModel$p.table[3,4], Intercept= baseModel$p.table[1,1],  numberOfPlots = sum(tmpFullPlotData$plantOccurs), Neophyte= allPlants$Neophyte[i], minx= min(tmpFullPlotData$speciesCover), maxx=max(tmpFullPlotData$speciesCover))
-}
-end<- Sys.time()
-round(end-begin)
-stopCluster(my.cluster)
-}
-```
 
 
 
-## 2.6 Significance
+## 2.4 Significance
 ```{r}
 # Probably (but currently only 10% run) no normality for especially the intra class and also very little data compared to the rest, so ranked anova performed
-method=4
-result<-(aov(rank(Estimate) ~ Neophyte, x))
-summary(result)
-TukeyHSD(result)
+method=2
 
 if(method==1){
 result<-(aov(rank(RelDiff) ~ Neophyte, x))
 summary(result)
 TukeyHSD(result)
-}
+} else {
+  result<-(aov(rank(RelDiff) ~ Neophyte + class, x))
+  summary(result)
+  TukeyHSD(result)
+  
+  install.packages("ART")
+  library(ART)
+  install.packages("ARTool")
+  library(ARTool)
+  
+  z<- aligned.rank.transform(RelDiff ~ Neophyte * class, data = x)
+  x$class <- as.factor(x$class)
+  x$Neophyte <- as.factor(x$Neophyte)
+  z<- art(RelDiff ~ Neophyte * class, data = x)
+  z
+  
+  kruskal.test(RelDiff ~ Neophyte + class, data = x)
+  
+  kruskal.test(RelDiff ~ Neophyte + class, data = x)
 
-if(method==4){
-result<-(aov(rank(RelDiff) ~ Neophyte + class, x))
+  pairwise.wilcox.test(x$RelDiff,x$Neophyte,p.adjust.method = "BH")
+  FSA::dunnTest(RelDiff ~ Neophyte , data = x, method = "bh")
+ }
+
+```
+
+
+# 3 PLOT
+## 3.1 Estimate
+```{r}
+x <- x %>% mutate(Species = factor(Neophyte, 
+                          levels = c("native", "intra","extra"),
+                          labels = c("native in the country", 
+                                     "intra-European neophyte", 
+                                     "extra-European neophyte")))
+
+very_low <- x[x$class =="0%-1%",]
+low <- x[x$class =="1%-10%",]
+medium <- x[x$class =="10%-30%",]
+high <- x[x$class =="30%-50%",]
+very_high <- x[x$class =="50%-70%",]
+dominant <-  x[x$class =="70%-1O0%",]
+```
+
+### Very low
+```{r}
+result<-(aov(rank(RelDiff) ~ Neophyte , very_low))
 summary(result)
 TukeyHSD(result)
-}
+
+my_comparisons <- list( c("extra", "intra"), c("intra", "native"), 
+                        c("extra", "native") )
+
+p<-ggplot(very_low, aes(x=Neophyte, y= RelDiff, group = Species,
+             color = Species, fill = Species))+
+  geom_violin(alpha=0.5, scale="width")+
+  geom_boxplot(width= 0.25, alpha=0.8, fill="white")+
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", 
+                     label.y = c(425,450, 490))+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= Neophyte), size=3)+
+  scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+  scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
+  theme(legend.position = "none")+theme(legend.text= element_text(size=12), 
+                                          legend.title =element_text(size=14))+ 
+  annotate("text", x = 1, y = mean(very_low$RelDiff[very_low$Neophyte=="extra"],
+                                   na.rm=T), 
+           label = "b", size = 4, vjust = -1, hjust = 0.5, alpha=0.8) +
+  annotate("text", x = 2, y = mean(very_low$RelDiff[very_low$Neophyte=="intra"],
+                                   na.rm=T), 
+           label = "b", size = 4, vjust = -1, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 3, y = mean(very_low$RelDiff[very_low$Neophyte=="native"],
+                                   na.rm=T), 
+           label = "a", size = 4, vjust = -1, hjust = 0.5, alpha=0.8)+
+  annotate("text", x=1, y=400, 
+           label= paste("n=",length(very_low$Estimate[very_low$Neophyte=="extra"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=400, 
+           label= paste("n=",length(very_low$Estimate[very_low$Neophyte=="intra"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=400, 
+           label= paste("n=",length(very_low$Estimate[very_low$Neophyte=="native"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.05"))))+
+  ylab("Relative difference")+
+  ggtitle("Very low cover [0%-1%]")+
+  xlab(NULL)+
+  geom_hline(yintercept=0, linetype='dotted', alpha=0.5)
+very_low_plot <-p
+p
 ```
 
 
 
-# 3 PLOT
+### Low
+```{r}
+result<-(aov(rank(RelDiff) ~ Neophyte , low))
+summary(result)
+TukeyHSD(result)
+
+my_comparisons <- list( c("extra", "intra"), c("intra", "native"), 
+                        c("extra", "native") )
+
+p<-ggplot(low, aes(x=Neophyte, y= RelDiff, group = Species,
+             color = Species, fill = Species))+
+  geom_violin(alpha=0.5, scale="width")+
+  geom_boxplot(width= 0.25, alpha=0.8, fill="white")+
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", 
+                     label.y = c(320,350, 390))+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= Neophyte), size=3)+
+  scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+  scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
+  theme(legend.position = "none")+theme(legend.text= element_text(size=12), 
+                                          legend.title =element_text(size=14))+ 
+  annotate("text", x = 1, y = mean(low$RelDiff[low$Neophyte=="extra"],
+                                   na.rm=T), 
+           label = "b", size = 4, vjust = -1, hjust = 0.5, alpha=0.8) +
+  annotate("text", x = 2, y = mean(low$RelDiff[low$Neophyte=="intra"],
+                                   na.rm=T), 
+           label = "b", size = 4, vjust = -1, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 3, y = mean(low$RelDiff[low$Neophyte=="native"],
+                                   na.rm=T), 
+           label = "a", size = 4, vjust = -1, hjust = 0.5, alpha=0.8)+
+  annotate("text", x=1, y=300, 
+           label= paste("n=",length(low$Estimate[low$Neophyte=="extra"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=300, 
+           label= paste("n=",length(low$Estimate[low$Neophyte=="intra"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=300, 
+           label= paste("n=",length(low$Estimate[low$Neophyte=="native"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.05"))))+
+  ylab("Relative difference")+
+  xlab(NULL)+
+  ggtitle("Low cover [1%-10%]")+
+  geom_hline(yintercept=0, linetype='dotted', alpha=0.5)
+low_plot <-p
+p
+```
+
+
+### Medium
+```{r}
+result<-(aov(rank(RelDiff) ~ Neophyte , medium))
+summary(result)
+TukeyHSD(result)
+
+my_comparisons <- list( c("extra", "intra"), c("intra", "native"), 
+                        c("extra", "native") )
+
+p<-ggplot(medium, aes(x=Neophyte, y= RelDiff, group = Species,
+             color = Species, fill = Species))+
+  geom_violin(alpha=0.5, scale="width")+
+  geom_boxplot(width= 0.25, alpha=0.8, fill="white")+
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", 
+                     label.y = c(420,450, 490))+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= Neophyte), size=3)+
+  scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+  scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
+  theme(legend.position = "none")+theme(legend.text= element_text(size=12), 
+                                          legend.title =element_text(size=14))+ 
+  annotate("text", x = 1, y = mean(medium$RelDiff[medium$Neophyte=="extra"],
+                                   na.rm=T), 
+           label = "b", size = 4, vjust = -1, hjust = 0.5, alpha=0.8) +
+  annotate("text", x = 2, y = mean(medium$RelDiff[medium$Neophyte=="intra"],
+                                   na.rm=T), 
+           label = "ab", size = 4, vjust = -1, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 3, y = mean(medium$RelDiff[medium$Neophyte=="native"],
+                                   na.rm=T), 
+           label = "a", size = 4, vjust = -1, hjust = 0.5, alpha=0.8)+
+  annotate("text", x=1, y=400, 
+           label= paste("n=",length(medium$Estimate[medium$Neophyte=="extra"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=400, 
+           label= paste("n=",length(medium$Estimate[medium$Neophyte=="intra"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=400, 
+           label= paste("n=",length(medium$Estimate[medium$Neophyte=="native"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.05"))))+
+  ylab("Relative difference")+
+  ggtitle("Medium cover [10%-30%]")+
+  xlab(NULL)+
+  geom_hline(yintercept=0, linetype='dotted', alpha=0.5)
+medium_plot <-p
+p
+```
+
+
+
+### High
+```{r}
+result<-(aov(rank(RelDiff) ~ Neophyte , high))
+summary(result)
+TukeyHSD(result)
+
+my_comparisons <- list( c("extra", "intra"), c("intra", "native"), 
+                        c("extra", "native") )
+
+p<-ggplot(high, aes(x=Neophyte, y= RelDiff, group = Species,
+             color = Species, fill = Species))+
+  geom_violin(alpha=0.5, scale="width")+
+  geom_boxplot(width= 0.25, alpha=0.8, fill="white")+
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", 
+                     label.y = c(240,260, 280))+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= Neophyte), size=3)+
+  scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+  scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
+  theme(legend.position = "none")+theme(legend.text= element_text(size=12), 
+                                          legend.title =element_text(size=14))+ 
+  annotate("text", x = 1, y = mean(high$RelDiff[high$Neophyte=="extra"],
+                                   na.rm=T), 
+           label = "a", size = 4, vjust = -1, hjust = 0.5, alpha=0.8) +
+  annotate("text", x = 2, y = mean(high$RelDiff[high$Neophyte=="intra"],
+                                   na.rm=T), 
+           label = "a", size = 4, vjust = -1, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 3, y = mean(high$RelDiff[high$Neophyte=="native"],
+                                   na.rm=T), 
+           label = "a", size = 4, vjust = -1, hjust = 0.5, alpha=0.8)+
+  annotate("text", x=1, y=200, 
+           label= paste("n=",length(high$Estimate[high$Neophyte=="extra"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=200, 
+           label= paste("n=",length(high$Estimate[high$Neophyte=="intra"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=200, 
+           label= paste("n=",length(high$Estimate[high$Neophyte=="native"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P > 0.05"))))+
+  ylab("Relative difference")+
+  ggtitle("High cover [30%-50%]")+
+  xlab(NULL)+
+  geom_hline(yintercept=0, linetype='dotted', alpha=0.5)
+high_plot <-p
+p
+```
+
+
+### Very high
+```{r}
+result<-(aov(rank(RelDiff) ~ Neophyte , very_high))
+summary(result)
+TukeyHSD(result)
+
+my_comparisons <- list( c("extra", "intra"), c("intra", "native"), 
+                        c("extra", "native") )
+
+p<-ggplot(very_high, aes(x=Neophyte, y= RelDiff, group = Species,
+             color = Species, fill = Species))+
+  geom_violin(alpha=0.5, scale="width")+
+  geom_boxplot(width= 0.25, alpha=0.8, fill="white")+
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", 
+                     label.y = c(200,220, 240))+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= Neophyte), size=3)+
+  scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+  scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
+  theme(legend.position = "none")+theme(legend.text= element_text(size=12), 
+                                          legend.title =element_text(size=14))+ 
+  annotate("text", x = 1, y = mean(very_high$RelDiff[very_high$Neophyte=="extra"],
+                                   na.rm=T), 
+           label = "a", size = 4, vjust = -1, hjust = 0.5, alpha=0.8) +
+  annotate("text", x = 2, y = mean(very_high$RelDiff[very_high$Neophyte=="intra"],
+                                   na.rm=T), 
+           label = "a", size = 4, vjust = -1, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 3, y = mean(very_high$RelDiff[very_high$Neophyte=="native"],
+                                   na.rm=T), 
+           label = "a", size = 4, vjust = -1, hjust = 0.5, alpha=0.8)+
+  annotate("text", x=1, y=150, 
+           label= paste("n=",length(very_high$Estimate[very_high$Neophyte=="extra"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=150, 
+           label= paste("n=",length(very_high$Estimate[very_high$Neophyte=="intra"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=150, 
+           label= paste("n=",length(very_high$Estimate[very_high$Neophyte=="native"])), 
+           vjust = -0.5, hjust = 0.5, size=3.5)+
+  labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P > 0.05"))))+
+  ylab("Relative difference")+
+  ggtitle("Very high cover [50%-70%]")+
+  xlab(NULL)+
+  geom_hline(yintercept=0, linetype='dotted', alpha=0.5)
+very_high_plot <-p
+p
+```
+
+## 3.2 Combine
+```{r}
+plot <- ggarrange(very_low_plot, low_plot, medium_plot, high_plot,
+                  very_high_plot, nrow=3, ncol=2, labels= c("a","b", "c","d","e"),
+                  font.label = list(size = 12))
+plot
+
+ggsave("Impact.jpg", plot= plot, width = 10, height = 10)
+
+```
+
+
 ## 3.1 Estimate
 ```{r}
 if(!native_intra_analysis){
@@ -1213,9 +892,13 @@ x <- x %>% mutate(Species = factor(Neophyte,
                           labels = c("native in the country", 
                                      "intra-European neophyte", 
                                      "extra-European neophyte")))
+  my_comparisons <- list( c("extra", "intra"), c("intra", "native"), c("extra", "native") )
+
 p<-ggplot(x, aes(x=Neophyte, y= RelDiff, group = Species,
              color = Species, fill = Species))+
   geom_violin(alpha=0.5)+
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", label.y = c(400,410, 420))+
   stat_summary(fun= "mean",
                geom = "point", aes(group= Neophyte), size=3)+
   scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
@@ -1271,71 +954,8 @@ p
 }
 ```
 
-## 3.2 Squared species
-```{r}
-# make x values from 0 to 100
-xaxis <- seq(from=0, to=100, by=1)
-res<-x
 
-# Calculate all values for the estimations
-matrix<-c()
-for(i in 1: length(res$Estimate)){
-  yvalues<- data.frame(xax=numeric(), mean = numeric(), status =character(), taxa= character(), n=numeric())
-  xax<- c(floor(res$minx[i]): floor(res$maxx[i]))
-  mean<- res$Intercept[i]+ xax*(res$Estimate[i])+ xax^2*(res$Estimate2[i])
-  mean<- exp(mean)
-  yvalues<- data.frame( xax=xax, mean=mean, status=res$Neophyte[i], taxa= res$taxa[i], n=res$numberOfPlots[i])
-  matrix<- rbind(matrix, yvalues)
-}
-
-
-# Make dataframe
-df<- as.data.frame(matrix)
-# change order 
-df$status <- factor(df$status, levels = c("native", "native_intra", "intra", "extra"))
-
-alpha_values <- c("native" = 0.5, "native_intra" = 1, "intra" = 1, "extra" = 1)
-
-# Plot with adjusted alpha values
-ggplot(df, aes(x = xax, y = mean, color= status, group = taxa)) +
-  geom_line(aes(alpha = status), linewidth = 0.5)+  # Set size of the lines
-  scale_alpha_manual(values = alpha_values,name = "Legend",
-                      breaks = c("native", "native_intra", "intra", "extra"),
-                      labels = c("native species", "native species alien elsewhere", "intra European neophyte", "extra European neophyte")) +  # Set alpha values
-  scale_colour_manual(values = c("#1E88E5", "#B71C1C", "#FFC107", "#388E3C"), 
-                      name = "Legend",
-                      breaks = c("native", "native_intra", "intra", "extra"),
-                      labels = c("native species", "native species alien elsewhere", "intra European neophyte", "extra European neophyte"))
-```
-
-
-
-## 3.3 Squared mean
-```{r}
-df2<- df
-status<- unique(df2$status)
-for(i in status){
-  sum<- sum(df2$n[df$status==i])
-  df2$n[df$status==i]<- df2$n[df$status==i]/sum
-}
-
-df2<- df2 |> group_by(status, xax) |> summarise(mean= weighted.mean(mean, n))
-
-# Plot
-ggplot(df2, aes(x = xax, y = mean, color = status)) +
-  geom_line(aes(color = status), linewidth=1) + 
-  scale_fill_manual(values = c("#1E88E5", "#B71C1C", "#FFC107", "#388E3C"),
-                    name = "Legend",
-                    breaks = c("native", "native_intra", "intra", "extra"),
-                    labels = c("native species", "native species alien elsewhere", "intra European neophyte", "extra European neophyte")) +
-  scale_colour_manual(values = c("#1E88E5", "#B71C1C", "#FFC107", "#388E3C"), 
-                      name = "Legend",
-                      breaks = c("native", "native_intra", "intra", "extra"),
-                      labels = c("native species", "native species alien elsewhere", "intra European neophyte", "extra European neophyte"))+theme_classic()+  scale_y_continuous(limits = c(0, 22))
-```
-
-
-## 3.4 Classes
+## 3.2 Classes
 Here we plot for when we use the all classes method (function 4)
 ```{r}
 x <- x %>% mutate(Species = factor(Neophyte, 
@@ -1360,7 +980,7 @@ p<-ggplot(x, aes(x=class, y= RelDiff, color=Species, fill=Species))+geom_violin(
   geom_boxplot(width=0.2, position = position_dodge(1), color="black", alpha=0.1)
 p
 
-all.equal(x,y)
+
 #ggsave("Impact_base_model_classes.jpeg", p, width = 25, height = 15, units = "cm") 
 ```
 
