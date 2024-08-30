@@ -31,13 +31,13 @@ library(janitor)
 Then, we load data of EVA
 ```{r, warnings=F, message=F}
 # Eva data for which plots are available and after correcting for incorrect or weird plot observations
-eva <- read_csv("fullPlotEva_cover_all_layer.csv")
+eva <- read_csv("fullPlotEva_ESy.csv")
 ```
 
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it.
 ```{r, warnings=F, message=F}
 # header like data, filtered and appended with EIVE and DIV
-fullPlotData <- read_csv("fullPlotData_cover_all_layer.csv")
+fullPlotData <- read_csv("fullPlotData_ESy.csv")
 
 fast <- F
 if(fast) {
@@ -46,30 +46,25 @@ if(fast) {
 }
 ```
 
+
 Load the neophyte definitions:
 ```{r, message=F}
 # Data on which species are neophytes
 native_intra_analysis=F
 if(native_intra_analysis){
-  species_country_status <- read_csv("eva2_country_status_new.csv")
+  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
 } else{
-species_country_status<- read_csv("species_country_status_new.csv")
-# or if we want to do it with intra seperately
+  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
 }
 
 # Assign these names to the eva list
 extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
 intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
 native_intra <- unique(species_country_status$species[species_country_status$Neophyte=="native_intra"])
+native <-  unique(species_country_status$species[species_country_status$Neophyte=="native"])
 ```
 
-
-Remove species that are not defined or to be excluded
-```{r, warnings=F}
-remove<- read_csv("not_defined.csv", show_col_types = FALSE)
-remove<- as.vector(unlist(remove))
-eva<- eva[!(eva$species %in% remove),]
-```
 
 Assign classification to species
 ```{r}
@@ -78,29 +73,54 @@ fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 # Right join to keep only species present in fullplot (otherwise a lot of NAs)
 eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
 # Join eva and classification
-eva_country_neophyte<- left_join(eva, species_country_status, by= c("Region"= "Region", "species"= "species"))
+eva_country_neophyte<- left_join(eva, species_country_status[, -c(2:4,6:8)], by= c("Region"= "Region", "name"= "name"))
 eva<- eva_country_neophyte
 # Look at how much from every type are present
 tt<- as.data.frame(table(eva_country_neophyte$Neophyte))
 tt
 
-rm(fullPlot2, eva_country_neophyte, remove)
+rm(fullPlot2, eva_country_neophyte, tt)
 ```
 
 
 # 2 ENS
 ## 2.1 Prepare
 ```{r}
+# we calculate the fisher value for species present among multiple layers
+check <- unique(eva[, c(6,10,21)])
+length(unique(eva$name))
+y <-check[duplicated(check$name) | duplicated(check$name, fromLast = T),]
+unique(y$name)
+
+# not possible here yet, as doing so would merge some species that are different subspecies per plot. Will have to be done in every file seperately to be able to keep e.g. EIVE values that differ and have less of an impact. It is important to note that this file takes this into account by calculating the ENSO only on species names (so not subspecies removed through EUNIS-ESy)
+
+
 # reduce size eva
-eva<- eva[,c(1:3)]
+eva2 <- eva
+eva<- eva[,c(1,6,9)]
+head(eva)
 # change name
 colnames(eva)[3]<- "cover"
 
+plant <- eva[eva$name=="Plant",]
+number <- c("one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve","thirteen",
+            "fourteen","fifteen","sixteen")
+
+for(i in unique(plant$PlotObservationID)) {
+ x<- plant[plant$PlotObservationID==i,]
+  if(length(x>1)){
+    for(j in 1:nrow(x)){
+        x$name[j] <- paste("Plant",number[j], sep = " ")
+    }
+    plant[plant$PlotObservationID==i,] <- x
+  }
+}
+
+eva[eva$name=="Plant",] <- plant
+
 # check data layer
-# eva$Layer <- as.numeric(eva$Layer)
-# We now have some trees, which can possibly affect our calculations (I will have to check the effect for the data )
-# eva<- filter(eva, Layer == 0 | (Layer >=4 ) )
-# eva<- eva[,-4]
+# eva$Layer <- as.factor(eva$Layer)
+# We now have some trees, which can possibly affect our calculations
 
 ```
 
@@ -117,16 +137,17 @@ foreach::getDoParWorkers()
 
 # get all unique plot IDs required to split our database
 plotID<- unique(eva$PlotObservationID)
+which(plotID == 1522409)
 # run for all and time
 begin<-Sys.time()
-x<- foreach(i= 1:100, .combine = "rbind", .packages = c("dplyr","mgcv","tidyr","vegan")) %dopar% {
+x<- foreach(i= 1:99, .combine = "rbind", .packages = c("dplyr","mgcv","tidyr","vegan")) %dopar% {
   # create the length of the to be calculated data chunk
-  j <- (length(plotID)/100)
+  j <- round(length(plotID)/99)
   # create begin and end values for the plot observation ID
-  begin<- round((i-1)*j+1)
-  end<- round(i*j)
+  begin<- ((i-1)*j+1)
+  end<- (i*j)
   # make the vegetation dataframe for this chunk
-  matrix<- pivot_wider(eva[eva$PlotObservationID %in% plotID[begin:end],], names_from= c("species"),
+  matrix<- pivot_wider(eva[eva$PlotObservationID %in% plotID[begin:end],], names_from= c("name"),
             values_from =("cover" ), values_fill = 0, values_fn = sum)
   # get the plot values
   plots<- matrix[,1]
@@ -152,13 +173,30 @@ stopCluster(my.cluster)
 ## 2.3 Analysis
 ```{r}
 # check the values --> some difference --> related to summing different layers 
+fullPlotData$PlotObservationID[!fullPlotData$PlotObservationID %in% x$PlotObservationID]
 all.equal(x[,2], fullPlotData$numberOfVascularPlantSpecies)
 (x[x$ENS0 != fullPlotData$numberOfVascularPlantSpecies,])
-fullPlotData[fullPlotData$numberOfVascularPlantSpecies != x$ENS0,]
+
+
+# what causes it to be different
+fullPlotData[fullPlotData$numberOfVascularPlantSpecies != x$ENS0, c(1,2,4,9)]
+eva[eva$PlotObservationID=="27146",]
+fullPlotData[fullPlotData$PlotObservationID=="27146",]
+# some species were present multiple times
+
+# these are all plots
+test <- eva[eva$PlotObservationID %in% x$PlotObservationID[x$ENS0 != fullPlotData$numberOfVascularPlantSpecies],]
+length(unique(test$PlotObservationID))
+y <- plant |> group_by(PlotObservationID)|> summarise(n=n())
+sum(y$n>1)
+
+# so this is due to classifying previously as 'plant' and not 'plant 1'
+setdiff(y$PlotObservationID[y$n>1], test$PlotObservationID)
 
 # plot
 apply(x[, 2:4], MARGIN=2, FUN = hist)
 ```
+
 
 
 ## 2.4 Save
@@ -166,10 +204,9 @@ apply(x[, 2:4], MARGIN=2, FUN = hist)
 save=T
 if(save){
   fullPlotData<- left_join(fullPlotData, x)
-  write_csv(fullPlotData, "fullPlotData_cover_all_layer.csv")
+  head(fullPlotData)
+  write_csv(fullPlotData, "fullPlotData_ESy.csv")
 }
 ```
 
 
-# 3 EVA
-As a result of this script, I got to know that there are some species duplications in our dataset that will probably
