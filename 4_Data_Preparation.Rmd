@@ -9,7 +9,7 @@ output: html_document
 ## 1.1 prepare
 We first clean the environment
 ```{r, echo=T}
-rm(list=ls())
+#rm(list=ls())
 eval <- F
 ```
 
@@ -34,6 +34,8 @@ library(plantlist)
 ## 1.2 Eva Data
 We load the data
 ```{r , message=FALSE, warning=FALSE, eval= eval}
+old=F
+if(old){
 fast <- F
 if(fast) {
   eva <- read_delim("../EVA Data/onePromilleEva.csv", "\t")
@@ -41,11 +43,11 @@ if(fast) {
   eva <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_species.csv", "\t")
 }
 
-```
 
 
-We remove the rows without observations.
-```{r, eval= eval}
+
+# We remove the rows without observations.
+
 # Count the number of rows with NA values
 numberOfRowsWithoutPlotID <- sum(is.na(eva$PlotObservationID))
 # Check rows with NA
@@ -54,11 +56,11 @@ numberOfRowsWithoutPlotID <- sum(is.na(eva$PlotObservationID))
 eva <- eva[!is.na(eva$PlotObservationID),]
 # Count number of plots in eva before data removal
 originalPlotNumberEva<- length(unique(eva$PlotObservationID))
-```
 
 
-We update the taxa data
-```{r, warning=F, message=FALSE, eval= eval}
+
+# We update the taxa data
+
 # Update taxon group for some species where it was specified incorrectly
 taxonGroupCorrections <- read_csv("../Intermediate Data/taxa_taxon_group_corrections.csv")
 
@@ -88,18 +90,15 @@ eva$species[is.na(eva$species)] <- eva$`Matched concept`[is.na(eva$species)]
 
 # fix problem with plant not present in neophyte file from irena (only a handful of plant observations in EVA)
 # In file Irena some write 'exclude'
-```
 
 
 
-We only keep vascular plants and remove the columns in which this data is designated.
-```{r, eval= eval}
+
+# We only keep vascular plants and remove the columns in which this data is designated.
+
 length(eva$species[!eva$`Taxon group`=="Vascular plant"])
 eva <- eva[eva$`Taxon group` == "Vascular plant",!names(eva) %in% c("Taxon group", "Taxon group ID")]
-```
 
-
-```{r, eval= eval}
 # Load new eva database
 new <- read_csv("eva_euro_own2.csv", show_col_types = FALSE)
 
@@ -139,11 +138,7 @@ check_list<- (setdiff(check$species,check$`Matched concept`))
 # check these species
 check <- check[check$species %in% check_list,]
 # the ones to be removed are in 2.1
-```
 
-
-
-```{r, eval= eval}
 # remove new species from
 not_new <- eva_names[!eva_names$species %in% new_names$species,]
 # maybe due to irena file
@@ -160,6 +155,7 @@ check <- eva[eva$species %in% check$species,]
 check <- check |> group_by(species, `Matched concept`) |> summarise(n=n())
 
 # list checked, looks okay
+}
 ```
 
 
@@ -177,6 +173,7 @@ Here we decide on which layers to keep
 # sum all species over layers if present in multiple layers
 numberOfRowsTreeLayer<- length(eva$Layer[eva$Layer %in% c(1:3)])
 
+head(eva)
 Layerremove=F
 if(Layerremove){
   numberOfRowsTreeLayer<- length(eva$Layer[eva$Layer %in% c(1:3)])
@@ -187,12 +184,12 @@ if(Layerremove){
 numberOfRowsDuplicates<- sum((eva|> group_by(PlotObservationID)|> mutate(duplicated = duplicated(species)))$duplicated)
 Layersum=T
 if(Layersum){
-  eva <- eva |> group_by(PlotObservationID, species, `Matched concept`, irena, name, source) |> summarise(`Cover %`= sum(`Cover %`))
+  eva <- eva |> group_by(PlotObservationID, species,`Turboveg2 concept`, `Matched concept`, irena, name, source, Layer) |>
+    summarise(`Cover %`= sum(`Cover %`))
 } else {
-  eva <- eva |> select(PlotObservationID, species, `Matched concept`, irena, name, source,`Cover %`)
+  eva <- eva |> select(PlotObservationID, species,`Turboveg2 concept`, `Matched concept`, irena, name, source,`Cover %`, Layer)
 }
 
-head(eva)
 
 # remove species with 0 cover
 numberOfZeroCover <- length(eva$PlotObservationID[eva$`Cover %`=="0"])
@@ -299,6 +296,7 @@ Finally, we will keep only the plots that are still available in both Eva and He
 plotsInEvaAndHeader <- intersect(eva$PlotObservationID, header$PlotObservationID)
 eva <- eva[eva$PlotObservationID %in% plotsInEvaAndHeader,]
 header <- header[header$PlotObservationID %in% plotsInEvaAndHeader,]
+length(header$PlotObservationID)
 ```
 After filtering `r length(header$PlotObservationID)` plots remain.
 
@@ -329,155 +327,54 @@ Extend eva with columns from EIVE.
 
 # First we match our own 'species column', which has the Euro Med data added with powo and some data from Irena
 # Later 'the matched concept' was added
-# positions
-eva$EIVEresM <- eive$`EIVEres-M`[match(eva$name, eive$TaxonConcept)]
-eva$EIVEresN <- eive$`EIVEres-N`[match(eva$name, eive$TaxonConcept)]
-eva$EIVEresR <- eive$`EIVEres-R`[match(eva$name, eive$TaxonConcept)]
-eva$EIVEresL <- eive$`EIVEres-L`[match(eva$name, eive$TaxonConcept)]
-eva$EIVEresT <- eive$`EIVEres-T`[match(eva$name, eive$TaxonConcept)]
 
-# niche widths
-eva$EIVEnwM <- eive$`EIVEres-M.nw3`[match(eva$name, eive$TaxonConcept)]
-eva$EIVEnwN <- eive$`EIVEres-N.nw3`[match(eva$name, eive$TaxonConcept)]
-eva$EIVEnwR <- eive$`EIVEres-R.nw3`[match(eva$name, eive$TaxonConcept)]
-eva$EIVEnwL <- eive$`EIVEres-L.nw3`[match(eva$name, eive$TaxonConcept)]
-eva$EIVEnwT <- eive$`EIVEres-T.nw3`[match(eva$name, eive$TaxonConcept)]
-
-# check names
 eva$eive_name <- eive$TaxonConcept[match(eva$name, eive$TaxonConcept)]
-new_names <- eva[is.na(eva$eive_name),]
+length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+eva$eive_name[is.na(eva$eive_name)] <- eive$TaxonConcept[match(gsub(" aggr\\.", "", eva$name[is.na(eva$eive_name)]),
+                                                               eive$TaxonConcept)]
+length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+eva$eive_name[is.na(eva$eive_name)] <- eive$TaxonConcept[match(eva$species[is.na(eva$eive_name)] , eive$TaxonConcept)]
+length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+eva$eive_name[is.na(eva$eive_name)] <- eive$TaxonConcept[match(eva$irena[is.na(eva$eive_name)] , eive$TaxonConcept)]
+length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+eva$eive_name[is.na(eva$eive_name)] <- eive$TaxonConcept[match(eva$`Matched concept`[is.na(eva$eive_name)],
+                                                               eive$TaxonConcept)]
+length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+eva$eive_name[is.na(eva$eive_name)] <- eive$TaxonConcept[match(eva$`Turboveg2 concept`[is.na(eva$eive_name)],
+                                                               eive$TaxonConcept)]
+length(unique(eva$eive_name[!is.na(eva$eive_name)]))
 
-
-
-
-# which species are additionally present when using species --> 345 additional species
-extra<- new_names[!is.na(match(new_names$`species`, eive$TaxonConcept)),]
-extra <- unique(extra[,2:6])
-extra_species <- extra
-
-# Second we add species data for these species
-eva$EIVEresM[eva$species %in% extra$species] <- eive$`EIVEres-M`[match(eva$`species`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresN[eva$species %in% extra$species] <- eive$`EIVEres-N`[match(eva$`species`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresR[eva$species %in% extra$species] <- eive$`EIVEres-R`[match(eva$`species`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresL[eva$species %in% extra$species] <- eive$`EIVEres-L`[match(eva$`species`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresT[eva$species %in% extra$species] <- eive$`EIVEres-T`[match(eva$`species`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-
-# niche widths
-eva$EIVEnwM[eva$species %in% extra$species] <- eive$`EIVEres-M.nw3`[match(eva$`species`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwN[eva$species %in% extra$species] <- eive$`EIVEres-N.nw3`[match(eva$`species`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwR[eva$species %in% extra$species] <- eive$`EIVEres-R.nw3`[match(eva$`species`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwL[eva$species %in% extra$species] <- eive$`EIVEres-L.nw3`[match(eva$`species`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwT[eva$species %in% extra$species] <- eive$`EIVEres-T.nw3`[match(eva$`species`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-
-# check new names
-eva$eive_name[eva$species %in% extra$species]  <- eive$TaxonConcept[match(eva$species[eva$species %in% extra$species] , eive$TaxonConcept)]
-length(eive$TaxonConcept[match(eva$irena[eva$species %in% extra_species$species] , eive$TaxonConcept)])
-new_names <- eva[is.na(eva$eive_name),]
-# check previous annotation
-extra<- new_names[!is.na(match(new_names$`species`, eive$TaxonConcept)),]
-
-
-
-
-# which species are additionally present when using irena --> 132 additional species
-extra<- new_names[!is.na(match(new_names$`irena`, eive$TaxonConcept)),]
-extra <- unique(extra[,2:6])
-extra_irena <- extra
-
-# Third we add eva irena data for these species
-eva$EIVEresM[eva$species %in% extra$species] <- eive$`EIVEres-M`[match(eva$`irena`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresN[eva$species %in% extra$species] <- eive$`EIVEres-N`[match(eva$`irena`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresR[eva$species %in% extra$species] <- eive$`EIVEres-R`[match(eva$`irena`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresL[eva$species %in% extra$species] <- eive$`EIVEres-L`[match(eva$`irena`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresT[eva$species %in% extra$species] <- eive$`EIVEres-T`[match(eva$`irena`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
+# positions
+eva$EIVEresM <- eive$`EIVEres-M`[match(eva$eive_name, eive$TaxonConcept)]
+eva$EIVEresN <- eive$`EIVEres-N`[match(eva$eive_name, eive$TaxonConcept)]
+eva$EIVEresR <- eive$`EIVEres-R`[match(eva$eive_name, eive$TaxonConcept)]
+eva$EIVEresL <- eive$`EIVEres-L`[match(eva$eive_name, eive$TaxonConcept)]
+eva$EIVEresT <- eive$`EIVEres-T`[match(eva$eive_name, eive$TaxonConcept)]
 
 # niche widths
-eva$EIVEnwM[eva$species %in% extra$species] <- eive$`EIVEres-M.nw3`[match(eva$`irena`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwN[eva$species %in% extra$species] <- eive$`EIVEres-N.nw3`[match(eva$`irena`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwR[eva$species %in% extra$species] <- eive$`EIVEres-R.nw3`[match(eva$`irena`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwL[eva$species %in% extra$species] <- eive$`EIVEres-L.nw3`[match(eva$`irena`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwT[eva$species %in% extra$species] <- eive$`EIVEres-T.nw3`[match(eva$`irena`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-# check new names
-eva$eive_name[eva$species %in% extra$species]  <- eive$TaxonConcept[match(eva$`irena`[eva$species %in% extra$species],
-                                                                          eive$TaxonConcept)]
-length(eive$TaxonConcept[match(eva$`irena`[eva$species %in% extra$species],eive$TaxonConcept)])
-new_names <- eva[is.na(eva$eive_name),]
-# check previous annotation
-extra<- new_names[!is.na(match(new_names$`irena`, eive$TaxonConcept)),]
-
-
-
-# finally lets check the 'Matched concept' name --> 6 additional species
-extra<- new_names[!is.na(match(new_names$`Matched concept`, eive$TaxonConcept)),]
-extra <- unique(extra[,2:4])
-extra_matched <- extra
-
-# Third we add eva matched concept data for these species
-eva$EIVEresM[eva$species %in% extra$species] <- eive$`EIVEres-M`[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresN[eva$species %in% extra$species] <- eive$`EIVEres-N`[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresR[eva$species %in% extra$species] <- eive$`EIVEres-R`[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresL[eva$species %in% extra$species] <- eive$`EIVEres-L`[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEresT[eva$species %in% extra$species] <- eive$`EIVEres-T`[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-
-# niche widths
-eva$EIVEnwM[eva$species %in% extra$species] <- eive$`EIVEres-M.nw3`[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwN[eva$species %in% extra$species] <- eive$`EIVEres-N.nw3`[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwR[eva$species %in% extra$species] <- eive$`EIVEres-R.nw3`[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwL[eva$species %in% extra$species] <- eive$`EIVEres-L.nw3`[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-eva$EIVEnwT[eva$species %in% extra$species] <- eive$`EIVEres-T.nw3`[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                           eive$TaxonConcept)]
-# check new names
-eva$eive_name[eva$species %in% extra$species]  <- eive$TaxonConcept[match(eva$`Matched concept`[eva$species %in% extra$species],
-                                                                          eive$TaxonConcept)]
-length(eive$TaxonConcept[match(eva$`Matched concept`[eva$species %in% extra$species],eive$TaxonConcept)])
-new_names <- eva[is.na(eva$eive_name),]
-
-# check previous annotation
-extra<- new_names[!is.na(match(new_names$`Matched concept`, eive$TaxonConcept)),]
+eva$EIVEnwM <- eive$`EIVEres-M.nw3`[match(eva$eive_name, eive$TaxonConcept)]
+eva$EIVEnwN <- eive$`EIVEres-N.nw3`[match(eva$eive_name, eive$TaxonConcept)]
+eva$EIVEnwR <- eive$`EIVEres-R.nw3`[match(eva$eive_name, eive$TaxonConcept)]
+eva$EIVEnwL <- eive$`EIVEres-L.nw3`[match(eva$eive_name, eive$TaxonConcept)]
+eva$EIVEnwT <- eive$`EIVEres-T.nw3`[match(eva$eive_name, eive$TaxonConcept)]
 ```
 
 
 ```{r, fig.show = "hide"}
 # look at total number of species in eive
-length(unique(eive$TaxonConcept[match(eva$name, eive$TaxonConcept)]))
+length(unique(eive$TaxonConcept[match(gsub(" aggr\\.", "", eva$name), eive$TaxonConcept)]))
 length(unique(eive$TaxonConcept[match(eva$species, eive$TaxonConcept)]))
 length(unique(eive$TaxonConcept[match(eva$irena, eive$TaxonConcept)]))
 length(unique(eive$TaxonConcept[match(eva$`Matched concept`,eive$TaxonConcept)]))
+length(unique(eive$TaxonConcept[match(eva$`Turboveg2 concept`,eive$TaxonConcept)]))
+
 
 # check total amount of observations
-sum(!is.na(eva$species[match(eva$name, eive$TaxonConcept)]))
+sum(!is.na(eva$species[match(gsub(" aggr\\.", "", eva$name), eive$TaxonConcept)]))
 sum(!is.na(eva$species[match(eva$species, eive$TaxonConcept)]))
 sum(!is.na(eva$species[match(eva$irena, eive$TaxonConcept)]))
 sum(!is.na(eva$species[match(eva$`Matched concept`, eive$TaxonConcept)]))
+sum(!is.na(eva$species[match(eva$`Turboveg2 concept`, eive$TaxonConcept)]))
 
 # no names
 no_eive <-  eva[is.na(eva$eive_name),]
@@ -486,7 +383,8 @@ no_eive <- unique(no_eive[, 2:6])
 # check against the length of eva names
 eva_names <- unique(eva[,2:6])
 
-percentOfSpeciesEvaInEive <- 1- nrow(no_eive)/ nrow(eva_names)
+percentOfSpeciesEvaInEive <- length(unique(eva$name[!is.na(eva$eive_name)]))/ length(unique(eva$name))
+
 
 # Look at number of observations not in EIVE
 numberOfPlantsInEvaFoundInEive <- sum(!(is.na(eva$EIVEresM) | 
@@ -495,6 +393,8 @@ numberOfPlantsInEvaFoundInEive <- sum(!(is.na(eva$EIVEresM) |
                                               is.na(eva$EIVEresL) | 
                                               is.na(eva$EIVEresT)))
 percentEvaInEive<- numberOfPlantsInEvaFoundInEive/length(eva$PlotObservationID)
+percentEvaInEive
+percentOfSpeciesEvaInEive
 ```
 
 
@@ -552,111 +452,28 @@ hist(nthroot(div$Soil.Disturbance, 1), xlab="Soil dist")
 
 Extend eva with columns from disturbance indicator values:
 ```{r}
-# expand first with our species classification
-eva$Disturbance.Severity <- div$Disturbance.Severity[match(eva$species, div$species)]
-eva$Disturbance.Severity.herblayer <- div$Disturbance.Severity.herblayer[match(eva$name, div$species)]
-eva$Disturbance.Frequency <- div$Disturbance.Frequency[match(eva$name, div$species)]
-eva$Disturbance.Frequency.herblayer <- div$Disturbance.Frequency.herblayer[match(eva$name, div$species)]
-eva$Grazing.Pressure <- div$Grazing.Pressure[match(eva$name, div$species)]
-eva$Mowing.Frequency <- div$Mowing.Frequency[match(eva$name, div$species)]
-eva$Soil.Disturbance <- div$Soil.Disturbance[match(eva$name, div$species)]
-
-
-# check names
+# merge names
 eva$div_name <- div$species[match(eva$name, div$species)]
-length(eva$div_name[!is.na(eva$div_name)])
-new_names <- eva[is.na(eva$div_name),]
+length(unique(eva$div_name[!is.na(eva$div_name)]))
+eva$div_name[is.na(eva$div_name)] <- div$species[match(gsub(" aggr\\.", "",eva$name[is.na(eva$div_name)]), div$species)]
+length(unique(eva$div_name[!is.na(eva$div_name)]))
+eva$div_name[is.na(eva$div_name)] <- div$species[match(eva$species[is.na(eva$div_name)], div$species)]
+length(unique(eva$div_name[!is.na(eva$div_name)]))
+eva$div_name[is.na(eva$div_name)] <- div$species[match(eva$irena[is.na(eva$div_name)], div$species)]
+length(unique(eva$div_name[!is.na(eva$div_name)]))
+eva$div_name[is.na(eva$div_name)] <- div$species[match(eva$`Matched concept`[is.na(eva$div_name)], div$species)]
+length(unique(eva$div_name[!is.na(eva$div_name)]))
+eva$div_name[is.na(eva$div_name)] <- div$species[match(eva$`Turboveg2 concept`[is.na(eva$div_name)], div$species)]
+length(unique(eva$div_name[!is.na(eva$div_name)]))
 
-
-
-
-# which species are additionally present when using species
-extra<- new_names[!is.na(match(new_names$`irena`, div$species)),]
-extra <- unique(extra[,2:4])
-extra_species_div <- extra
-
-# expand second with species species classification
-eva$Disturbance.Severity[eva$species %in% extra$species] <- 
-  div$Disturbance.Severity[match(eva$species[eva$species %in% extra$species], div$species)]
-eva$Disturbance.Severity.herblayer[eva$species %in% extra$species] <- 
-  div$Disturbance.Severity.herblayer[match(eva$species[eva$species %in% extra$species], div$species)]
-eva$Disturbance.Frequency[eva$species %in% extra$species] <- 
-  div$Disturbance.Frequency[match(eva$species[eva$species %in% extra$species], div$species)]
-eva$Disturbance.Frequency.herblayer[eva$species %in% extra$species] <- 
-  div$Disturbance.Frequency.herblayer[match(eva$species[eva$species %in% extra$species], div$species)]
-eva$Grazing.Pressure[eva$species %in% extra$species] <- 
-  div$Grazing.Pressure[match(eva$species[eva$species %in% extra$species], div$species)]
-eva$Mowing.Frequency[eva$species %in% extra$species] <- 
-  div$Mowing.Frequency[match(eva$species[eva$species %in% extra$species], div$species)]
-eva$Soil.Disturbance[eva$species %in% extra$species] <- 
-  div$Soil.Disturbance[match(eva$species[eva$species %in% extra$species], div$species)]
-
-# check names
-eva$div_name[eva$species %in% extra$species] <- div$species[match(eva$species[eva$species %in% extra$species], div$species)]
-length(div$species[match(eva$species[eva$species %in% extra$species], div$species)])
-new_names <- eva[is.na(eva$div_name),]
-extra<- new_names[!is.na(match(new_names$`species`, div$species)),]
-
-
-
-
-
-# which species are additionally present when using irena
-extra<- new_names[!is.na(match(new_names$`irena`, div$species)),]
-extra <- unique(extra[,2:4])
-extra_irena_div <- extra
-
-# expand second with irena species classification
-eva$Disturbance.Severity[eva$species %in% extra$species] <- 
-  div$Disturbance.Severity[match(eva$irena[eva$species %in% extra$species], div$species)]
-eva$Disturbance.Severity.herblayer[eva$species %in% extra$species] <- 
-  div$Disturbance.Severity.herblayer[match(eva$irena[eva$species %in% extra$species], div$species)]
-eva$Disturbance.Frequency[eva$species %in% extra$species] <- 
-  div$Disturbance.Frequency[match(eva$irena[eva$species %in% extra$species], div$species)]
-eva$Disturbance.Frequency.herblayer[eva$species %in% extra$species] <- 
-  div$Disturbance.Frequency.herblayer[match(eva$irena[eva$species %in% extra$species], div$species)]
-eva$Grazing.Pressure[eva$species %in% extra$species] <- 
-  div$Grazing.Pressure[match(eva$irena[eva$species %in% extra$species], div$species)]
-eva$Mowing.Frequency[eva$species %in% extra$species] <- 
-  div$Mowing.Frequency[match(eva$irena[eva$species %in% extra$species], div$species)]
-eva$Soil.Disturbance[eva$species %in% extra$species] <- 
-  div$Soil.Disturbance[match(eva$irena[eva$species %in% extra$species], div$species)]
-
-# check names
-eva$div_name[eva$species %in% extra$species] <- div$species[match(eva$irena[eva$species %in% extra$species], div$species)]
-length(div$species[match(eva$irena[eva$species %in% extra$species], div$species)])
-new_names <- eva[is.na(eva$div_name),]
-extra<- new_names[!is.na(match(new_names$`irena`, div$species)),]
-
-
-
-
-# which species are additionally present when using 'Matched concept'
-extra<- new_names[!is.na(match(new_names$`Matched concept`, div$species)),]
-extra <- unique(extra[,2:4])
-extra_matched_div <- extra
-
-# expand second with irena species classification
-eva$Disturbance.Severity[eva$species %in% extra$species] <- 
-  div$Disturbance.Severity[match(eva$`Matched concept`[eva$species %in% extra$species], div$species)]
-eva$Disturbance.Severity.herblayer[eva$species %in% extra$species] <- 
-  div$Disturbance.Severity.herblayer[match(eva$`Matched concept`[eva$species %in% extra$species], div$species)]
-eva$Disturbance.Frequency[eva$species %in% extra$species] <- 
-  div$Disturbance.Frequency[match(eva$`Matched concept`[eva$species %in% extra$species], div$species)]
-eva$Disturbance.Frequency.herblayer[eva$species %in% extra$species] <- 
-  div$Disturbance.Frequency.herblayer[match(eva$`Matched concept`[eva$species %in% extra$species], div$species)]
-eva$Grazing.Pressure[eva$species %in% extra$species] <- 
-  div$Grazing.Pressure[match(eva$`Matched concept`[eva$species %in% extra$species], div$species)]
-eva$Mowing.Frequency[eva$species %in% extra$species] <- 
-  div$Mowing.Frequency[match(eva$`Matched concept`[eva$species %in% extra$species], div$species)]
-eva$Soil.Disturbance[eva$species %in% extra$species] <- 
-  div$Soil.Disturbance[match(eva$`Matched concept`[eva$species %in% extra$species], div$species)]
-
-# check names
-eva$div_name[eva$species %in% extra$species] <- div$species[match(eva$`Matched concept`[eva$species %in% extra$species], div$species)]
-length(div$species[match(eva$`Matched concept`[eva$species %in% extra$species], div$species)])
-new_names <- eva[is.na(eva$div_name),]
-extra<- new_names[!is.na(match(new_names$`Matched concept`, div$species)),]
+# expand first with our species classification
+eva$Disturbance.Severity <- div$Disturbance.Severity[match(eva$div_name, div$species)]
+eva$Disturbance.Severity.herblayer <- div$Disturbance.Severity.herblayer[match(eva$div_name, div$species)]
+eva$Disturbance.Frequency <- div$Disturbance.Frequency[match(eva$div_name, div$species)]
+eva$Disturbance.Frequency.herblayer <- div$Disturbance.Frequency.herblayer[match(eva$div_name, div$species)]
+eva$Grazing.Pressure <- div$Grazing.Pressure[match(eva$div_name, div$species)]
+eva$Mowing.Frequency <- div$Mowing.Frequency[match(eva$div_name, div$species)]
+eva$Soil.Disturbance <- div$Soil.Disturbance[match(eva$div_name, div$species)]
 ```
 
 
@@ -666,23 +483,27 @@ length(unique(div$species[match(eva$name, div$species)]))
 length(unique(div$species[match(eva$species, div$species)]))
 length(unique(div$species[match(eva$irena, div$species)]))
 length(unique(div$species[match(eva$`Matched concept`,div$species)]))
+length(unique(div$species[match(eva$`Turboveg2 concept`,div$species)]))
 
 # check total amount of observations
 sum(!is.na(eva$species[match(eva$name, div$species)]))
 sum(!is.na(eva$species[match(eva$species, div$species)]))
 sum(!is.na(eva$species[match(eva$irena, div$species)]))
 sum(!is.na(eva$species[match(eva$`Matched concept`,div$species)]))
+sum(!is.na(eva$species[match(eva$`Turboveg2 concept`,div$species)]))
 
 # no names
 no_div <-  eva[is.na(eva$div_name),]
 no_div <- unique(no_div[, 2:4])
 
 # check against the length of eva names
-percentOfSpeciesEvaInDiv <- 1- nrow(no_div)/ nrow(eva_names)
+percentOfSpeciesEvaInDiv <- length(unique(eva$name[!is.na(eva$div_name)]))/ length(unique(eva$name))
 
 # and amount of observations
 numberOfPlantsInEvaFoundInDiv <- sum(!is.na(eva$Disturbance.Severity))
 percentEvaInDiv<- numberOfPlantsInEvaFoundInDiv/length(eva$Disturbance.Severity)
+percentEvaInDiv
+percentOfSpeciesEvaInEive
 ```
 
 `r numberOfPlantsInEvaFoundInDiv` of the `r length(eva$PlotObservationID)` plant observations in Eva have disturbance indicator value.
@@ -706,6 +527,31 @@ length(test$species[(test$statusEurope=="neo") & (is.na(test$Disturbance.Severit
 # percent of archeotypes without data
 length(test$species[(test$statusEurope=="arch") & (is.na(test$Disturbance.Severity))])/length(test$species[test$statusEurope=="arch"])
 ```
+
+## 2.3 All
+```{r}
+# create eva_names file again
+# vector with eva names
+eva_names<- as.data.frame(unique(eva$`Matched concept`))
+colnames(eva_names) <- "Matched concept"
+eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$eive <- eva$eive_name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$div <- eva$div_name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+
+dup <- eva_names[duplicated(eva_names$name) | duplicated(eva_names$name, fromLast = T),]
+dup_known_eive <- dup[!is.na(dup$eive),]
+dup_known_div <- dup[!is.na(dup$div),]
+
+dup_unknown_eive <- dup[is.na(dup$eive),]
+dup_unknown_div <- dup[is.na(dup$div),]
+
+dup_unknown_eive <- dup_unknown_eive[dup_unknown_eive$name %in% dup_known_eive$name, ]
+dup_known_eive <- dup_known_eive[dup_known_eive$name %in% dup_unknown_eive$name,]
+
+dup_unknown_eive <- left_join(dup_unknown_eive[, -c(4)], dup_known_eive[, c(2,4)], by= c("name"="name"))
+```
+
 
 
 # 3 ANALYSIS
@@ -752,7 +598,7 @@ begin<- Sys.time()
 aggregatedEva <- eva |> 
   group_by(PlotObservationID) |> 
   summarise(
-    numberOfVascularPlantSpecies = n(), 
+    numberOfVascularPlantSpecies = length(unique(name)),
     
     EIVEresM.sqrt = computeSquareRootWeightedMean(EIVEresM, `Cover %`), 
     EIVEresN.sqrt = computeSquareRootWeightedMean(EIVEresN, `Cover %`), 
@@ -926,15 +772,20 @@ eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 # 4 PLOT
 ## 4.1 SR
 ```{r}
+plot=F
+if(plot){
 par(mfrow=c(1,1))
 boxplot(fullPlotData$numberOfVascularPlantSpecies)
 hist(fullPlotData$numberOfVascularPlantSpecies)
 # As expected the count data on species richness looks quite skewed. Hence, we will need to use a poisson glm/ gam
+}
 ```
 
 
 ## 4.2 IVs
 ```{r}
+plot=F
+if(plot){
 # Square root
 boxplot(fullPlotData$DistSeverity.sqrt)
 boxplot(fullPlotData$DistFrequency.sqrt)
@@ -1000,12 +851,15 @@ hist(fullPlotData$logGrazing.Pressure)
 hist(fullPlotData$logSoil.Disturbance)
 hist(fullPlotData$logDistSeverity)
 hist(fullPlotData$logDistFrequency)
+}
 ```
 
 The distribution of the EIVE predictors look symmetrical. However, the disturbance indicators are heavily skewed. Hence, they need to be transformed. Because there are zeros in the data we choose a root transoformation. Trying different powers we found that the 4th root worked best:
 
 ## 4.3 Transform
 ```{r}
+plot=F
+if(plot){
 # originally 1/4
 fullPlotData$transformedDisturbanceSeverity.sqrt <- fullPlotData$DistSeverity.sqrt^(1/2)
 fullPlotData$transformedDisturbanceFrequency.sqrt <- fullPlotData$DistFrequency.sqrt^(1/2)
@@ -1021,12 +875,15 @@ hist(fullPlotData$transformedDisturbanceSeverity)
 hist(fullPlotData$DistSeverity) # imo even better distributed...
 hist(fullPlotData$transformedDisturbanceFrequency)
 hist(fullPlotData$DistFrequency)
+}
 ```
 
 
 # 5 BASE MODEL
 Note that this is not the final Base Model, rather we will use this to check the assumptions made.
 ```{r}
+model=F
+if(model){
 glm0 <- glm(numberOfVascularPlantSpecies ~ 
                     log(Area) + 
                     EIVEresM + I(EIVEresM^2) + 
@@ -1040,15 +897,19 @@ glm0 <- glm(numberOfVascularPlantSpecies ~
 
 summary(glm0)
 plot(glm0)
+}
 ```
 
 We can see that the residuals of this model are in a reasonable range and hence the model fits reasonably well to the data.
 ```{r}
+model=F
+if(model){
 dataFromGermany <- fullPlotData[fullPlotData$Region == "Germany",]
 dataFromGermany$Dataset <- as.factor(as.character(dataFromGermany$Dataset))
 par(mfrow = c(1,1))
 boxplot(numberOfVascularPlantSpecies ~ Dataset, data = dataFromGermany)
 boxplot(log(fullPlotData$Area))
+}
 ```
 
 Looking at different datasets from a similar region exhibits quite large differences in terms of species richness. It will most likely make sense to include Dataset as a random factor. The log transformed size of the plots is very symmetrical. This looks good.
@@ -1056,14 +917,25 @@ Looking at different datasets from a similar region exhibits quite large differe
 # 6 EXPORT
 ## 6.1 EVA + HEAD
 ```{r}
+# vector with eva names
+eva_names<- as.data.frame(unique(eva$`Matched concept`))
+colnames(eva_names) <- "Matched concept"
+eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$eive <- eva$eive_name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$div <- eva$div_name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+
+
 # Make sure all plot data is in eva
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
 #write_csv(fullPlotData, "fullPlotData_ESy.csv")
- 
+
+
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 fullPlotEva <- eva
+head(eva)
 #write_csv(eva, "fullPlotEva_ESy.csv")
 ```
 
@@ -1074,13 +946,15 @@ fullPlotEva <- eva
 ```{r}
 # File for Irena
 # Eva
-#fullPlotEva2 <- read_csv("fullPlotEva_ESy.csv", show_col_types = FALSE)
+fullPlotEva <- read_csv("fullPlotEva_ESy.csv", show_col_types = FALSE)
 eva2<- fullPlotEva[,c("PlotObservationID","species","irena", "Matched concept", "name","source")]
-#fullPlotData2<- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+fullPlotData<- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
 # eva names
+eva<- fullPlotEva
 eva_names <- unique(eva[, c(2:6)])
+
 
 # Join and summarise
 eva_country<- left_join(eva2, fullPlot2)
@@ -1089,67 +963,159 @@ species_country<- eva_country |> group_by(Region, species, irena, `Matched conce
 # load neophyte data
 neophyte<-readxl::read_excel("species_status_region-VK-IA.xlsx")
 
+# relate species
+neophyte$name <- eva_names$name[match(neophyte$species, eva_names$name)]
+neophyte$source <- eva_names$source[match(neophyte$species, eva_names$name)]
+# 19220
+sum(is.na(neophyte$name))
+neophyte$name[is.na(neophyte$name)] <- eva_names$name[match(neophyte$species[is.na(neophyte$name)], eva_names$species)]
+neophyte$source[is.na(neophyte$source)] <- eva_names$source[match(neophyte$species[is.na(neophyte$source)], eva_names$species)]
+# 1469
+sum(is.na(neophyte$name))
+neophyte$name[is.na(neophyte$name)] <- eva_names$name[match(neophyte$species[is.na(neophyte$name)], eva_names$irena)]
+neophyte$source[is.na(neophyte$source)] <- eva_names$source[match(neophyte$species[is.na(neophyte$source)], eva_names$irena)]
+# 998
+sum(is.na(neophyte$name))
+neophyte$name[is.na(neophyte$name)] <- eva_names$name[match(neophyte$species[is.na(neophyte$name)], eva_names$`Matched concept`)]
+neophyte$source[is.na(neophyte$source)] <- eva_names$source[match(neophyte$species[is.na(neophyte$source)], eva_names$`Matched concept`)]
+# 804
+sum(is.na(neophyte$name))
 
-# change names to all accepted
-neophyte$name <- eva_names$species[match(neophyte$species, eva_names$species)]
-neophyte$name[is.na(neophyte$name)]<- eva_names$species[match(neophyte$species[is.na(neophyte$name)], eva_names$irena)]
-neophyte$name[is.na(neophyte$name)]<- eva_names$species[match(neophyte$species[is.na(neophyte$name)], eva_names$`Matched concept`)]
-
-# some (1450) species not in dataset now
-
-# some species are not anymore in dataset so we check against original species list
-new_names <- unique(new[, c(6,12:13)])
-neophyte$name[is.na(neophyte$name)]<- new_names$species[match(neophyte$species[is.na(neophyte$name)], new_names$species)]
-neophyte$name[is.na(neophyte$name)]<- new_names$species[match(neophyte$species[is.na(neophyte$name)], new_names$irena)]
-neophyte$name[is.na(neophyte$name)]<- new_names$species[match(neophyte$species[is.na(neophyte$name)], new_names$`Matched concept`)]
-
-# check rest
-neophyte$species[is.na(neophyte$name)]
-# looks fine
-colnames(neophyte) <- c("Region","name","FloraVegSpecies","Neophyte","species")
-
-# are there some duplicates
-x <- neophyte[(duplicated(neophyte[,c(1,5)])| duplicated(neophyte[,c(1,5)], fromLast=TRUE)),]
-x <- x[!(duplicated(x[,c(1,4:5)]) | duplicated(x[,c(1,4:5)], fromLast=TRUE)),]
-
-# check x and change wrong classifications
-change <- data.frame(species= c("Quercus rubra", "Gentianella aspera","Salix gmelinii"),
-                     status= c("neo", "native", "neo"))
-# assign to neophyte
-neophyte$Neophyte[neophyte$species %in% change$species] <- change$status[match(neophyte$species[neophyte$species %in% change$species],
-                                                                           change$species)]
-
-# we check again whether our change was successful
-x <- neophyte[(duplicated(neophyte[,c(1,5)])| duplicated(neophyte[,c(1,5)], fromLast=TRUE)),]
-x <- x[!(duplicated(x[,c(1,4:5)]) | duplicated(x[,c(1,4:5)], fromLast=TRUE)),]
-
-# we remove all duplicates to be able to join with species_country without many-to-many relationships
-neophyte <- neophyte[!duplicated(neophyte[,c(1,5)]),]
-
-# join
-species_country <- full_join(species_country, neophyte, by= c("species"="species", "Region"="Region"))
-species_country[is.na(species_country$Neophyte),] <- left_join(species_country[is.na(species_country$Neophyte), -c(6:8)], neophyte,
-                                                               by= c("irena"="species", "Region"="Region"))
-species_country[is.na(species_country$Neophyte),] <- left_join(species_country[is.na(species_country$Neophyte), -c(6:8)], neophyte,
-                                                               by= c("Matched concept"="species", "Region"="Region"))
-
-# check NAs
-unique(species_country$species[is.na(species_country$Neophyte)])
+# relate matched concept
+neophyte$name[is.na(neophyte$name)] <- eva_names$name[match(neophyte$`Matched concept`[is.na(neophyte$name)], eva_names$`Matched concept`)]
+neophyte$source[is.na(neophyte$source)] <- eva_names$source[match(neophyte$`Matched concept`[is.na(neophyte$source)], eva_names$`Matched concept`)]
+# 7 (6)
+sum(is.na(neophyte$name))
 
 
-# not
-not <- species_country[is.na(species_country$Neophyte),]
-not<- not[!duplicated(not$species),]
+
+# unknown species previously in database and not anymore
+unknown <- neophyte[is.na(neophyte$name),]
+
+# remove the 'plants' that were just used for the species richness
+species_country <- species_country[!species_country$source=="Plant",]
+
+# some are duplicated --> if name, region and status are equal can be removed
+x <- neophyte[duplicated(neophyte[, c(2, 10,8)]) | duplicated(neophyte[, c(2, 10,8)], fromLast=T) ,]
+# remove duplicates in neophyte --> 97518 --> 97504
+neophyte <- neophyte[!duplicated(neophyte[, c(2, 10,8)]),]
+
+# some are duplicated --> look at them --> 230
+dup <-  neophyte[duplicated(neophyte[, c(10,2)]) | duplicated(neophyte[, c(10,2)], fromLast = T) ,]
+# remove the status column
+dup <- dup[,-c(8)]
+#write_csv(dup, "merging_problems_status.csv")
+# give status of species (so not subspecies or varieties)
+change <- neophyte[neophyte$species %in% stringr::str_remove(dup$name," aggr."),]
+change <- change[, c(2,10,8)]
+
+
+# check species for which this was not possible
+check <- change[duplicated(change[,c(1,2)]) | duplicated(change[,c(1,2)], fromLast = T) ,]
+# one species --> give correct 
+change$statusNew[duplicated(change[,c(1,2)]) | duplicated(change[,c(1,2)], fromLast = T)] <- "native"
+# end with removing all duplicates (this species)
+change <- change[!duplicated(change),]
+# merge
+dup<- left_join(dup, change, by= c("name"="name", "Region"="Region"))
+
+
+
+# check which are still na
+unique(dup$name[is.na(dup$statusNew)])
+# give correct species classifications
+change <- data.frame( name= c("Vicia sativa","Symphyotrichum novi-belgii aggr.","Rubus fruticosus aggr."),
+                      status= c("native","extra","native"))
+# change their status
+dup$statusNew[is.na(dup$statusNew)] <- 
+  change$status[match(dup$name[is.na(dup$statusNew)], change$name)]
+dup <- dup |> relocate(statusNew, .after= n)
+# change these
+neophyte[duplicated(neophyte[, c(10,2)]) | duplicated(neophyte[, c(10,2)], fromLast = T),] <- dup
+neophyte <-neophyte[!duplicated(neophyte[, c(10,2,8)]),]
+
+# also remove duplicates in the species country list
+species_country <- species_country[!duplicated(species_country[,c(5,1)]),]
+
+
+# merge --> 97727 --> 97591 --> 97558 --> 97391 (97424)
+species_country <- full_join(species_country, neophyte[, -c(3:5,6,7,9)], by= c("name"="name", "Region"="Region"))
+species_country <- species_country[!is.na(species_country$species),]
+
+
+neophyte <- neophyte[, -c(1,6,7,9)]
+
+head(neophyte)
 
 # save
-#write_csv(neophyte, "neophyte_euro.csv")
+#write_csv(neophyte, "neophyte_ESy.csv")
 ```
 
 
 
 ```{r}
-#write_csv(species_country,"country_species_euro.csv")
-#write_csv(species_country,"country_species_euro_cover.csv")
+# check na's
+x <- species_country[is.na(species_country$statusNew),]
+x$statusNew <- neophyte$statusNew[match(x$irena, neophyte$irena)]
+species_country$statusNew[is.na(species_country$statusNew)] <-
+  neophyte$statusNew[match(species_country$irena[is.na(species_country$statusNew)], neophyte$irena)]
+
+x <- species_country[is.na(species_country$statusNew),]
+# majority is error in ESy --> change vicia sativa
+species_country$name[species_country$name=="Vicia ramuliflora"] <- "Vicia sativa"
+
+# last change ourselves
+change <- data.frame(Region =c("Turkey", "Turkey","Switzerland",
+                               "Ukraine","France","Switzerland",
+                               "France","Italy", "France","Albania",
+                               "Lithuania","Turkey","RF.CS","Turkey"),
+                     species = c("Alyssum bornmuelleri",
+                                 "Astragalus xylorrhizus",
+                                 "Crepis pygmaea",
+                                 "Cytisus wulfii",
+                                 "Festuca christianii-bernardii",
+                                 "Limnobium palustre",
+                                 "Panicum hillmanii",
+                                 "Phyllolepidum rupestre",
+                                 "Sagina subulata var. subulata",
+                                 "Sideritis raeseri",
+                                 "Ranunculus penicillatus",
+                                 "Rosa dumalis subsp. antalyensis",
+                                 "Suaeda crassifolia",
+                                 "Veronica orientalis subsp. carduchorum"),
+                     status= c("native","native","native",
+                               "native","native","native",
+                               "native","native", "native",
+                               "native","native","native",
+                               "native","native"))
+
+x$statusNew <- "native"
+
+species_country$statusNew[is.na(species_country$statusNew)]<- "native"
+
+name_change <- data.frame(old.name= c("Limnobium palustre",
+                                      "Sagina subulata var. subulata",
+                                      "Rosa dumalis subsp. antalyensis",
+                                      "Veronica orientalis subsp. carduchorum"),
+                          new.name= c("Hygrohypnum luridum",
+                                      "Sagina subulata",
+                                      "Rosa boissieri",
+                                      "Veronica orientalis"))
+
+species_country$species[species_country$species %in% name_change$old.name] <-
+  name_change$new.name[match(species_country$species[species_country$species %in% name_change$old.name], name_change$old.name)]
+species_country$name[species_country$name %in% name_change$old.name] <-
+  name_change$new.name[match(species_country$name[species_country$name %in% name_change$old.name], name_change$old.name)]
+
+
+eva$species[eva$species %in% name_change$old.name] <-
+  name_change$new.name[match(eva$species[eva$species %in% name_change$old.name], name_change$old.name)]
+eva$name[eva$name %in% name_change$old.name] <-
+  name_change$new.name[match(eva$name[eva$name %in% name_change$old.name], name_change$old.name)]
+
+
+#write_csv(species_country,"country_species_ESy.csv")
+#write_csv(eva, "fullPlotEva_ESy.csv")
 ```
 
 
