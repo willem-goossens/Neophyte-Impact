@@ -26,15 +26,15 @@ library(parallel)
 library(doParallel)
 library(IDPmisc)
 library(ggeffects)
+library(dplyr)
 ```
 
 ## 1.1 Load
 ```{r, message=F}
 # Data from header with the EIVE and DIV data
-fullPlotData <- read_csv("fullPlotData2.csv")
+fullPlotData <- read_csv("fullPlotData_ESy.csv")
 fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
 
-fullPlotData<- fullPlotData[!is.na(fullPlotData$Date),]
 fast <- F
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
@@ -45,22 +45,36 @@ if(fast) {
 ## 1.2 Correlations
 Checking for correlation among predictor variables:
 ```{r}
+head(fullPlotData)
+fullPlotData <- fullPlotData |> relocate(c("ENS0","ENS1","ENS2"), .after= numberOfVascularPlantSpecies)
 # take correlation omitting the INF values in the log disturbances
-correlation <- cor(NaRV.omit(fullPlotData[,c(9,11:53)]))
+correlation <- cor(NaRV.omit(fullPlotData[,c(10:53)]))
+
 # set all values to 0 which are not highly correlated
 correlation[correlation < 0.7 & correlation> -0.7] <- 0
-#correlation
+correlation
 # see correlation--> correlation --> hard to see some things within dataset
 # Interesting (but logical) --> EIVEresL correlated with disturbance frequency --> higher disturbance is species living more in sunlight
 # Correlations between same indicator different calculations and weighting methods --> likely
 ```
 
+
+
 The following variables are all highly correlated: DistFrequency and EIVEresL. We therefore decided to only keep the overall disturbance severity and frequency in the model and remove the other correlated variables. DistFrequencyHerblayer and DistSeveretityHerblayer are only estimated for a subset of the habitats and hence should not be used for all habitats as we are doing. This is why we also removed this variable from the predictors.
 
 Check assumptions quasipoisson
 ```{r}
+# ENS0
+mean(fullPlotData$ENS0)
+var(fullPlotData$ENS0)
+
+# ENS1
 mean(fullPlotData$ENS1)
 var(fullPlotData$ENS1)
+
+# ENS1
+mean(fullPlotData$ENS2)
+var(fullPlotData$ENS2)
 ```
 
 Check distribution
@@ -73,7 +87,7 @@ hist(fullPlotData$ENS1)
 ## 2.1 Distribution
 We chose to include light instead of dist frequency
 ```{r}
-model<- (ENS1 ~ log(Area) + 
+model<- (ENS0 ~ log(Area) + 
                     EIVEresM.sqrt + I(EIVEresM.sqrt^2) + 
                     EIVEresN.sqrt + I(EIVEresN.sqrt^2) + 
                     EIVEresR.sqrt + I(EIVEresR.sqrt^2) + 
@@ -84,21 +98,22 @@ model<- (ENS1 ~ log(Area) +
                     Grazing.Pressure + I(Grazing.Pressure^2)+
                     Mowing.Frequency + I(Mowing.Frequency^2))
                    
-# This is the simplest example possible, with normal possoin distribution
+# This is the simplest example possible, with normal distribution
 glm1 <- glm(model, family=gaussian, fullPlotData)
+glm2 <- glm(model, family= poisson, fullPlotData)
+glm3 <- glm(model, family= quasipoisson, fullPlotData)
 
 
 # poisson
-plot(glm1)
-aicGlm1 <- AIC(glm1)
+AIC(glm1, glm2, glm3)
 
-
+dispersiontest(glm2)
 ```
 
 
 ## 2.2 Method
 ```{r}
-model<- (ENS1 ~ 
+model<- (ENS0 ~ 
               log(Area) + 
               s(EIVEresM.sqrt, bs = 'tp') +
               s(EIVEresN.sqrt, bs = 'tp') +
@@ -114,10 +129,10 @@ gam0 <- bam(model, family = gaussian, data = fullPlotData,  method = 'fREML',dis
 summary(gam0)
 
 # GAM has a considerably lower AIC
-AIC(gam0)
+AIC(glm2, gam0)
 
 # GAM0 has a considerably higher Dsquared
-dsquaredGam0 <- Dsquared(obs = fullPlotData$ENS1, pred = fitted(gam0), family = "gaussian")
+dsquaredGam0 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam0), family = "gaussian")
 dsquaredGam0
 ```
 
@@ -127,7 +142,7 @@ dsquaredGam0
 ## 3.1 Database
 We add database (random effect) and longitude and latitude as smoothers
 ```{r}
-model<- ENS1 ~ 
+model<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM.sqrt, bs = 'tp') +
               s(EIVEresN.sqrt, bs = 'tp') +
@@ -140,7 +155,7 @@ model<- ENS1 ~
               s(Mowing.Frequency, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model2<- ENS1 ~ 
+model2<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM.sqrt, bs = 'tp') +
               s(EIVEresN.sqrt, bs = 'tp') +
@@ -154,13 +169,13 @@ model2<- ENS1 ~
               s(Latitude, Longitude, bs = 'tp') +
               Dataset
 gam3 <- bam(model,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-#gam4 <- bam(model2,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam4 <- bam(model2,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 summary(gam3)
 #summary(gam4)
 
 # GAM3 has a considerably higher Dsquared
-dsquaredGam3 <- Dsquared(obs = fullPlotData$ENS1, pred = fitted(gam3), family = "gaussian")
+dsquaredGam3 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam3), family = "gaussian")
 dsquaredGam3
 
 # Incorporating the database considerably increases the Dsquared
@@ -170,7 +185,7 @@ dsquaredGam3
 
 ## 3.2 Weight EIVEs
 ```{r}
-model1<- ENS1 ~ 
+model1<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM.nw, bs = 'tp') +
               s(EIVEresN.nw, bs = 'tp') +
@@ -184,7 +199,7 @@ model1<- ENS1 ~
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
 
-model2<- ENS1 ~ 
+model2<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM.cnw, bs = 'tp') +
               s(EIVEresN.cnw, bs = 'tp') +
@@ -197,7 +212,7 @@ model2<- ENS1 ~
               s(Mowing.Frequency, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model3<- ENS1 ~ 
+model3<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -224,19 +239,19 @@ summary(gam6)
 # AIC is lowest for GAM6
 AIC(gam3,gam4,gam5,gam6)
 
-# DSQUARED is lowest for GAM6
-dsquaredGam4 <- Dsquared(obs = fullPlotData$ENS1, pred = fitted(gam4), family = "gaussian")
+# DSQUARED is highest for GAM6
+dsquaredGam4 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam4), family = "gaussian")
 dsquaredGam4
-dsquaredGam5 <- Dsquared(obs = fullPlotData$ENS1, pred = fitted(gam5), family = "gaussian")
+dsquaredGam5 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam5), family = "gaussian")
 dsquaredGam5
-dsquaredGam6 <- Dsquared(obs = fullPlotData$ENS1, pred = fitted(gam6), family = "gaussian")
+dsquaredGam6 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam6), family = "gaussian")
 dsquaredGam6
 ```
 
 
 ## 3.3 Weight DIVs
 ```{r}
-model1<- ENS1 ~ 
+model1<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -249,7 +264,7 @@ model1<- ENS1 ~
               s(Mowing.Frequency, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model2<- ENS1 ~ 
+model2<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -262,7 +277,7 @@ model2<- ENS1 ~
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model3<- ENS1 ~ 
+model3<- ENS0 ~ 
               log(Area) + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -283,18 +298,23 @@ gam8 <- bam(model2,family = gaussian, data = fullPlotData,  method = 'fREML',  d
 summary(gam7)
 summary(gam8)
 
+dsquaredGam7 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam7), family = "gaussian")
+dsquaredGam7
+dsquaredGam8 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam8), family = "gaussian")
+dsquaredGam8
+
 # GAM8 is the overall best model
 AIC(gam7,gam8)
 
 # Check gam 6 and 8 against each other
-plot(gam6)
-plot(gam8)
+#plot(gam6)
+#plot(gam8)
 ```
 
 
 ## 3.4 Area
 ```{r}
-model<-  ENS1 ~ 
+model<-  ENS0 ~ 
               poly(log(Area),2) + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -307,7 +327,7 @@ model<-  ENS1 ~
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model2<-  ENS1 ~ 
+model2<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -320,32 +340,28 @@ model2<-  ENS1 ~
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model3<-  ENS1 ~ 
-              s(log(Area),bs='tp') + 
-              s(EIVEresM, bs = 'tp') +
-              s(EIVEresN, bs = 'tp') +
-              s(EIVEresR, bs = 'tp') +
-              s(EIVEresL, bs = 'tp') +
-              s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Latitude, Longitude, bs = 'tp') +
-              s(Dataset, bs = 're')
 
 gam9 <- bam(model,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 gam10 <- bam(model2,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam11 <- bam(model3,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 # GAM 10 is the best now
 summary(gam9)
 summary(gam10)
 summary(gam11)
 
+dsquaredGam9 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam9), family = "gaussian")
+dsquaredGam9
+dsquaredGam10 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam10), family = "gaussian")
+dsquaredGam10
+
+
+
 AIC(gam11, gam9, gam10)
 ```
 
 ## 3.5 HFP and Climate
 ```{r}
-model2<-  ENS1 ~ 
+model2<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -358,7 +374,7 @@ model2<-  ENS1 ~
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model3<-  ENS1 ~ 
+model3<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -373,7 +389,8 @@ model3<-  ENS1 ~
               s(chelsaP, bs="tp")+
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-model4<-  ENS1 ~ 
+
+model4<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
@@ -385,39 +402,45 @@ model4<-  ENS1 ~
               s(Grazing.Pressure.sqrt, bs = 'tp')+
               s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(hfp, bs="tp")+
-              s(Latitude, Longitude, bs = 'tp') +
-              s(Dataset, bs = 're')
-model5<-  ENS1 ~ 
-              s(log(Area),bs='tp') + 
-              s(EIVEresM, bs = 'tp') +
-              s(EIVEresN, bs = 'tp') +
-              s(EIVEresR, bs = 'tp') +
-              s(EIVEresL, bs = 'tp') +
-              s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
               s(chelsaP, bs="tp")+
+              s(elev, bs="tp")+
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
+
+
 gam12 <- bam(model2,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 gam13 <- bam(model3,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam14 <- bam(model4,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+
 summary(gam12)
 summary(gam13)
-gam14 <- bam(model4,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam15 <- bam(model5,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-summary(gam14)
-summary(gam15)
-AIC(gam3,gam4,gam5,gam6,gam7,gam8,gam9,gam10,gam11,gam12, gam13,gam14,gam15)
+AIC(gam12, gam13, gam14)
+
+
+dsquaredGam12 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam12), family = "gaussian")
+dsquaredGam12
+dsquaredGam13 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam13), family = "gaussian")
+dsquaredGam13
+dsquaredGam14 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam14), family = "gaussian")
+dsquaredGam14
 
 ```
 
 
 ## 3.6 Final check
 ```{r}
-gam10 <- bam(model3,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam12 <- bam(model4,family = gaussian, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam13 <- bam(model4,family = poisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam14 <- bam(model4,family = quasipoisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
+dsquaredGam12 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam12), family = "gaussian")
+dsquaredGam12
+dsquaredGam13 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam13), family = "poisson")
+dsquaredGam13
+dsquaredGam14 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam14), family = "gaussian")
+dsquaredGam14
+
+AIC(gam12, gam13)
 ```
 
 
@@ -435,6 +458,7 @@ visreg(gam13, xvar = "Grazing.Pressure.sqrt", ylab = "Richness", xlab = "Grazing
 visreg(gam13, xvar = "Mowing.Frequency.sqrt", ylab = "Richness", xlab = "Mowing Frequency (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
 visreg(gam13, xvar = "hfp", ylab = "Richness", xlab = "hfp", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
 visreg(gam13, xvar = "chelsaP", ylab = "Richness", xlab = "P mean", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam13, xvar = "elev", ylab = "Richness", xlab = "Elevation", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
 
 plot(ggpredict(gam13, terms=c("EIVEresM")))
 ```
