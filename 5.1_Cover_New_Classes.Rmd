@@ -21,7 +21,11 @@ library(dplyr)
 library(ggplot2)
 library(arsenal)
 library(doParallel)
+library(car)
 library(FSA)
+library(ggpubr)
+library(flextable)
+library(biostat)
 ```
 
 ## 1.2 Data loaded
@@ -29,13 +33,13 @@ This script analyses whether neophytes are more dominant and frequent than nativ
 First, we load data of EVA
 ```{r, warnings=F, message=F}
 # Eva data for which plots are available and after correcting for incorrect or weird plot observations
-eva <- read_csv("fullPlotEva_cover_all_layer.csv")
+eva <- read_csv("fullPlotEva_ESy.csv")
 ```
 
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it.
 ```{r, warnings=F, message=F}
 # header like data, filtered and appended with EIVE and DIV
-fullPlotData <- read_csv("fullPlotData_cover_all_layer_cleaned.csv")
+fullPlotData <- read_csv("fullPlotData_ESy.csv")
 
 fast <- F
 if(fast) {
@@ -47,27 +51,24 @@ if(fast) {
 Load the neophyte definitions:
 ```{r, message=F}
 # Data on which species are neophytes
-native_intra_analysis=F
+native_intra_analysis=T
 if(native_intra_analysis){
-  species_country_status <- read_csv("eva2_country_status_new.csv")
+  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
 } else{
-species_country_status<- read_csv("species_country_status_new.csv")
-# or if we want to do it with intra seperately
+  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
 }
 
+Belgium <- species_country_status[species_country_status$Region=="Belgium",]
+Belgium <- Belgium[Belgium$Neophyte=="intra",]
+Belgium <- Belgium[, c(1,5,7)]
 # Assign these names to the eva list
 extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
 intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
 native_intra <- unique(species_country_status$species[species_country_status$Neophyte=="native_intra"])
+native <-  unique(species_country_status$species[species_country_status$Neophyte=="native"])
 ```
 
-
-Remove species that are not defined or to be excluded
-```{r, warnings=F}
-remove<- read_csv("not_defined.csv", show_col_types = FALSE)
-remove<- as.vector(unlist(remove))
-eva<- eva[!(eva$species %in% remove),]
-```
 
 Assign classification to species
 ```{r}
@@ -76,7 +77,7 @@ fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 # Right join to keep only species present in fullplot (otherwise a lot of NAs)
 eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
 # Join eva and classification
-eva_country_neophyte<- left_join(eva, species_country_status, by= c("Region"= "Region", "species"= "species"))
+eva_country_neophyte<- left_join(eva, species_country_status[, -c(2:4,6:8)], by= c("Region"= "Region", "name"= "name"))
 # Look at how much from every type are present
 table(eva_country_neophyte$Neophyte)
 ```
@@ -87,43 +88,47 @@ table(eva_country_neophyte$Neophyte)
 ```{r}
 fast=T
 if(fast){
-# For speed optimization we extract only the necessary information from EVA
-reducedEva <- eva_country_neophyte |> select(PlotObservationID, Region, species, Neophyte,`Cover %`)
-
-uniqueSpecies <- unique(reducedEva[, c(3,4)])
-
-# Make empty datafraùe
-speciesDominance <- data.frame(names = character(), coverMedian = numeric(), coverMean = numeric(), var = numeric(), numberOfPlots = integer(), neophyte = logical())
-
-# Prepare running in parallel
-parallel::detectCores()
-n.cores <- parallel::detectCores() - 2
-my.cluster <- parallel::makeCluster(
-  n.cores, 
-  type = "PSOCK"
-)
-print(my.cluster)
-doParallel::registerDoParallel(cl = my.cluster)
-foreach::getDoParRegistered()
-foreach::getDoParWorkers()
-
-# Take time beginning
-begin<- Sys.time()
-i=1
-# Do calculation of average and median cover+ variance in dataset
-speciesDominance <-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
-  # Get dataset for each unique species
-  tmp <- reducedEva[reducedEva$species == uniqueSpecies$species[i]& reducedEva$Neophyte == uniqueSpecies$Neophyte[i],]
-  # Make ID a factor
-  tmp$PlotObservationID <- as.factor(tmp$PlotObservationID)
-  # Group by plot and calculate the mean species cover for that species in all plots where it is present
-  tmp <- tmp |> group_by(PlotObservationID) |> summarise(cover = mean(`Cover %`))
-  # We are only interested in the dominance of species occurring in at least 50 (?) plots 
-  if(length(tmp$PlotObservationID) >= 50) {
-    # Get the summary (median and mean at place 3 and 4) for when the species is present, also incorporating the variance and number of Plots
-    sum <- summary(tmp$cover)
-    x <- c(names = uniqueSpecies$species[i], coverMedian = sum[[3]], coverMean = sum[[4]], var = var(tmp$cover), 
-        numberOfPlots =length(tmp$PlotObservationID), neophyte = uniqueSpecies$Neophyte[i])
+  # For speed optimization we extract only the necessary information from EVA
+  reducedEva <- eva_country_neophyte |> select(PlotObservationID, Region,name, Neophyte,Layer,`Cover %`)
+  
+  reducedEva <- reducedEva |> group_by(PlotObservationID, Region,name, Neophyte, Layer) |> summarise(cover= sum(`Cover %`))
+  
+  reducedEva <- reducedEva|> group_by(PlotObservationID, Region, name, Neophyte) |> 
+    summarise(cover = (1-prod((1-ifelse(cover/100>1, 1, cover/100 ))))*100)
+  
+  uniqueSpecies <- unique(reducedEva[, c(3,4)])
+  
+  # Make empty dataframe
+  speciesDominance <- data.frame(names = character(), coverMedian = numeric(), coverMean = numeric(), var = numeric(), numberOfPlots = integer(), neophyte = logical())
+  
+  # Prepare running in parallel
+  parallel::detectCores()
+  n.cores <- parallel::detectCores() - 2
+  my.cluster <- parallel::makeCluster(
+    n.cores, 
+    type = "PSOCK"
+  )
+  print(my.cluster)
+  doParallel::registerDoParallel(cl = my.cluster)
+  foreach::getDoParRegistered()
+  foreach::getDoParWorkers()
+  
+  # Take time beginning
+  begin<- Sys.time()
+  # Do calculation of average and median cover+ variance in dataset
+ speciesDominance <-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
+    # Get dataset for each unique species
+      tmp <- reducedEva[reducedEva$name == uniqueSpecies$name[i]& reducedEva$Neophyte == uniqueSpecies$Neophyte[i],]
+    # Make ID a factor
+    tmp$PlotObservationID <- as.factor(tmp$PlotObservationID)
+    # Group by plot and calculate the mean species cover for that species in all plots where it is present
+    tmp <- tmp |> group_by(PlotObservationID) |> summarise(cover = mean(`cover`))
+    # We are only interested in the dominance of species occurring in at least 50 (?) plots 
+    if(length(tmp$PlotObservationID) >= 30) {
+      # Get the summary (median and mean at place 3 and 4) for when the species is present, also incorporating the variance and number of Plots
+      sum <- summary(tmp$cover)
+      x <- c(names = uniqueSpecies$name[i], coverMedian = sum[[3]], coverMean = sum[[4]], var = var(tmp$cover), 
+          numberOfPlots =length(tmp$PlotObservationID), neophyte = uniqueSpecies$Neophyte[i])
   }
 }
 # Ending and calculate time it took to perform the calculations
@@ -137,15 +142,17 @@ row.names(speciesDominance)<- c(1:length(speciesDominance$names))
 speciesDominance[,c(2:5)]<- apply(speciesDominance[, c(2:5)], MARGIN= 2, FUN= as.numeric)
 # Stop the cluster
 parallel::stopCluster(cl = my.cluster)
+#write_csv(speciesDominance, "speciesDominance_new.csv")
 } else{
   if(native_intra_analysis){
   speciesDominance<- read.csv("speciesDominance_native_intra.csv")
   }else{
-  speciesDominance<- read.csv("speciesDominance_new_categorization_50.csv")
-  #write.csv(speciesDominance, "speciesDominance_new_categorization_50_cover_all_layer_cleaned.csv")
+  speciesDominance<- read.csv("speciesDominance.csv")
   }
 }
 ```
+
+
 
 
 We also analyse which species are significantly negative / positive when compared to the distribution of the native species. We do this for all plants.
@@ -158,164 +165,303 @@ speciesDominance$significantCoverMean <- as.factor(cut(speciesDominance$coverMea
 ```
 
 
-## 2.5 Analysis
+
+## 2.2 Analysis
 We perform a small analysis on the data by looking at the mean values for native, intra and extra and analyse whether they are significantly different from each other
 ```{r}
-speciesDominance<- speciesDominance[speciesDominance$coverMean>0,]
+names <- speciesDominance$names
 
+check <-vegdata::parse.taxa(names)
+
+genus <- check[is.na(check$epi1),]
+
+speciesDominance <- speciesDominance[!speciesDominance$names %in% genus$original,]
+genus_country <- species_country_status[species_country_status$name %in% genus$original,]
+#write_csv(genus_country, "genus_country.csv")
+```
+
+
+
+```{r}
+speciesDominance<- speciesDominance[speciesDominance$coverMean>0,]
+speciesDominance <- speciesDominance[!speciesDominance$names %in% genus$original,]
+
+# test the distributions
+hist(log10(speciesDominance$coverMean))
 hist(log10(speciesDominance$coverMean[speciesDominance$neophyte=="extra"]))
 hist(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native"]))
 hist(log10(speciesDominance$coverMean[speciesDominance$neophyte=="intra"]))
 #hist(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native_intra"]))
 
+# test the variance per group 
+leveneTest(log10(speciesDominance$coverMean), speciesDominance$neophyte, location="mean")
+# not normal residuals
+shapiro.test(resid(aov(log10(speciesDominance$coverMean) ~ speciesDominance$neophyte))[1:5000])
+hist(resid(aov(log10(speciesDominance$coverMean) ~ speciesDominance$neophyte)))
+# test homoscedasticity
+bartlett.test(log10(speciesDominance$coverMean), speciesDominance$neophyte)
 
-model<-(aov(log10(coverMean) ~ neophyte, data= speciesDominance))
+
+# non parametric
+
+# ranked test
+model<-(aov(rank(log10(coverMean)) ~ neophyte, data= speciesDominance))
 summary(model)
 TukeyHSD(model)
 plot(TukeyHSD(model, conf.level=.95), las = 2)
+
+# Welch Anova
+model<-(oneway.test((log10(coverMean)) ~ neophyte, data= speciesDominance, var.equal = F))
+model
+tt1 <- posthoc_anova(log10(coverMean) ~ neophyte, data= speciesDominance, method="Tukey")
+#comp<- agricolae::kruskal(log10(speciesDominance$coverMean),speciesDominance$neophyte, p.adj="BH")
+tt1$groups
+
+# kruskal wallis test
+KW<-kruskal.test(log10(coverMean) ~ neophyte, data = speciesDominance)
+KW$p.value
+pairwise.wilcox.test(log10(speciesDominance$coverMean), speciesDominance$neophyte,
+                 p.adjust.method = "BH")
+dunnTest(log10(coverMean) ~ neophyte, data = speciesDominance,method = "bh")
 ```
 
 
 ```{r}
 # Take a look at the most dominant species
 topdominant<- speciesDominance[order(speciesDominance$coverMean, decreasing=T),]
+topdominant<- topdominant[1:100,]
 topdominant_intra<- topdominant[topdominant$neophyte=="intra",]
 topdominant_extra <- topdominant[topdominant$neophyte=="extra",]
 ```
 
 
-## 2.6 Plot
+## 2.3 Plot
 ```{r}
 # Violin plot
-native_intra_analysis=F
+
 if(!native_intra_analysis){
-p<-ggplot(speciesDominance, mapping = aes(x= (neophyte), y = log10(coverMean), colour = neophyte)) + 
+  my_comparisons <- list( c("extra", "intra"), c("intra", "native"), c("extra", "native") )
+
+p<-ggplot(speciesDominance, mapping = aes(x= (neophyte), y = log10(coverMean), group= neophyte, colour = neophyte, fill= neophyte)) + 
   # create violin plot with x axis no title and y 
-  geom_violin()+ylab("Mean cover when present (%)") +
+  geom_violin(alpha= 0.5, scale= "width")+
+  geom_boxplot(width= 0.25, alpha=0.8, fill="white") +
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", label.y = c(2.1, 2.3, 2.5))+
+  ylab("Mean cover when present (%)") +
   scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
-                    name="Legend",
                     breaks=c("native", "intra","extra"),
-                    labels=c("native species", "intra European neophyte", "extra European neophyte")) +
+                    labels=c("native species", "intra European aliens", "extra European aliens")) +
   guides(color="none")+
+  theme(legend.position = "none")+
   stat_summary(fun= "mean",
                geom = "point", aes(group= neophyte), size=3)+
-  theme_classic()+
-  scale_y_continuous(breaks = c(-1, 0, 1, 2), labels = c(0.1,1,10,100), limits=c(-1, 2.2))+
-  scale_x_discrete(labels=  c("extra-European \n neophytes",  "intra-European \n neophytes", "native species"))+ 
-  theme(axis.text.x = element_text(size=10), axis.title.y=element_text(size=12), axis.title.x = element_blank(), axis.text.y = element_text(size=10))+
-  annotate("text", x = 1, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="extra"])), label = "c", size = 3.5, vjust = -2, hjust = 0.5) +
-  annotate("text", x = 2, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="intra"])), label = "b", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x = 3, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native"])), label = "a", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x=1, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=2, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=3, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = -0.5, hjust = 0.5, size=3.5)
-p
-#ggsave("Dominance New 50.jpeg", p,width = 6, height = 4)
+  scale_y_continuous(breaks = c(-1, 0, 1, 2), labels = c(0.1,1,10,100), limits=c(-1, 2.7))+
+  scale_x_discrete(labels=  c("extra-European \n aliens",  "intra-European \n aliens", "native species")) +
+  theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=12), axis.title.x = element_blank(), 
+        axis.text.y = element_text(size=10)) +
+  annotate("text", x = 1, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="extra"])), label = "a", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8) +
+  annotate("text", x = 2, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="intra"])), label = "b", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 3, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native"])), label = "c", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x=1, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = 0, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = 0, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = 0, hjust = 0.5, size=3.5)+
+  labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.0001"))))
+Dominance <- p
+
+ggsave("Dominance New 30.jpeg", p,width = 5, height = 5)
 }
 
 
 if(native_intra_analysis){
-  p<-ggplot(speciesDominance, mapping = aes(x= (neophyte), y = log10(coverMean), colour = neophyte)) + 
+  my_comparisons <- list( c("extra", "intra"), c("intra", "native"), c("extra", "native"), c("native", "native_intra"),
+                          c("native_intra", "intra"), c("native_intra", "extra"))
+
+p<-ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(coverMean), group= neophyte,  fill= neophyte, colour=neophyte)) + 
   # create violin plot with x axis no title and y 
-  geom_violin()+ylab("Mean cover when present (%)") +
-  scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#004D40"), 
-                    name="Legend",
-                    breaks=c("native","native_intra", "intra","extra"),
-                    labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte")) +
+  geom_violin(alpha= 0.3, scale= "width")+
+  geom_boxplot(width= 0.25, alpha=0.8, fill="white") +
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", label.y = c(2.1, 2.3, 2.5, 2.7,2.9,3.1), size= 3)+
+  ylab("Mean cover when present (%)") +
+  scale_colour_manual(values=c( "#004D40","#FFC107", "#1E88E5", "darkgreen"), 
+                    breaks=c("extra","intra", "native",  "native_intra")) +
+  scale_fill_manual(values=c( "#004D40","#FFC107", "#1E88E5", "darkgreen"), 
+                    breaks=c("extra","intra", "native",  "native_intra")) +
   guides(color="none")+
+  theme(legend.position = "none")+
   stat_summary(fun= "mean",
                geom = "point", aes(group= neophyte), size=3)+
-  theme_classic()+
-  scale_y_continuous(breaks = c(-1, 0, 1, 2), labels = c(0.1,1,10,100), limits=c(-1, 2.2))+
-  scale_x_discrete(labels=  c("extra-European \n neophytes",  "intra-European \n neophytes","native species", "native species \nalien elsewhere"))+
-   theme(axis.text.x = element_text(size=10), axis.title.y=element_text(size=12), axis.title.x = element_blank(), axis.text.y = element_text(size=10))+
-  annotate("text", x = 1, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="extra"])), label = "d", size = 3.5, vjust = -2, hjust = 0.5) +
-  annotate("text", x = 2, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="intra"])), label = "c", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x = 3, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native"])), label = "a", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x = 4, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native"])), label = "b", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x=1, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=2, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=3, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=4, y=2.1, label= paste("n=",sum(speciesDominance$neophyte=="native_intra")), vjust = -0.5, hjust = 0.5, size=3.5)
+  scale_y_continuous(breaks = c(-1, 0, 1, 2), labels = c(0.1,1,10,100), limits=c(-1, 3.3))+
+ scale_x_discrete(labels=  c("extra-European \n neophytes",  "intra-European \n neophytes","native species", 
+                             "native species \nalien elsewhere")) +
+  theme(axis.text.x = element_text(size=10), axis.title.y=element_text(size=12), axis.title.x = element_blank(), 
+        axis.text.y = element_text(size=10)) +
+  annotate("text", x = 1, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="extra"])), label = "a", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8) +
+  annotate("text", x = 2, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="intra"])), label = "b", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 3, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native"])), label = "d", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 4, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native_intra"])), label = "c", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x=1, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = 0, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = 0, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = 0, hjust = 0.5, size=3.5)+
+  annotate("text", x=4, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="native_intra")), vjust = 0, hjust = 0.5, size=3.5)+
+  labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.0001"))))
 p
-ggsave("Dominance New 50.jpeg", p,width = 6, height = 4)
-  
-  
+Dominance <- p
 }
+p
 ```
-
 
 # 3 FREQUENCY
 ## 3.1 Analysis
 The data is present in speciesDominance, which facilitates the calculations
 ```{r}
+# distribution
 hist((log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="extra"])))
 hist(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native"]))
 hist(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="intra"]))
+# test the variance per group 
+leveneTest(log10(speciesDominance$numberOfPlots), speciesDominance$neophyte, location="mean")
+# not normal residuals
+shapiro.test(resid(aov(log10(speciesDominance$numberOfPlots) ~ speciesDominance$neophyte))[1:5000])
+hist(resid(aov(log10(speciesDominance$numberOfPlots) ~ speciesDominance$neophyte)))
+# test homoscedasticity
+bartlett.test(log10(speciesDominance$numberOfPlots), speciesDominance$neophyte)
 
+
+# ranked test
 model<-(aov(log10(numberOfPlots) ~ neophyte, data= speciesDominance))
 summary(model)
 TukeyHSD(model)
 plot(TukeyHSD(model, conf.level=.95), las = 2)
+
+
+# kruskal wallis test
+kruskal.test(log10(numberOfPlots) ~ neophyte, data = speciesDominance)
+pairwise.wilcox.test(log10(speciesDominance$numberOfPlots), speciesDominance$neophyte,
+                 p.adjust.method = "BH")
+dunnTest(log10(coverMean) ~ neophyte, data = speciesDominance,method = "bh")
 ```
+
+```{r}
+
+# Take a look at the most dominant species
+topfrequent<- speciesDominance[order(speciesDominance$numberOfPlots, decreasing=T),]
+topfrequent<- topfrequent[1:100,]
+topdominant_intra<- topdominant[topdominant$neophyte=="intra",]
+topdominant_extra <- topdominant[topdominant$neophyte=="extra",]
+```
+
+
 
 ## 3.2 Plot
 ```{r}
 # Violin plot
 # plot frequency
-if(native_intra_analysis){
-p<- ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(numberOfPlots), colour = neophyte)) + 
-   geom_violin() +
-  ylab("log10 (number of occurences)") + xlab(NULL)+
+if(!native_intra_analysis){
+p<- ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(numberOfPlots), colour = neophyte, group=neophyte, fill= neophyte)) + 
+  geom_violin(alpha= 0.5, scale= "width")+
+  geom_boxplot(width= 0.25, alpha=0.8, fill="white") +
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", label.y = c(5.5, 5.8, 6.1), size=3)+
+  ylab(expression("log"[10]* " number of occurences")) + xlab(NULL)+
   scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
                     name="Legend",
                     breaks=c("native", "intra","extra"),
-                    labels=c("native species", "intra European neophyte", "extra European neophyte")) +
+                    labels=c("native species", "intra European aliens", "extra European aliens")) +
   guides(color="none")+
   stat_summary(fun= "mean",
                geom = "point", aes(group= neophyte), size=3)+
-  theme_classic()+
-  scale_x_discrete(labels= c("extra-European \n neophytes",  "intra-European \n neophytes", "native species")) +
+  guides(color="none")+
+  theme(legend.position = "none")+
+  scale_x_discrete(labels= c("extra-European \n aliens",  "intra-European \n aliens", "native species")) +
   theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=12) )  +
   theme(plot.subtitle=element_text(size=12)) + 
-  annotate("text", x = 1, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="extra"])), label = "b", size = 3.5, vjust = -2, hjust = 0.5) +
-  annotate("text", x = 2, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="intra"])), label = "a", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x = 3, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native"])), label = "b", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x=1, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=2, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=3, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = -0.5, hjust = 0.5, size=3.5)
-p
-#ggsave("Frequency New 50.jpeg", p,width = 6, height = 4)
-} else {
-p<- ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(numberOfPlots), colour = neophyte)) + 
-   geom_violin() +
-  ylab("log10 (number of occurences)") + xlab(NULL)+
-  scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#004D40"), 
-                    name="Legend",
-                    breaks=c("native","native_intra", "intra","extra"),
-                    labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte")) +
-  guides(color="none")+
-  stat_summary(fun= "mean",
-               geom = "point", aes(group= neophyte), size=3)+
-  theme_classic()+
-  scale_x_discrete(labels=  c("extra-European \n neophytes",  "intra-European \n neophytes","native species", "native species \nalien elsewhere"))+
-   theme(axis.text.x = element_text(size=10), axis.title.y=element_text(size=12), axis.title.x = element_blank(), axis.text.y = element_text(size=10))+
-  annotate("text", x = 1, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="extra"])), label = "b", size = 3.5, vjust = -2, hjust = 0.5) +
-  annotate("text", x = 2, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="intra"])), label = "a", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x = 3, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native"])), label = "c", size = 3.5, vjust = -2, hjust = 0.5)+
-  annotate("text", x = 4, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native"])), label = "d", size = 3.5, vjust = -2, hjust = 0.5)+
+  annotate("text", x = 1, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="extra"])), label = "b", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8) +
+  annotate("text", x = 2, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="intra"])), label = "c", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 3, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native"])), label = "a", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
   annotate("text", x=1, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = -0.5, hjust = 0.5, size=3.5)+
   annotate("text", x=2, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
   annotate("text", x=3, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = -0.5, hjust = 0.5, size=3.5)+
-  annotate("text", x=4, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="native_intra")), vjust = -0.5, hjust = 0.5, size=3.5)
+  labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.0001"))))
+Frequency <- p
 p
-#ggsave("Frequency New 50 native_intra.jpeg", p,width = 6, height = 4)
-  
+#ggsave("Frequency New 10.jpeg", p,width = 6, height = 4)
+} else {
+p<- ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(numberOfPlots), colour = neophyte, group=neophyte, fill= neophyte)) + 
+  geom_violin(alpha= 0.3, scale= "width")+
+  geom_boxplot(width= 0.25, alpha=0.8, fill="white") +
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", label.y = c(5.5, 5.8, 6.1, 6.4,6.7,7), size=3)+
+  ylab(expression("log"[10]* " number of occurences")) + xlab(NULL)+
+  scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40", "darkgreen"), 
+                    name="Legend",
+                    breaks=c("native", "intra","extra", "native_intra"),
+                    labels=c("native species", "intra European aliens", "extra European aliens", "native species alien elsewhere")) +
+  scale_fill_manual(values=c( "#004D40","#FFC107", "#1E88E5", "darkgreen"), 
+                    breaks=c("extra","intra", "native",  "native_intra")) +
+  guides(color="none")+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= neophyte), size=3)+
+  guides(color="none")+
+  theme(legend.position = "none")+
+  scale_x_discrete(labels= c("extra-European \n aliens",  "intra-European \n aliens", "native species",
+                             "native species \nalien elsewhere")) +
+  theme(axis.text.x = element_text(size=10), axis.title.y=element_text(size=12) )  +
+  theme(plot.subtitle=element_text(size=12)) + 
+  annotate("text", x = 1, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="extra"])), label = "c", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8) +
+  annotate("text", x = 2, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="intra"])), label = "d", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 3, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native"])), label = "b", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 4, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native_intra"])), label = "a",size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x=1, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=4, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="native_intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.0001"))))
+Frequency <- p
+p  
+
 }
+
+
+plot <- ggarrange(Dominance,Frequency, nrow=1, ncol=2, labels= c("a","b"),font.label = list(size = 12, color))
+plot
+
+ggsave("Dominance_native_intra.jpg", plot= plot, width = 10, height = 5)
+
 ```
 
-# 4 Export
+
+
+
+
+# 4 Analysis
+## 4.1 Correlation
 ```{r}
-#write.csv(speciesDominance, "speciesDominance_new_categorization_50.csv")
+cor(speciesDominance$coverMean, speciesDominance$numberOfPlots)
+cor(topdominant$coverMean, topdominant$numberOfPlots)
+cor(topfrequent$coverMean, topfrequent$numberOfPlots)
 ```
+
+
+## 4.2 Species
+```{r}
+species <- speciesDominance[speciesDominance$significantCoverMean== "p=0.01 positive",]
+```
+
+
 
