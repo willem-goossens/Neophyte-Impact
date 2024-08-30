@@ -38,6 +38,7 @@ if(fast) {
   eva <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_species.csv", "\t")
 }
 
+length(unique(eva$PlotObservationID))
 # Filter out all rows which don't have a plot ID
 eva <- eva[!is.na(eva$PlotObservationID),]
 
@@ -46,7 +47,6 @@ unique(eva$`Taxon group`)
 # there are quite some groups not to be included
 # only vascular plants will be studied
 ```
-
 
 
 # 3 EURO+MED
@@ -113,7 +113,8 @@ any(duplicated(dup$`Taxon group`[dup$`Matched concept` %in% unique(dup$`Taxon gr
 
 # change in eva and eva_names these taxons
 eva_names$`Taxon group`[eva_names$`Matched concept` %in% no_dup$`Matched concept`] <- 
-  no_dup$`Taxon group`[match(eva_names$`Matched concept`[eva_names$`Matched concept` %in% no_dup$`Matched concept`],no_dup$`Matched concept`)]
+  no_dup$`Taxon group`[match(eva_names$`Matched concept`[eva_names$`Matched concept` %in% no_dup$`Matched concept`],
+                             no_dup$`Matched concept`)]
 eva$`Taxon group`[eva$`Matched concept` %in% no_dup$`Matched concept`] <- 
   no_dup$`Taxon group`[match(eva$`Matched concept`[eva$`Matched concept` %in% no_dup$`Matched concept`],no_dup$`Matched concept`)]
 ```
@@ -159,6 +160,7 @@ eva <- eva[!eva$`Taxon group` %in% c("Lichen", "Moss", "Alga", "Stonewort", "Mus
 unique(eva$`Taxon group`)
 ```
 
+
 ## 3.3 Euro+Med
 ```{r}
 # unique names and taxon group combinations (same length as unique species)
@@ -183,12 +185,38 @@ sum(is.na(eva_names$euro))
 eva$species <-eva_names$euro[match(eva$`Matched concept`, eva_names$species)]
 ```
 
+## 3.4 Idoia file
+```{r}
+idoia <- readxl::read_excel("~/Boeren/Impact/eva_neophytes/Core authors/Neophyte paper_taxonomic issues_IB.xlsx")
+
+change <- data.frame(old = c("Acantholimon echinus", "Adenostyles platyphylloides", "Anemone narcissifolia subsp. biarmiensis", "Anthemis montana var. Linneana","Astragalus microcephalus","Atropis distans var. convulata", "Avena bromoides subsp. australis","Bidens tripartita","Bromus tomentellus","Campanula biebersteiniana","Campanula spatulata subsp. sprunerana","Carduus argemone subsp. obtusisquamus","Carex acuta x nigra", "Centaurea pulcherrima","Diplotaxis virgata subsp. Virgata","Festuca oreophila","Nepeta mussinii","Ranunculus auricomus coll.","Taraxacum gr alpinum","Thymus praecox subsp. penyalarensis"),
+            new= c("Acantholimon ulicinum", "Caucasalia pontica","Anemonastrum narcissiflorum subsp. crinitum","Anthemis cretica","Astracantha microcephala","Puccinellia festuciformis","Helictochloa cincinnata","Bidens tripartitus","Bromopsis tomentella","Campanula tridentata", "Campanula spatulata","Carduus defloratus","Carex x elytroides","Psephellus pulcherrimus","Diplotaxis virgata subsp. virgata","Festuca valesiaca subsp. hypsophila","Nepeta racemosa subsp. racemosa","Ranunculus auricomus aggr.","Taraxacum alpinum aggr.","Thymus praecox subsp. ligusticus"))
+
+check <- eva_names[eva_names$species %in% change$old,]
+
+# how may observations will be changed
+sum(!is.na(match(eva$`Matched concept`[is.na(eva$species)], change$old)))
+
+# change in eva
+eva$species[is.na(eva$species)] <- change$new[match(eva$`Matched concept`[is.na(eva$species)], change$old)]
+
+# also change in eva names
+eva_names$euro[is.na(eva_names$euro)]<- change$new[match(eva_names$species[is.na(eva_names$euro)], change$old)]
+# check how many unique species are extra added to our dataset file
+sum(is.na(eva_names$euro))
+```
+
+Check species now not yet
+```{r}
+eva_names <- eva_names[is.na(eva_names$euro),]
+```
+
 
 # 4 POWO
 ## 4.1 Powo search
 Search internet
 ```{r}
-
+# species that came up later and had to be checked
 change <- data.frame(old= c("Carex divulsa  subsp. coriogyne"), new= c("Carex divulsa subsp. coriogyne"))
 eva$`Matched concept`[eva$`Matched concept` %in% change$old] <- change$new
 
@@ -197,9 +225,6 @@ eva_names <- as.data.frame(unique(eva$`Matched concept`[is.na(eva$species)]))
 colnames(eva_names)<- "species"
 # add taxon
 eva_names$taxon <- eva$`Taxon group`[match( eva_names$species, eva$`Matched concept`)]
-
-
-fast=F
 
 if(fast){
   # search powo and store results in list if we find a direct match
@@ -220,7 +245,6 @@ if(fast){
   #saveRDS(mybiglist, "species_powo_new.RData")
 } else {
     # read all data
-    #mybiglist<- readRDS("species_powo.RData")
     mybiglist<- readRDS("species_powo_new.RData")
 }
 ```
@@ -229,30 +253,35 @@ if(fast){
 ## 4.2 Accepted names
 ```{r}
 # empty dataframe
-accepted <- data.frame(new_name = character(), old_name = character(), number= numeric(), taxon= character())
+accepted <- data.frame(new_name = character(), old_name = character(), number= numeric(), taxon= character(), acc = numeric())
 
-
+test <- mybiglist[!is.na(mybiglist[])]
 
 # give the accepted name to the old species name
 for(i in 1: length(eva_names$species)){
   # first check if there is an accepted name
   if(!all(is.na(mybiglist[[i]]))){
     # check whether there are accepted names
-    if(any(mybiglist[[i]]$accepted==T)){
-      accepted <- add_row(accepted, new_name= mybiglist[[i]]$name[mybiglist[[i]]$accepted==T], old_name =eva_names$species[i],  
-                          number= i, taxon= eva_names$taxon[i])
+    if(sum(mybiglist[[i]]$accepted==T)){
+      if(sum(mybiglist[[i]]$accepted==T)<2){
+          accepted <- add_row(accepted, new_name= mybiglist[[i]]$name[mybiglist[[i]]$accepted==T], old_name =eva_names$species[i],  
+                              number= i, taxon= eva_names$taxon[i], acc= 1)
+      } else {
+          accepted <- add_row(accepted, new_name= mybiglist[[i]]$name[mybiglist[[i]]$accepted==T], old_name =eva_names$species[i],  
+                              number= i, taxon= eva_names$taxon[i], acc= 2) 
+          }
     } else {
-      accepted <- add_row(accepted, new_name= NA, old_name =eva_names$species[i] ,  number= i, taxon=eva_names$taxon[i])
+      accepted <- add_row(accepted, new_name= NA, old_name =eva_names$species[i] ,  number= i, taxon=eva_names$taxon[i], acc= 0)
     }
   } else {
-      accepted <- add_row(accepted, new_name= NA,old_name = eva_names$species[i],  number= i, taxon= eva_names$taxon[i] )
+      accepted <- add_row(accepted, new_name= NA,old_name = eva_names$species[i],  number= i, taxon= eva_names$taxon[i], acc=0 )
   } 
 }
 
 
 # some species have multiple accepted names
 accepted_dup <- accepted[accepted$old_name %in% accepted$old_name[duplicated(accepted$old_name)],]
-length(unique(accepted_dup$number))
+length(unique(accepted_dup$old_name))
 
 # check the unique names
 extra<- as.data.frame(unique(accepted_dup$old_name))
@@ -262,11 +291,15 @@ plant_list<- TPL(extra$`unique(accepted_dup$old_name)`)
 # these are definetely wrong so remove
 remove <- c("unknown* species","Grass species","? species", "Mos ?", "Unknown species", "Moss species","Fungus species", 
             "unknown species", "Unknown species 3", "Unknown species 5", "moss* species", "Unknown* species", "Other mosses", 
-            "Gray lichen", "Small grass", "Spec species", "Tuberous plant","Rubiales species","Orchidaceae* species","Asteraceae* species","Cruciferae* species","Boraginaceae* species","Morio species", "Decumbens species","Fusarium species","Pteridophyta species","Nostoc species","Genus species","Liverworts* species","Unknown sp", "bryophytes* species","Algae species","Mos species","Orchidacea sp","Gras species","Sponge species","Algae* species", "Algas species", "Liverwort species","Palustris species")
+            "Gray lichen", "Small grass", "Spec species", "Tuberous plant","Rubiales species","Orchidaceae* species","Asteraceae* species","Cruciferae* species","Boraginaceae* species","Morio species", "Decumbens species","Fusarium species","Pteridophyta species","Nostoc species","Genus species","Liverworts* species","Unknown sp", "bryophytes* species","Algae species","Mos species","Orchidacea sp","Gras species","Sponge species","Algae* species", "Algas species", "Liverwort species","Palustris species", "Chamaecytisus species")
+
 
 # remove these species from the duplicates and eva
 accepted_dup <- accepted_dup[!accepted_dup$old_name %in% remove,]
 eva <- eva[!eva$`Matched concept` %in% remove,]
+
+# look at accepted_dup which species remain and assign ourselves
+unique(accepted_dup$old_name)
 
 # some species were not found
 accepted_na <- accepted[is.na(accepted$new_name),]
@@ -323,14 +356,18 @@ taxonNameCorrections <- read_csv("../Neophyte-Impact/Neophyte Assignments/Unique
 
 
 # add column
-eva$irena <- taxonNameCorrections$species[match(tolower(eva$`Matched concept`),
-                                                    tolower(taxonNameCorrections$Matched.concept))]
+eva$irena <- taxonNameCorrections$species[match(tolower(eva$`Matched concept`),                                                    tolower(taxonNameCorrections$Matched.concept))]
 
 # create list species irena not we
 irena <- as.data.frame(unique(eva$irena[is.na(eva$species)]))
 colnames(irena)<-"species"
 irena$old_names <- eva$`Matched concept`[match(irena$species, eva$irena)]
 irena$taxon <- eva$`Taxon group`[match(irena$species, eva$irena)]
+
+change <- data.frame(old = c("Acantholimon echinus", "Adenostyles platyphylloides", "Anemone narcissifolia subsp. biarmiensis", "Anthemis montana var. Linneana","Astragalus microcephalus","Atropis distans var. convulata", "Avena bromoides subsp. australis","Bidens tripartita","Bromus tomentellus","Campanula biebersteiniana","Campanula spatulata subsp. sprunerana","Carduus argemone subsp. obtusisquamus","Carex acuta x nigra", "Centaurea pulcherrima","Diplotaxis virgata subsp. Virgata","Festuca oreophila","Nepeta mussinii","Ranunculus auricomus coll.","Taraxacum gr alpinum","Thymus praecox subsp. penyalarensis"),
+            new= c("Acantholimon ulicinum", "Caucasalia pontica","Anemonastrum narcissiflorum subsp. crinitum","Anthemis cretica","Astracantha microcephala","Puccinellia festuciformis","Helictochloa cincinnata","Bidens tripartitus","Bromopsis tomentella","Campanula tridentata", "Campanula spatulata","Carduus defloratus","Carex x elytroides","Psephellus pulcherrimus","Diplotaxis virgata subsp. virgata","Festuca valesiaca subsp. hypsophila","Nepeta racemosa subsp. racemosa","Ranunculus auricomus aggr.","Taraxacum alpinum aggr.","Thymus praecox subsp. ligusticus"))
+
+irena$idoia <- change$new[match(irena$species, change$old)]
 
 # use tpl to delineate species which are certainly not relevant for us
 plant_list <- TPL(vegdata::taxname.abbr(irena$old_names))
@@ -348,7 +385,8 @@ remove <- c("Hakvrucht cultuurgewas","Graan cultuurgewas","Gras species",
             "Dicot sp.1","Keimling species 2","Plant onbekend","Dicotyledone species",
             "Spermatophyta species","Kiemplant species","Gefaesspflanze species",
             "Dicotyledones species","Microspermae species","Pteridophyta species",
-            "Crucifer species","Rubiales species")
+            "Crucifer species","Rubiales species","Hepaticae*","Hepaticopsida",
+            "Hepaticae* species","Hepaticopsida species")
 
 # check again
 check <- check[!check$YOUR_SEARCH %in% remove,]
@@ -356,6 +394,9 @@ check <- check[!check$YOUR_SEARCH %in% remove,]
 # remove indefinetely
 eva<- eva[!eva$irena %in% remove,]
 
+# which will we add
+length(eva$irena[is.na(eva$species)])
+unique(eva$irena[is.na(eva$species)])
 # give na species irena names
 eva$species[is.na(eva$species)] <- eva$irena[is.na(eva$species)]
 ```
@@ -363,9 +404,11 @@ eva$species[is.na(eva$species)] <- eva$irena[is.na(eva$species)]
 
 ```{r}
 # some species are incorrectly assigned by powo previously and have to be removed, this can be checked by comparing old name and assigned name
-remove <- c("bryophytes* species","Hepaticopsida species","Nostoc species", "Bryophyta sp","Nostocaceae species","Algae species",
-            "Unknown species 4","Unknown sp","Algae* species","Poaceae, leguminosae...","crustaceous lichens","Biota species",
-            "Parmeliaceae species")
+remove <- c("bryophytes* species","Hepaticopsida species","Nostoc species", 
+            "Bryophyta sp","Nostocaceae species","Algae species",
+            "Unknown species 4","Unknown sp","Algae* species","Poaceae",
+            "leguminosae...","crustaceous lichens","Biota species",
+            "Parmeliaceae species", "Carex sp.1")
 eva <- eva[!eva$`Matched concept`%in% remove,]
 ```
 
@@ -389,8 +432,16 @@ plant_list$species <- unknown$`Matched concept`[match(plant_list$YOUR_SEARCH, ve
 # check file for wrong species
 check <- plant_list[is.na(plant_list$GROUP),]
 
+# read file delineation taxa Christian to check whether some of our species not recognised in TPL have to be changed
+taxonGroupAssignments <- read_csv("../Intermediate Data/taxa_taxon_group_assignments.csv", show_col_types = FALSE)
+# combine
+check$christian <- taxonGroupAssignments[match(taxonGroupAssignments$Matched.concept, check$species)]
+
 # remove these from eva --> not reasonable checking all of them
 eva <- eva[!eva$`Matched concept`%in% check$species,]
+
+##################################################################
+# work
 
 # here are some species that should be changed
 own_class <- data.frame(species= c("Centaurea bimorpha",
@@ -523,22 +574,47 @@ check <- eva[eva$`Matched concept` %in% accepted_dup$old_name,]
 check <- check[!duplicated(check$`Matched concept`),]
 # 200 from the 241 species with multiple entries were given their matched concept name or the name from Irena
 # 41 species were removed
+```
 
-# check against old file
-new <- read_csv("eva_euro_own.csv")
+# 8 Aggregate
+## 8.1 Subspecies
+```{r}
+# unique names
+eva_names <- as.data.frame(unique(eva$species))
+colnames(eva_names)<- c("species")
+eva_names$taxon <- eva$`Taxon group`[match(eva_names$species, eva$`Matched concept`)]
 
-# here present
-check<- eva[!eva$species %in% new$species,]
-# new present
-check<- new[!new$species %in% eva$species,]
+read.delim("../Impact/eva_neophytes/EIVE Data/Names/Austria_ExpertSystem.txt")
 
-# check difference
-setdiff(new, eva[,1:12])
-setdiff(eva[,1:12], new)
+# reduce size
+x<- vegdata::parse.taxa(eva_names$species)
+# look at data
+x <- x[,1:5]
+# make the epi1 named sect. NA
+x$epi1[x$epi1=="sect."] <- NA
+
+eva_names$name <- eva_names |> unite
+
+# combine names
+eva_names <- cbind(eva_names, paste(x$genus, coalesce(x$epi1, ""),coalesce(x$rank.suff, ""), coalesce(x$epi2, "")))
+
+
+# add name
+colnames(eva_names)[3]<- "name"
+# remove all names for which we put an NA previously
+eva_names$name[is.na(x$epi1)]<- NA
+
+
+# add to eva
+eva$name <- eva_names$name[match(eva$species, eva_names$species)]
+
+eva_species <- unique(eva_names$name)
 ```
 
 
-# 8 SAVE
+
+
+# 9 SAVE
 ```{r}
 #write_csv(eva, "eva_euro_own.csv")
 #write_csv(eva, "eva_euro_own2.csv")
