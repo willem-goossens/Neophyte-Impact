@@ -122,6 +122,11 @@ if(intra_analysis){
 further= F
 if(further){
 
+species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+aliens <- species_country_status[species_country_status$Neophyte=="intra"| species_country_status$Neophyte=="extra",c(1:2,4:5, 9) ] 
+colnames(aliens)<- c("Region","Accepted name","Original EVA name","Aggregated name","Status")
+write_csv(aliens, "aliens.csv")  
+  
 ###### 2.3 extra-EU #######
 # Data on which species are neophytes from outside of Europe
 neophyteDefinitions <- read_csv("../Neophyte-Impact/Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv", show_col_types = FALSE)
@@ -755,10 +760,11 @@ all.equal(sort(unique(glonafSpecies$region_id)), sort(glonafRegionList$region_id
 glonafSpecies <- left_join(glonafSpecies,glonafRegionList, by="region_id")
 glonafSpecies<- glonafSpecies[, c("standardized_name","region_id","tdwg4_name")]
 names(glonafSpecies)[names(glonafSpecies) == 'tdwg4_name'] <- 'Region'
+#glonafSpecies <- unique(glonafSpecies[, c(1,3:4)])
 
 # To be able to compare GLONAF and our data, we check the names
-setdiff(unique(glonafSpecies$Region), unique(eva_country_neophyte$Region))
-setdiff(unique(eva_country_neophyte$Region), unique(glonafSpecies$Region))
+setdiff(unique(glonafSpecies$Region), unique(species_country_status$Region))
+setdiff(unique(species_country_status$Region), unique(glonafSpecies$Region))
 
 # We will take the names of GLONAF for this check-up
 correctCountries<- data.frame(Med=c("Rf.NW", "Rf.N","Rf.E", "Rf.C","Rf.S","Rf.K", "Rf.CS","Luxemburg","Bosnia.Herzegovina", "Italy" ,"Czech.Republic", "Greece", "France", 
@@ -771,24 +777,47 @@ correctCountries<- data.frame(Med=c("Rf.NW", "Rf.N","Rf.E", "Rf.C","Rf.S","Rf.K"
                                    "Sicilia", "Sardegna", "Spain", "Portugal", "F?royar"))
 
 # Change our names: first take the index
-index <- eva_country_neophyte$Region %in% correctCountries$Med
+index <- species_country_status$Region %in% correctCountries$Med
 # Change to correct for each Region
-eva_country_neophyte$Region[index] <- correctCountries$WF[match(eva_country_neophyte$Region[index],correctCountries$Med)]
+species_country_status$Region[index] <- correctCountries$WF[match(species_country_status$Region[index],correctCountries$Med)]
 # Quite some countries are not present in GLONAF, we will just check countries we have
-setdiff(unique(eva_country_neophyte$Region), unique(glonafSpecies$Region))
+setdiff(unique(species_country_status$Region), unique(glonafSpecies$Region))
 
 # Get names of regions
 glonafRegionNames<- unique(glonafSpecies$Region)
-MEDRegionNames <- unique(eva_country_neophyte$Region)
+MEDRegionNames <- unique(species_country_status$Region)
 
 # Subset datasets to be able to compare them
 glonafSpecies<- glonafSpecies[glonafSpecies$Region %in% MEDRegionNames,]
-medSpecies<- eva_country_neophyte[eva_country_neophyte$Region %in% glonafRegionNames,]
+medSpecies<- species_country_status[species_country_status$Region %in% glonafRegionNames,]
 
 # Take only neophytes
 medSpecies <- medSpecies[(medSpecies$Neophyte=="extra"|medSpecies$Neophyte=="intra"), ]
 # Take only all unique combinations of Region, species and definition.
-medUnique<- medSpecies |> group_by(Region, species, Neophyte) |> summarise(n=n())
+medUnique<- medSpecies |> group_by(Region,name, species, Neophyte) |> summarise(n=n())
+
+# give GLONAF our definition of species
+# Eva
+eva <- read_csv("fullPlotEva_ESy.csv", show_col_types = FALSE)
+eva_names <- unique(eva[, c(2:7)])
+
+# link name
+glonafSpecies$name <- eva_names$name[match(glonafSpecies$standardized_name, eva_names$name)]
+glonafSpecies$name[is.na(glonafSpecies$name)] <- eva_names$name[match(glonafSpecies$standardized_name[is.na(glonafSpecies$name)], eva_names$species)]
+glonafSpecies$name[is.na(glonafSpecies$name)] <- eva_names$name[match(glonafSpecies$standardized_name[is.na(glonafSpecies$name)], eva_names$irena)]
+glonafSpecies$name[is.na(glonafSpecies$name)] <- eva_names$name[match(glonafSpecies$standardized_name[is.na(glonafSpecies$name)], eva_names$`Matched concept`)]
+glonafSpecies$name[is.na(glonafSpecies$name)] <- eva_names$name[match(glonafSpecies$standardized_name[is.na(glonafSpecies$name)], eva_names$`Turboveg2 concept`)]
+
+glonafSpecies <- glonafSpecies[!is.na(glonafSpecies$name),]
+
+
+CountRegions <- glonafRegionList |> group_by(tdwg4_name) |> summarise(n=n())
+glonafSpecies <- glonafSpecies |> group_by(name, standardized_name, Region) |> summarise(n=n())
+glonafSpecies$total <- CountRegions$n[match(glonafSpecies$Region, CountRegions$tdwg4_name)]
+glonafSpecies$rel <- glonafSpecies$n/glonafSpecies$total
+
+part<- glonafSpecies[(glonafSpecies$rel<1),]
+#glonafSpecies <- glonafSpecies[!(glonafSpecies$rel<1),]
 
 ###### 5.3 Compare #####
 # Get all species from GLONAF that are in our database
@@ -796,9 +825,10 @@ species_not_MED<- data_frame(country= c(), notMed=c())
 species_not_glonaf<- data_frame(country= c(), notGlonaf= c())
 
 # test which are not in dataset
-for (i in glonafRegionNames){
-  notMed<- setdiff(glonafSpecies$standardized_name[glonafSpecies$Region==i][glonafSpecies$standardized_name[glonafSpecies$Region==i] %in% eva_country_neophyte$species[eva_country_neophyte$Region==i]], medUnique$species[medUnique$Region==i])
-  notGlonaf<- setdiff(medUnique$species[medUnique$Region==i],glonafSpecies$standardized_name[glonafSpecies$Region==i][glonafSpecies$standardized_name[glonafSpecies$Region==i] %in% eva_country_neophyte$species[eva_country_neophyte$Region==i]])
+for (j in 1:length(glonafRegionNames)){
+  i <- glonafRegionNames[j]
+  notMed<- setdiff(glonafSpecies$name[glonafSpecies$Region==i][glonafSpecies$name[glonafSpecies$Region==i] %in% species_country_status$name[species_country_status$Region==i]], medUnique$name[medUnique$Region==i])
+  notGlonaf<- setdiff(medUnique$name[medUnique$Region==i],glonafSpecies$name[glonafSpecies$Region==i][glonafSpecies$name[glonafSpecies$Region==i] %in% species_country_status$name[species_country_status$Region==i]])
   notGlonaf<- cbind(rep(i, times=length(notGlonaf)), notGlonaf)
   notMed<-  cbind(rep(i, times=length(notMed)), notMed)
   # species in glonaf and not in ours
@@ -807,10 +837,36 @@ for (i in glonafRegionNames){
   species_not_glonaf<- rbind(species_not_glonaf, notGlonaf)
 }
 
+sum(species_not_glonaf$notGlonaf %in% part$name)
+sum(species_not_MED$notMed %in% part$name)
+
+write_csv(species_not_MED,"species_not_MED.csv")
+write_csv(species_not_glonaf,"species_not_GLONAF.csv")
+write_csv(eva_names, "eva_names.csv")
+
+species_MED<- data_frame(country= c(), notMed=c())
+species_glonaf<- data_frame(country= c(), notGlonaf= c())
+
+for (j in 1:length(glonafRegionNames)){
+  i <- glonafRegionNames[j]
+  notMed<- intersect(glonafSpecies$name[glonafSpecies$Region==i][glonafSpecies$name[glonafSpecies$Region==i] %in% species_country_status$name[species_country_status$Region==i]], medUnique$name[medUnique$Region==i])
+  notGlonaf<- intersect(medUnique$name[medUnique$Region==i],glonafSpecies$name[glonafSpecies$Region==i][glonafSpecies$name[glonafSpecies$Region==i] %in% species_country_status$name[species_country_status$Region==i]])
+  notGlonaf<- cbind(rep(i, times=length(notGlonaf)), notGlonaf)
+  notMed<-  cbind(rep(i, times=length(notMed)), notMed)
+  # species in glonaf and not in ours
+  species_MED<- rbind(species_MED,notMed)
+  # species in ours not in glonaf
+  species_glonaf<- rbind(species_glonaf, notGlonaf)
+}
+
+
 # Quite some species are defined as alien in our database while this is not true in Glonaf (2331 species over 41 countries)
 # Maybe worse is that quite some species are not defined as alien in our database but yes in Glonaf (1568 species over 41 countries)
 # Randomly checking some species from the latter case against KEW and CABI gives more trust to our own classification
 
+check <- eva[eva$name=="Origanum vulgare",]
+fullPlotData<- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+check2 <- fullPlotData[fullPlotData$PlotObservationID %in% check$PlotObservationID,]
 
 
 # check in kew whether the species is present in that region
