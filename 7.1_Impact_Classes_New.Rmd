@@ -29,7 +29,7 @@ library(DescTools)
 library(asbio)
 library(lme4)
 library(glmmTMB)
-library(sjPlot)
+library(ggeffects)
 ```
 
 
@@ -198,33 +198,63 @@ fullPlotData <- left_join(fullPlotData, test)
 
 
 ## 2.2 Base model
-We compute our base model with the best solution (see [rmarkdown link](6_Base_Model.Rmd)), which includes smoothers for all EIVE without weighting, smoothers for the DIV, a smoother for log(area), a smoother for spatial autocorrelation and the dataset as a random effect. We use a quasipoisson distribution with a log link function. 
-
-Note that this base model can be adjusted in future works based on what we decide (eg human footprint map values).
+Here we try the glmm approach
 ```{r}
 # Make Dataset a factor
 fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
 
-MDL <- glmer(ENS0 ~ EIVEresN+ cover_rel_intra + cover_rel_extra+ (1| Dataset), data=fullPlotData, family= poisson(link=log))
+# scale or not
+scaled=T
+if(scaled){
+  
+  # copy dataset
+  fullPlotData2 <-fullPlotData
+  
+  # scale the work to 0-1 scale
+  scale_values <- function(x){(x-min(x))/(max(x)-min(x))}
+  
+  # scale data 
+  fullPlotData[, c(4:12, 16:18)] <- apply(fullPlotData[, c(4:12, 16:18)], 2, scale_values)
+  # what about the cover values? Also scale these?
+}
+
+# run model
+MDL <- glmmTMB(ENS0 ~ EIVEresN+ hfp+ cover_rel_intra + cover_rel_extra+ EIVEresM+ EIVEresR+ EIVEresL+ EIVEresT+ 
+                DistSeverity.sqrt+ Soil.Disturbance.sqrt+ Grazing.Pressure.sqrt+ Mowing.Frequency.sqrt+
+                chelsaP+ (1| Dataset), data=fullPlotData, family= poisson(link=log))
 summary(MDL)
 
+# predict responses and plot
+pr <- predict_response(MDL, "cover_rel_intra [all]")
+plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "cover_rel_extra [all]")
+plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "EIVEresN [all]")
+plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "EIVEresM [all]")
+plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "EIVEresR [all]")
+plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "EIVEresT [all]")
+plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "EIVEresL [all]")
+plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "hfp [all]")
+plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "Soil.Disturbance.sqrt [all]")
+plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "chelsaP [all]")
+plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+
+
+# plot using visreg
 visreg::visreg(MDL, gg = TRUE, partial=FALSE, rug = F,  scale="response")
-
-# scale the work to 0-1 scale
-scaled <-fullPlotData
-
-scale_values <- function(x){(x-min(x))/(max(x)-min(x))}
-
-scaled[, c(4:12, 16:18)] <- apply(scaled[, c(4:12, 16:18)], 2, scale_values)
-
-MDL <- glmer(ENS0 ~ EIVEresN + cover_rel_intra + cover_rel_extra+ (1| Dataset), data=scaled, family= poisson(link=log))
-summary(MDL)
-
-visreg::visreg(MDL, scale="response", partial=T)
-
-plot(scaled$EIVEresN, scaled$ENS0)
+```
 
 
+Compare with the gamm model
+```{r}
+# this is the model 
 model<-  ENS0 ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
@@ -244,144 +274,52 @@ model<-  ENS0 ~
               s(cover_rel_intra)+
               s(cover_rel_extra)
 
+# run gamm
 baseModel <- bam(model,family = poisson, data = fullPlotData,  
                  method = 'fREML',  discrete=TRUE, nthreads=4)
-
 summary(baseModel)
 
-cor <- cor(fullPlotData[, c(2, 4:14, 16:34)], use="pairwise.complete.obs")
-
-library(ggeffects)
+# plot
 plot(ggpredict(baseModel, terms=c("EIVEresN")))
 plot(ggpredict(baseModel, terms= c("cover_rel_intra")))
 plot(ggpredict(baseModel, terms= c("cover_rel_extra")))
+plot(ggpredict(baseModel, terms= c("hfp")))
 
 
+# use visreg for all
 visreg::visreg(baseModel, scale= "response")
+
+# try to get it for only EIVEresN
 z <-visreg::visreg(baseModel, xvar = "EIVEresN", gg = TRUE, partial=T, rug = F,  scale="response", plot=F)
-
 plot(z, ylim=c(0,50))      
-points(fullPlotData$EIVEresN, fullPlotData$ENS0)
+points(fullPlotData$EIVEresN, fullPlotData$ENS0,  col = rgb(red=0.5, green=0, blue=0.5, 0.1))
 
+# now only cover intra
 z <-visreg::visreg(baseModel, xvar = "cover_rel_intra", gg = TRUE, partial=T, rug = F,  scale="response", plot=F)
-
-plot(z, ylim=c(0,50))
-points(fullPlotData$cover_rel_intra, fullPlotData$ENS0)
-
-plot(lm(ENS0~ EIVEresN, fullPlotData))
-z<-lm(ENS0~ EIVEresN + I(EIVEresN^2), fullPlotData)
-summary(z)
-
-
+plot(z, ylim=c(0,50)) 
+points(fullPlotData$cover_rel_intra, fullPlotData$ENS0, col= rgb(red=0.5, green=0, blue=0.5, 0.1))
 ```
 
 
+Try boosted regression tree
 ```{r}
-library(MuMIn)
+install.packages("gbm")
+library(gbm)
+install.packages("dismo")
+library(dismo)
 
-MDL <- glmer(ENS0 ~ EIVEresN+hfp+ cover_rel_extra + cover_rel_intra+ (1|Dataset), data= scaled, family= poisson(link=log))
+fullPlotData2 <- as.data.frame(fullPlotData2)
+BRTmodel <- gbm.step(data=fullPlotData2,
+                             gbm.x = c(4:12, 27:28), 
+                             gbm.y = 2, 
+                             family = "poisson",
+                             tree.complexity = 1,
+                             learning.rate = 0.01,
+                             bag.fraction = 0.5)
 
-MDL <- glmer(ENS0 ~ EIVEresN+ 
-                hfp + cover_rel_intra+  (1| Dataset),
-                data= scaled, family= poisson(link=log))
-
-MDL_dredge<-dredge(MDL, rank = AICc, options(na.action = na.fail))
-options(na.action = "na.omit")
-subset_models <- get.models(MDL_dredge, delta < 4)
-
-model_average <- model.avg((subset_models), fit=T )
-summary(model_average)
-MDL_AVG<- list(model_average)
+BRTmodel$contributions
+gbm.plot(BRTmodel, n.plots=11, write.title = F,
+         common.scale = TRUE, y.label="Fitted function",
+         show.contrib = TRUE)
 ```
-
-
-
-
-```{r}
-scaled <- fullPlotData
-scaled[, c(3:12, 16:25)] <- scale(scaled[, c(3:12, 16:25)], center=F, scale=T)
-
-# GLMM
-model<- glmer(ENS0 ~ log(Area) + EIVEresM+ EIVEresN+ EIVEresR+ EIVEresL+ EIVEresT+ 
-                DistSeverity.sqrt+ Soil.Disturbance.sqrt+ Grazing.Pressure.sqrt+ Mowing.Frequency.sqrt+
-                chelsaP+ hfp+ elev+ extra_n + intra_n+ native_n+  (1| Dataset), data= fullPlotData, family=Gamma(link = log))
-
-model<- glmmTMB(ENS0 ~ log(Area) + EIVEresM + I(EIVEresM^2) +  EIVEresN + I(EIVEresN^2) + 
-                    EIVEresR + I(EIVEresR^2) + EIVEresL + I(EIVEresL^2) + EIVEresT + I(EIVEresT^2) +
-                    DistSeverity.sqrt + I(DistSeverity.sqrt^2) +Soil.Disturbance.sqrt + I(Soil.Disturbance.sqrt^2) +
-                    Grazing.Pressure.sqrt + I(Grazing.Pressure.sqrt^2)+Mowing.Frequency.sqrt + I(Mowing.Frequency.sqrt^2)+
-                    chelsaP+ I(chelsaP^2)+hfp+ I(hfp^2)+elev+ I(elev^2)+ Longitude*Latitude+ (1| Dataset), 
-                    data= fullPlotData, family= poisson)
-
-model<- glmmTMB(ENS0 ~ log(Area) + EIVEresM^2 +  EIVEresN^2 +EIVEresR^2 +EIVEresL^2 + EIVEresT^2 +
-                    DistSeverity.sqrt^2 +Soil.Disturbance.sqrt^2 +Grazing.Pressure.sqrt^2 +Mowing.Frequency.sqrt^2+
-                    chelsaP^2+ hfp^2+ elev^2+ Longitude*Latitude+ (1| Dataset), 
-                    data= fullPlotData, family= poisson)
-
-model<- glmmTMB(ENS0 ~ log(Area) + EIVEresM+ I(EIVEresM^2) + (1| Dataset), 
-                    data= fullPlotData, family= poisson)
-
-model<- glmmTMB(ENS0 ~ log(Area) + EIVEresM+EIVEresN+ extra + intra+ native+ (1| Dataset), 
-                    data= fullPlotData, family= poisson)
-
-summary(model)
-
-
-model<-  ENS0 ~ 
-              s(log(Area),bs='tp') + 
-              s(EIVEresM, bs = 'tp') +
-              s(EIVEresN, bs = 'tp') +
-              s(EIVEresR, bs = 'tp') +
-              s(EIVEresL, bs = 'tp') +
-              s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
-              s(chelsaP, bs='tp')+
-              s(hfp, bs='tp')+
-              s(elev, bs='tp')+
-              s(Latitude, Longitude, bs = 'tp') +
-              s(Dataset, bs = 're')+
-              s(n_rel_intra)
-
-baseModel <- bam(model,family = poisson, data = fullPlotData,  
-                 method = 'fREML',  discrete=TRUE, nthreads=4)
-
-summary(baseModel)
-
-plot.gam(baseModel)
-
-visreg::visreg(baseModel, gg = TRUE, partial=FALSE, rug = F,  scale="response")
-
-plot_model(baseModel, type="pred", terms = c("EIVEresM [all]"))
-plot_model(baseModel, type="pred", terms = c("EIVEresN [all]"))
-plot_model(baseModel, type="pred", terms = c("EIVEresL [all]"))
-plot_model(baseModel, type="pred", terms = c("EIVEresR [all]"))
-plot_model(baseModel, type="pred", terms = c("EIVEresT [all]"))
-plot_model(baseModel, type="pred", terms = c("DistSeverity.sqrt [all]"))
-plot_model(baseModel, type="pred", terms = c("Soil.Disturbance.sqrt [all]"))
-plot_model(baseModel, type="pred", terms = c("Grazing.Pressure.sqrt [all]"))
-plot_model(baseModel, type="pred", terms = c("Mowing.Frequency.sqrt [all]"))
-plot_model(baseModel, type="pred", terms = c("chelsaP [all]"))
-plot_model(baseModel, type="pred", terms = c("elev [all]"))
-plot_model(baseModel, type="pred", terms = c("hfp [all]"))
-plot_model(baseModel, type="pred", terms = c("extra [all]"))
-plot_model(baseModel, type="pred", terms = c("rel_n_intra [all]"))
-plot_model(baseModel, type="pred", terms = c("native [all]"))
-
-
-
-
-mean(fitted(baseModel)[fullPlotData$EIVEresM==mean(fullPlotData$EIVEresM)])
-mean(fitted(baseModel)[fullPlotData$EIVEresM== max(fullPlotData$EIVEresM)])
-
-mean(fitted(model)[fullPlotData$EIVEresN== mean(fullPlotData$EIVEresN)])
-mean(fitted(model)[max(fullPlotData$EIVEresN)])
-
-mean(fitted(model)[fullPlotData$EIVEresN== max(fullPlotData$EIVEresN)])
-
-
-```
-
 
