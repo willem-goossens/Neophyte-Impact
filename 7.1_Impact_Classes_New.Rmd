@@ -29,7 +29,9 @@ library(DescTools)
 library(asbio)
 library(lme4)
 library(glmmTMB)
+library(sjPlot)
 ```
+
 
 ## 1.1 Eva + header
 We load the eva data with the species per plot
@@ -44,7 +46,7 @@ fullPlotData <- read_csv("fullPlotData_ESy.csv",show_col_types = FALSE)
 
 fast <- T
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.90,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 
@@ -72,6 +74,7 @@ extra_EU <- unique(species_country_status$species[species_country_status$Neophyt
 intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
 native_intra <- unique(species_country_status$species[species_country_status$Neophyte=="native_intra"])
 
+
 ```
 
 
@@ -86,6 +89,11 @@ eva_country_neophyte<- left_join(eva, species_country_status[, -c(2:4,6:8)], by=
 # Look at how much from every type are present
 table(eva_country_neophyte$Neophyte)
 eva <- eva_country_neophyte
+
+# there are still na's present --> due to being named 'plant'
+nas<- eva_country_neophyte[is.na(eva_country_neophyte$Neophyte),]
+eva_country_neophyte <- eva_country_neophyte[!eva_country_neophyte$name=="Plant",]
+eva <- eva[!eva$name=="Plant",]
 ```
 
 
@@ -178,28 +186,13 @@ colnames(fullPlotData)[19] <- "total"
 
 
 alien_cover <- reducedEva |> group_by(PlotObservationID, Neophyte) |> summarise(cover= sum(cover), n= n())
+alien_cover <- left_join(alien_cover, fullPlotData[,c(1,2,19)])
+alien_cover <- alien_cover |> mutate(cover_rel= cover/total, n_rel=n/ENS0, n_weighted= cover/total/n*ENS0)
 
+test <- alien_cover |> pivot_wider(names_from = c(Neophyte),
+                                   values_from = c(cover, n, cover_rel, n_rel, n_weighted))
 
-
-fullPlotData <- left_join(fullPlotData, alien_cover[alien_cover$Neophyte=="extra", c(1,3)])
-colnames(fullPlotData)[20] <- "extra"
-fullPlotData$extra <- fullPlotData$extra / fullPlotData$total
-fullPlotData <- left_join(fullPlotData, alien_cover[alien_cover$Neophyte=="intra", c(1,3)])
-colnames(fullPlotData)[21] <- "intra"
-fullPlotData$intra <- fullPlotData$intra / fullPlotData$total
-fullPlotData <- left_join(fullPlotData, alien_cover[alien_cover$Neophyte=="native", c(1,3)])
-colnames(fullPlotData)[22] <- "native"
-fullPlotData$native <- fullPlotData$native / fullPlotData$total
-
-fullPlotData <- left_join(fullPlotData, alien_cover[alien_cover$Neophyte=="extra", c(1,4)])
-colnames(fullPlotData)[23] <- "extra_n"
-fullPlotData$extra_n <- fullPlotData$extra_n / fullPlotData$ENS0
-fullPlotData <- left_join(fullPlotData, alien_cover[alien_cover$Neophyte=="intra", c(1,4)])
-colnames(fullPlotData)[24] <- "intra_n"
-fullPlotData$intra_n <- fullPlotData$intra_n / fullPlotData$ENS0
-fullPlotData <- left_join(fullPlotData, alien_cover[alien_cover$Neophyte=="native", c(1,4)])
-colnames(fullPlotData)[25] <- "native_n"
-fullPlotData$native_n <- fullPlotData$native_n / fullPlotData$ENS0
+fullPlotData <- left_join(fullPlotData, test)
 ```
 
 
@@ -212,6 +205,99 @@ Note that this base model can be adjusted in future works based on what we decid
 # Make Dataset a factor
 fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
 
+MDL <- glmer(ENS0 ~ EIVEresN+ cover_rel_intra + cover_rel_extra+ (1| Dataset), data=fullPlotData, family= poisson(link=log))
+summary(MDL)
+
+visreg::visreg(MDL, gg = TRUE, partial=FALSE, rug = F,  scale="response")
+
+# scale the work to 0-1 scale
+scaled <-fullPlotData
+
+scale_values <- function(x){(x-min(x))/(max(x)-min(x))}
+
+scaled[, c(4:12, 16:18)] <- apply(scaled[, c(4:12, 16:18)], 2, scale_values)
+
+MDL <- glmer(ENS0 ~ EIVEresN + cover_rel_intra + cover_rel_extra+ (1| Dataset), data=scaled, family= poisson(link=log))
+summary(MDL)
+
+visreg::visreg(MDL, scale="response", partial=T)
+
+plot(scaled$EIVEresN, scaled$ENS0)
+
+
+model<-  ENS0 ~ 
+              s(log(Area),bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Soil.Disturbance.sqrt, bs = 'tp')+
+              s(Grazing.Pressure.sqrt, bs = 'tp')+
+              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(chelsaP, bs='tp')+
+              s(hfp, bs='tp')+
+              s(elev, bs='tp')+
+              s(Latitude, Longitude, bs = 'tp') +
+              s(Dataset, bs = 're')+
+              s(cover_rel_intra)+
+              s(cover_rel_extra)
+
+baseModel <- bam(model,family = poisson, data = fullPlotData,  
+                 method = 'fREML',  discrete=TRUE, nthreads=4)
+
+summary(baseModel)
+
+cor <- cor(fullPlotData[, c(2, 4:14, 16:34)], use="pairwise.complete.obs")
+
+library(ggeffects)
+plot(ggpredict(baseModel, terms=c("EIVEresN")))
+plot(ggpredict(baseModel, terms= c("cover_rel_intra")))
+plot(ggpredict(baseModel, terms= c("cover_rel_extra")))
+
+
+visreg::visreg(baseModel, scale= "response")
+z <-visreg::visreg(baseModel, xvar = "EIVEresN", gg = TRUE, partial=T, rug = F,  scale="response", plot=F)
+
+plot(z, ylim=c(0,50))      
+points(fullPlotData$EIVEresN, fullPlotData$ENS0)
+
+z <-visreg::visreg(baseModel, xvar = "cover_rel_intra", gg = TRUE, partial=T, rug = F,  scale="response", plot=F)
+
+plot(z, ylim=c(0,50))
+points(fullPlotData$cover_rel_intra, fullPlotData$ENS0)
+
+plot(lm(ENS0~ EIVEresN, fullPlotData))
+z<-lm(ENS0~ EIVEresN + I(EIVEresN^2), fullPlotData)
+summary(z)
+
+
+```
+
+
+```{r}
+library(MuMIn)
+
+MDL <- glmer(ENS0 ~ EIVEresN+hfp+ cover_rel_extra + cover_rel_intra+ (1|Dataset), data= scaled, family= poisson(link=log))
+
+MDL <- glmer(ENS0 ~ EIVEresN+ 
+                hfp + cover_rel_intra+  (1| Dataset),
+                data= scaled, family= poisson(link=log))
+
+MDL_dredge<-dredge(MDL, rank = AICc, options(na.action = na.fail))
+options(na.action = "na.omit")
+subset_models <- get.models(MDL_dredge, delta < 4)
+
+model_average <- model.avg((subset_models), fit=T )
+summary(model_average)
+MDL_AVG<- list(model_average)
+```
+
+
+
+
+```{r}
 scaled <- fullPlotData
 scaled[, c(3:12, 16:25)] <- scale(scaled[, c(3:12, 16:25)], center=F, scale=T)
 
@@ -257,15 +343,16 @@ model<-  ENS0 ~
               s(elev, bs='tp')+
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')+
-              s(extra, bs="tp")+
-              s(intra, bs="tp")
-              s(native, bs='tp')
+              s(n_rel_intra)
 
 baseModel <- bam(model,family = poisson, data = fullPlotData,  
                  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 summary(baseModel)
-library(sjPlot)
+
+plot.gam(baseModel)
+
+visreg::visreg(baseModel, gg = TRUE, partial=FALSE, rug = F,  scale="response")
 
 plot_model(baseModel, type="pred", terms = c("EIVEresM [all]"))
 plot_model(baseModel, type="pred", terms = c("EIVEresN [all]"))
@@ -280,7 +367,7 @@ plot_model(baseModel, type="pred", terms = c("chelsaP [all]"))
 plot_model(baseModel, type="pred", terms = c("elev [all]"))
 plot_model(baseModel, type="pred", terms = c("hfp [all]"))
 plot_model(baseModel, type="pred", terms = c("extra [all]"))
-plot_model(baseModel, type="pred", terms = c("intra [all]"))
+plot_model(baseModel, type="pred", terms = c("rel_n_intra [all]"))
 plot_model(baseModel, type="pred", terms = c("native [all]"))
 
 
