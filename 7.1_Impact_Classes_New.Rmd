@@ -193,6 +193,8 @@ test <- alien_cover |> pivot_wider(names_from = c(Neophyte),
                                    values_from = c(cover, n, cover_rel, n_rel, n_weighted))
 
 fullPlotData <- left_join(fullPlotData, test)
+
+fullPlotData[is.na(fullPlotData)] <- 0
 ```
 
 
@@ -210,11 +212,8 @@ if(scaled){
   # copy dataset
   fullPlotData2 <-fullPlotData
   
-  # scale the work to 0-1 scale
-  scale_values <- function(x){(x-min(x))/(max(x)-min(x))}
-  
   # scale data 
-  fullPlotData[, c(4:12, 16:18)] <- apply(fullPlotData[, c(4:12, 16:18)], 2, scale_values)
+  fullPlotData[, c(4:12, 16:18, 20:34 )] <- scale(fullPlotData[, c(4:12, 16:18, 20:34)], center=F)
   # what about the cover values? Also scale these?
 }
 
@@ -230,7 +229,7 @@ plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
 pr <- predict_response(MDL, "cover_rel_extra [all]")
 plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
 pr <- predict_response(MDL, "EIVEresN [all]")
-plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
+plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
 pr <- predict_response(MDL, "EIVEresM [all]")
 plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
 pr <- predict_response(MDL, "EIVEresR [all]")
@@ -303,9 +302,7 @@ points(fullPlotData$cover_rel_intra, fullPlotData$ENS0, col= rgb(red=0.5, green=
 
 Try boosted regression tree
 ```{r}
-install.packages("gbm")
 library(gbm)
-install.packages("dismo")
 library(dismo)
 
 fullPlotData2 <- as.data.frame(fullPlotData2)
@@ -313,13 +310,31 @@ BRTmodel <- gbm.step(data=fullPlotData2,
                              gbm.x = c(4:12, 27:28), 
                              gbm.y = 2, 
                              family = "poisson",
-                             tree.complexity = 1,
-                             learning.rate = 0.01,
-                             bag.fraction = 0.5)
+                             tree.complexity = 3,
+                             learning.rate = 0.001,
+                             bag.fraction = 0.7)
 
 BRTmodel$contributions
 gbm.plot(BRTmodel, n.plots=11, write.title = F,
-         common.scale = TRUE, y.label="Fitted function",
+         common.scale = F, y.label="Fitted function",
          show.contrib = TRUE)
+```
+
+
+```{r}
+library(xgboost)
+train <- fullPlotData2[runif(length(fullPlotData2$PlotObservationID)) > 0.30,]
+test <- fullPlotData2[!fullPlotData2$PlotObservationID %in% train$PlotObservationID,]
+
+bst <- xgboost(data = as.matrix(train[, c(4:12)]), label = train$ENS0, max.depth = 4, eta = 1, nthread = 1, nrounds = 20, objective = "count:poisson")
+
+pred <- predict(bst, as.matrix(test[,c(4:12)]))
+err <- mean(as.numeric(pred)- test$ENS0)
+err
+max(pred)
+mean(pred)
+max(train$ENS0)
+mean(train$ENS0)
+
 ```
 
