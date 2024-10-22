@@ -289,3 +289,110 @@ writeClipboard(p)
 
 plot(x, type= "l")
 
+
+
+
+joinedData2 <- st_join(plotLocations, eco, join = st_within)
+
+#------------------------------------------------------------------------------#
+###### 5.2 unassigned ######
+#------------------------------------------------------------------------------#
+percentNotAssignedPlots <- sum(is.na(joinedData$ECO_NAME))/length(joinedData$PlotObservationID)*100
+percentNotAssignedPlots
+
+
+# Prepare parallel
+parallel::detectCores()
+n.cores <- parallel::detectCores() - 2
+my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK")
+print(my.cluster)
+doParallel::registerDoParallel(cl = my.cluster)
+foreach::getDoParRegistered()
+foreach::getDoParWorkers()
+
+# Create threshold to use
+distanceThreshold <- set_units(10000,m)
+# Dataset of points that were not assigned with sf_within
+remainingPlots <-plotLocations[is.na(joinedData$ECO_NAME),]
+
+# make smaller to make calculation quicker
+remainingPlots<- remainingPlots[, c("PlotObservationID","Country", "geometry")]
+
+# Compute bounding boxes for the regions, this allows to decide faster, if a plot is outside the distanceThreshold from a region
+boundingBoxes <- eco
+
+# Create box for every country
+for(i in 1:length(boundingBoxes$ECO_NAME)) {
+  boundingBoxes$geometry[i] <- st_as_sfc(st_bbox(boundingBoxes$geometry[i]))
+}
+
+# Begin parameters
+remainingPlots$eco <- NA
+remainingPlots$eco_N <- NA
+remainingPlots$Distance <- -1
+
+# Start clock
+begin<-Sys.time() 
+
+# Perform parallel loop and add results to remaining plots
+remainingPlots[,4:6]<-foreach(i = 1:length(remainingPlots$PlotObservationID), 
+                              .combine='rbind', .packages=c("dplyr","mgcv", "sf","units")) %dopar% {
+                                
+                                # set region to no region and distance to large value
+                                region <- NA
+                                eco_N <-NA
+                                distance <- set_units(10000000,m)
+                                
+                                # check for every country individually if distance to the box is more than is allowed
+                                for(j in 1:length(boundingBoxes$ECO_NAME)) {
+                                  sf_use_s2(F)
+                                  distBoundingBox <- st_distance(boundingBoxes[j,], remainingPlots[i,]) #Calculate the distance
+                                  # Only if the distance to the bounding box is smaller than distanceThreshold we need to compute the real distance to the region
+                                  if(distBoundingBox < distanceThreshold){
+                                    dist <- st_distance(eco[j,], remainingPlots[i,])
+                                    # if this distance is smaller than the previously computed distance and the threshold, save this one
+                                    if(dist < distanceThreshold & dist < distance) {
+                                      region <- eco$ECO_NAME[j]
+                                      eco_N <- eco$ECO_ID
+                                      distance <- dist
+                                    }
+                                  }
+                                }
+                                # add these to the remaining plots
+                                remainingPlots$eco[i] <- c(region, eco_N, distance)
+                              }
+# End time and calculation time needed
+end<-Sys.time()
+round(end-begin, 2)  
+
+st_distance(eco[j,], remainingPlots[91,])
+
+# Stop cluster
+parallel::stopCluster(cl = my.cluster)
+
+joinedData$ECO_NAME[is.na(joinedData$ECO_NAME)] <- remainingPlots$eco
+
+
+
+#### 
+# Helper function to add rows if the index is within bounds
+add_row_if_exists <- function(res, baseModel, idx, class, coverClass, plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs) {
+  if (idx <= nrow(baseModel$p.table)) {
+    res <- add_row(res, 
+                   taxa = plantName, 
+                   Estimate = baseModel$p.table[idx, 1],
+                   StdErr = baseModel$p.table[idx, 2],
+                   zValue = baseModel$p.table[idx, 3], 
+                   pr = baseModel$p.table[idx, 4],
+                   Intercept = baseModel$p.table[1, 1],  
+                   numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
+                   Neophyte = plantStatus,
+                   RelDiff = 
+                     (mean(fitted(base)[tmpFullPlotData$coverClass == coverClass]) -
+                        mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
+                     mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
+                   class = class, n = sum(tmpFullPlotData$coverClass == coverClass),
+                   size= size, rel= length(plotsWherePlantOccurs$PlotObservationID)/ size)
+  }
+  return(res)
+}

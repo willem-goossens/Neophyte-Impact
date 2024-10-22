@@ -158,7 +158,7 @@ Diaz_raw<- Diaz
 eva <- read_csv("fullPlotEva_ESy.csv", show_col_types = FALSE)
 fullPlotData <- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
 
-fast <- F
+fast <- T
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
@@ -167,12 +167,12 @@ if(fast) {
 
 # vector with species names
 Diaz_names<- Diaz$`Species name standardized against TPL`
+Diaz_names<- as.data.frame(Diaz_names)
 # vector with eva names
 eva_names<- as.data.frame(unique(eva$`Matched concept`))
 colnames(eva_names) <- "Matched concept"
 eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
 eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched concept`)]
-
 
 # check how much species in our dataset possess a trait value in Diaz
 sum(unique(eva_names$name) %in% Diaz_names)
@@ -186,86 +186,93 @@ Diaz_species <- Diaz[Diaz$`Taxonomic level`=="species",]
 ## 3.2 Join
 ```{r}
 # assign names to eva_names
+
+## NAME
 eva_names$Diaz <- Diaz_species$`Species name standardized against TPL`[match(vegdata::taxname.abbr(gsub(" aggr\\.", "", eva_names$name)), 
                                                                vegdata::taxname.abbr(Diaz_species$`Species name standardized against TPL`))]
 length(unique(eva_names$Diaz))
+
 eva_names$Diaz[is.na(eva_names$Diaz)] <- 
   Diaz_species$`Species name standardized against TPL`[match(vegdata::taxname.simplify(gsub(" aggr\\.", "", eva_names$name[is.na(eva_names$Diaz)])), 
                                                                vegdata::taxname.simplify(Diaz_species$`Species name standardized against TPL`))]
 length(unique(eva_names$Diaz))
-eva_names$Diaz[is.na(eva_names$Diaz)] <- Diaz$`Species name standardized against TPL`[match(vegdata::taxname.abbr(eva_names$name[is.na(eva_names$Diaz)]), 
+
+eva_names$Diaz[is.na(eva_names$Diaz)] <- 
+  Diaz$`Species name standardized against TPL`[match(vegdata::taxname.abbr(eva_names$name[is.na(eva_names$Diaz)]), 
                                                                vegdata::taxname.abbr(Diaz$`Species name standardized against TPL`))]
 length(unique(eva_names$Diaz))
-eva_names$Diaz[is.na(eva_names$Diaz)] <- Diaz$`Species name standardized against TPL`[match(vegdata::taxname.simplify(eva_names$name[is.na(eva_names$Diaz)]), 
-                                                               vegdata::taxname.simplify(Diaz$`Species name standardized against TPL`))]
-length(unique(eva_names$Diaz))
-eva_names$Diaz[is.na(eva_names$Diaz)] <- Diaz$`Species name standardized against TPL`[match(vegdata::taxname.abbr(eva_names$species[is.na(eva_names$Diaz)]), 
-                                                               vegdata::taxname.abbr(Diaz$`Species name standardized against TPL`))]
-length(unique(eva_names$Diaz))
-eva_names$Diaz[is.na(eva_names$Diaz)] <- Diaz$`Species name standardized against TPL`[match(vegdata::taxname.simplify(eva_names$species[is.na(eva_names$Diaz)]), 
-                                                               vegdata::taxname.simplify(Diaz$`Species name standardized against TPL`))]
-length(unique(eva_names$Diaz))
-eva_names$Diaz[is.na(eva_names$Diaz)] <- Diaz$`Species name standardized against TPL`[match(vegdata::taxname.abbr(eva_names$`Matched concept`[is.na(eva_names$Diaz)]), 
-                                                               vegdata::taxname.abbr(Diaz$`Species name standardized against TPL`))]
-length(unique(eva_names$Diaz))
-eva_names$Diaz[is.na(eva_names$Diaz)] <- Diaz$`Species name standardized against TPL`[match(vegdata::taxname.simplify(eva_names$`Matched concept`[is.na(eva_names$Diaz)]), 
+
+eva_names$Diaz[is.na(eva_names$Diaz)] <- 
+  Diaz$`Species name standardized against TPL`[match(vegdata::taxname.simplify(eva_names$name[is.na(eva_names$Diaz)]), 
                                                                vegdata::taxname.simplify(Diaz$`Species name standardized against TPL`))]
 length(unique(eva_names$Diaz))
 
+
+## SPECIES
+eva_names$Diaz[is.na(eva_names$Diaz)] <- 
+  Diaz$`Species name standardized against TPL`[match(vegdata::taxname.abbr(eva_names$species[is.na(eva_names$Diaz)]), 
+                                                               vegdata::taxname.abbr(Diaz$`Species name standardized against TPL`))]
+length(unique(eva_names$Diaz))
+eva_names$Diaz[is.na(eva_names$Diaz)] <- 
+  Diaz$`Species name standardized against TPL`[match(vegdata::taxname.simplify(eva_names$species[is.na(eva_names$Diaz)]), 
+                                                               vegdata::taxname.simplify(Diaz$`Species name standardized against TPL`))]
+length(unique(eva_names$Diaz))
+
+## MATCHED CONCEPT
+eva_names$Diaz[is.na(eva_names$Diaz)] <- 
+  Diaz$`Species name standardized against TPL`[match(vegdata::taxname.abbr(eva_names$`Matched concept`[is.na(eva_names$Diaz)]), 
+                                                               vegdata::taxname.abbr(Diaz$`Species name standardized against TPL`))]
+length(unique(eva_names$Diaz))
+eva_names$Diaz[is.na(eva_names$Diaz)] <- 
+  Diaz$`Species name standardized against TPL`[match(vegdata::taxname.simplify(eva_names$`Matched concept`[is.na(eva_names$Diaz)]), 
+                                                               vegdata::taxname.simplify(Diaz$`Species name standardized against TPL`))]
+length(unique(eva_names$Diaz))
+
+
+## DUPLICATES
 dup <- eva_names[duplicated(eva_names$name)| duplicated(eva_names$name, fromLast=T),]
 dup_unknown <- dup[is.na(dup$Diaz),]
 dup_known <- dup[!is.na(dup$Diaz),]
 
+# look whether some of the data in dup unknown is in dup known
 dup_unknown <- dup_unknown[dup_unknown$name %in% dup_known$name,]
 dup <- dup[dup$name %in% dup_unknown$name,]
+# check level
 dup$level <- Diaz$`Taxonomic level`[match(dup$Diaz, Diaz$`Species name standardized against TPL`)]
 
+# make data again
 dup <-  eva_names[duplicated(eva_names$name)| duplicated(eva_names$name, fromLast=T),]
 
+# assign potential find in known data
 dup$Diaz[is.na(dup$Diaz)]<- dup_known$Diaz[match(dup$name[is.na(dup$Diaz)], dup_known$name)]
 
+# create unknown data again
 dup_unknown <- dup[is.na(dup$Diaz),]
-any(dup_unknown$name %in% dup_known$name)
 
+# assign to eva names
 eva_names[duplicated(eva_names$name)| duplicated(eva_names$name, fromLast=T),] <- dup
 
-```
 
-
-
-```{r}
-eva$Diaz <- eva_names$Diaz[match(eva$`Matched concept`, eva_names$`Matched concept`)]
-head(eva)
-
-eva_diaz <- as.data.frame(unique(eva$`Matched concept`))
-colnames(eva_diaz) <- "Matched concept"
-eva_diaz$name <- eva$name[match( eva_diaz$`Matched concept`, eva$`Matched concept`)]
-eva_diaz$species <- eva$species[match( eva_diaz$`Matched concept`, eva$`Matched concept`)]
-eva_diaz$Diaz <- eva$Diaz[match( eva_diaz$`Matched concept`, eva$`Matched concept`)]
-
-all.equal(eva_names[, c(1:4)], eva_diaz[, c(1:4)])
-setdiff(eva_names, eva_diaz)
-
-head(eva)
-obs <- eva[, c(1, 4,8)]
-colnames(obs) <- c("RELEVE_NR","TaxonName","Cover_Perc")
-# run function
-source("2.2.1_Bruelheide.R")
-# add names to our dataset
-
-obs[obs$TaxonName =="Mentha longifolia",]
-
+## ASSIGN
 # Downsample database to required columns and only species in eva
 Diaz <- Diaz[, c(1: 3, 5:6,11, 15:16,18,20,22,24,31:32)]
 
+# give Diaz name
+eva$Diaz <- eva_names$Diaz[match(eva$`Matched concept`, eva_names$`Matched concept`)]
+
+# eva
 eva <- left_join(eva, Diaz, by= c("Diaz"="Species name standardized against TPL"))
 
 # check number of tree species in our database
 sum(Diaz$`Growth Form`=="tree", na.rm=T)
+
+# Diaz
+Diaz$name <- eva_names$name[match(Diaz$`Species name standardized against TPL`, eva_names$Diaz)]
+Diaz$species <- eva_names$species[match(Diaz$`Species name standardized against TPL`, eva_names$Diaz)]
+Diaz$`Matched concept`<- eva_names$`Matched concept`[match(Diaz$`Species name standardized against TPL`, eva_names$Diaz)]
 ```
 
-
-
+Evaluate number of observations
 ```{r}
 # Join eva and mean trait database
 # check number of missing values per trait
@@ -317,23 +324,18 @@ cor(y[,2:7], fullPlotData[,30:34],use="pairwise.complete.obs", method="pearson" 
 
 # we notice quite high correlations for EIVE N and leaf nitrogen content
 # also high for EIVE L and SSD and Height
+# Also dist frequency and height/SSD
 ```
-
-
 
 
 
 # 4 Impact 
 ## 4.1 Explore
 ```{r}
-# Load impact data 7.1
-fileName <- paste("coverClassImpactForCandidates_cover_all_layer_cleaned.csv")
+# Load impact data
+fileName <- paste("Impact2_ENS0.csv")
 impact<- read.csv( fileName)
-impact <- impact[impact$log=="3",]
-
-# Load part impact data 8.1
-impact2<- read.csv('Impact2_new1%_ENS0_squared.csv')
-impact <- impact2[,-1]
+impact <- impact[, -c(1)]
 
 # get species that are in Diaz and for which we have the impact calculated
 impact_sp <- Diaz$`Species name standardized against TPL`[Diaz_names %in% impact$taxa]
@@ -346,40 +348,39 @@ impact_sp <- Diaz$`Species name standardized against TPL`[Diaz_names %in% impact
 ## 4.2 Join
 ```{r}
 # Merge 7.1 and traits data
-test<- left_join(impact, eva[, c(5,28, 30:41)], by=c("taxa"="name"))
+impact<- left_join(impact, Diaz[, c(15, 2, 3:14)], by=c("taxa"="name"))
 
-test <- impact
 # Calculate correlations
-cor_extra<-cor(test[test$Neophyte=="extra", c(8,2, 14:18)],  use= "pairwise.complete.obs", method="pearson")
-cor_intra <-cor(test[test$Neophyte=="intra", c(8,2, 14:18)],  use="pairwise.complete.obs", method="pearson")
-cor_native <-cor(test[test$Neophyte=="native", c(8,2, 14:18)],  use="pairwise.complete.obs", method="pearson")
+cor_extra<-cor(impact[impact$Neophyte=="extra", c(2,9, 20:25)],  use= "pairwise.complete.obs", method="pearson")
+cor_intra <-cor(impact[impact$Neophyte=="intra", c(2,9, 20:25)],  use="pairwise.complete.obs", method="pearson")
+cor_native <-cor(impact[impact$Neophyte=="native", c(2,9, 20:25)],  use="pairwise.complete.obs", method="pearson")
 ```
 
 
 ## 4.3 Effect individual
 ```{r}
 # Make Neophyte a factor for in the models
-test$Neophyte <- as.factor(test$Neophyte)
+impact$Neophyte <- as.factor(impact$Neophyte)
 
 # Change names FT
-colnames(test)[17:22]<- c("LA", "N", "LMA","H","SM","SSD")
+colnames(impact)[20:25]<- c("LA", "N", "LMA","H","SM","SSD")
 
 
 
 # Model per FT individually, as limited species (+- 880) LMAave values for all functional traits
-MDL_H<- lmer(RelDiff ~ H + (1|Neophyte), test2)
+MDL_H<- lmer(RelDiff ~ H + (1|Neophyte), impact)
 summary(MDL_H)
-MDL_LMA<- lmer(RelDiff ~ LMA + (1|Neophyte), test2)
+MDL_LMA<- lmer(RelDiff ~ LMA + (1|Neophyte), impact)
 summary(MDL_LMA)
-MDL_SM<- lmer(RelDiff ~ SM + (1|Neophyte), test2)
+MDL_SM<- lmer(RelDiff ~ SM + (1|Neophyte), impact)
 summary(MDL_SM)
-MDL_SSD<- lmer(RelDiff ~ SSD + (1|Neophyte), test2)
+MDL_SSD<- lmer(RelDiff ~ SSD + (1|Neophyte), impact)
 summary(MDL_SSD)
-MDL_N<- lmer(RelDiff ~ N + (1|Neophyte), test2)
+MDL_N<- lmer(RelDiff ~ N + (1|Neophyte), impact)
 summary(MDL_N)
-MDL_LA<- lmer(RelDiff ~ LA + (1|Neophyte), test2)
+MDL_LA<- lmer(RelDiff ~ LA + (1|Neophyte), impact)
 summary(MDL_LA)
-MDL_Neophyte<- lm(RelDiff ~ -1+Neophyte, test2)
+MDL_Neophyte<- lm(RelDiff ~ -1+Neophyte, impact)
 summary(MDL_Neophyte)
 
 # Plot
@@ -395,20 +396,181 @@ visreg::visreg(MDL_Neophyte,"Neophyte")
 
 ## 4.4 Effect all
 ```{r}
+# scale predictors
+scale =T
+if(scale){
+  Diaz2<- Diaz[!is.na(Diaz$name),]
+  Diaz2[, c(8:13)] <- scale(Diaz2[, c(8:13)], center=F)
+  impact2 <- impact[, -c(20:26)]
+  impact2<- left_join(impact2, Diaz2[, c(15,8:14)], by=c("taxa"="name") )
+  colnames(impact2)[20:25]<- c("LA", "N", "LMA","H","SM","SSD")
+}
+
 # Model for all traits together
-MDL<- lmer(RelDiff ~ LMA+ H+ LA+ SM+ N+ (1|Neophyte), test)
+MDL<- lmer(RelDiff ~class+SSD+ LMA+ H+ LA+ SM+ N+ (1|Neophyte), impact2)
 summary(MDL)
 
 
 plot_model(MDL, type = "re", facet.grid=FALSE) 
 plot_model(MDL, type = "pred", facet.grid=T, terms= c("H", "Neophyte"), pred.type="re", ci.lvl=NA, show.data=T) 
 
-visreg::visreg(MDL,"LMA")
-visreg::visreg(MDL,"LA")
-visreg::visreg(MDL,"H")
-visreg::visreg(MDL,"N")
-visreg::visreg(MDL,"SM")
+visreg::visreg(MDL,"class", by="Neophyte", overlay=T)
+visreg::visreg(MDL,"LMA", by="Neophyte", overlay=F)
+visreg::visreg(MDL,"LA", by="Neophyte", overlay=F)
+visreg::visreg(MDL,"H", by="Neophyte", overlay=F)
+visreg::visreg(MDL,"N", by="Neophyte", overlay=F)
+visreg::visreg(MDL,"SM", by="Neophyte", overlay=F)
 visreg::visreg(MDL, "Neophyte")
+
+
 ```
 
+# 5 PHYLO
+## 5.1 Create data
+```{r}
+library(V.PhyloMaker2)
+
+#impact <- impact[impact$class=="0%-1%",]
+#impact <- impact[!is.na(impact$LMA),]
+
+phylo <- impact$taxa
+phylo <- gsub(" aggr\\.", "", phylo)
+phylo[duplicated(phylo)]
+#phylo <- unique(phylo)
+phylo <- as.data.frame(phylo)
+split <- vegdata::parse.taxa(phylo$phylo)
+phylo <- cbind(phylo, split$genus)
+colnames(phylo) <- c("species","genus")
+
+genus <- unique(Diaz[,c("Genus","Family")])
+
+phylo$family <- genus$Family[match(phylo$genus, genus$Genus)]
+
+species <- unique(Diaz[, c(15,4:5)])
+phylo$dg <- species$Genus[match(phylo$species, species$name)]
+
+list<- TPL(phylo$species)
+
+phylo$tplfam <- list$FAMILY[match(phylo$species, list$YOUR_SEARCH)]
+
+# check difference
+# fabaceae and asteraceae
+setdiff(phylo$family[!is.na(phylo$family)], phylo$tplfam[!is.na(phylo$family)])
+phylo$family <- gsub("Leguminosae","Fabaceae", phylo$family)
+phylo$family <- gsub("Compositae","Asteraceae", phylo$family)
+
+
+
+# now do it with powo
+check <- phylo[is.na(phylo$family),]
+library(kewr)
+# search powo and store results in list if we find a direct match
+  mybiglist <- list()
+  for(i in 1: length(check$species)){
+    # powo
+    r<- search_powo(vegdata::taxname.abbr(check$species[i]))
+    # only if there is a match store result in data, otherwise put NA
+    if(length(r$results)>0){
+      # make dataframe
+      tmp <- tidy(r)
+      # add to list
+      mybiglist[[i]] <- tmp
+    } else {
+      mybiglist[[i]] <- NA
+    }
+} 
+  
+  
+# empty dataframe
+accepted <- data.frame(new_name = character(), old_name = character(), number= numeric(), taxon= character(), family= character(), acc = numeric())
+
+
+
+# give the accepted name to the old species name
+for(i in 1: length(check$species)){
+  # first check if there is an accepted name
+  if(!all(is.na(mybiglist[[i]]))){
+    # check whether there are accepted names
+    if(sum(mybiglist[[i]]$accepted==T)){
+      if(sum(mybiglist[[i]]$accepted==T)<2){
+          accepted <- add_row(accepted, new_name= mybiglist[[i]]$name[mybiglist[[i]]$accepted==T], old_name =check$species[i],  
+                              number= i, taxon= eva_names$taxon[i], family=mybiglist[[i]]$family[mybiglist[[i]]$accepted==T], acc= 1)
+      } else {
+          accepted <- add_row(accepted, new_name= mybiglist[[i]]$name[mybiglist[[i]]$accepted==T], old_name =check$species[i],  
+                              number= i, taxon= eva_names$taxon[i], family=mybiglist[[i]]$family[mybiglist[[i]]$accepted==T],  acc= 2) 
+          }
+    } else {
+      accepted <- add_row(accepted, new_name= NA, old_name =check$species[i] ,  number= i, taxon=eva_names$taxon[i], family=NA, acc= 0)
+    }
+  } else {
+      accepted <- add_row(accepted, new_name= NA,old_name = check$species[i],  number= i, taxon= eva_names$taxon[i],family=NA, acc=0 )
+  } 
+}
+phylo$family[is.na(phylo$family)] <- accepted$family[match(phylo$species[is.na(phylo$family)], accepted$old_name)]
+phylo$family[is.na(phylo$family)] <- phylo$tplfam[is.na(phylo$family)]
+
+setdiff(phylo$family[!is.na(phylo$family)], phylo$tplfam[!is.na(phylo$family)])
+
+phylo <- phylo[,c(1:3)]
+write_csv(phylo,"phylo.csv")
+
+#phylo <- phylo[1:100,]
+```
+
+## 5.2 Tree
+```{r}
+tree <- phylo.maker(sp.list=phylo, tree= GBOTB.extended.TPL, nodes= nodes.info.1.TPL, scenarios = "S3")
+#write.tree(tree$scenario.3, "sample.tre")
+plot(tree$scenario.3)
+```
+
+
+
+```{r}
+library(phylogram)
+library(ggtree)
+
+
+ggtree(tree$scenario.3, layout="circular", ladderize = FALSE)+
+  geom_nodepoint() + geom_tiplab(hjust = -.1)
+```
+
+
+
+
+```{r}
+library(nlme)
+library(ape)
+library(caper)
+
+mat <- vcv(tree$scenario.3, corr=TRUE)
+
+colnames(impact)[1] <- c("Names")
+```
+
+
+```{r}
+data <- comparative.data(phy= tree$scenario.3, data= impact)
+
+
+fit <- pgls(RelDiff~ LMA, correlation=corSymm(mat[lower.tri(mat)],fixed=TRUE), data=impact, na.action= na.omit)
+summary(fit)
+
+
+```
+
+```{r}
+mat <- vcv(tree$scenario.3, corr=TRUE)
+
+fit <- gls(RelDiff~ LMA, correlation=corSymm(mat[lower.tri(mat)],fixed=TRUE), data=impact, na.action= na.omit)
+summary(fit)
+
+impact3 <- impact[!is.na(impact$RelDiff),]
+impact3 <- impact3[!is.na(impact3$LMA),]
+pglsModel <- gls(RelDiff ~ LMA , correlation = corPagel(1, phy = tree$scenario.3),  data = impact3, method = "ML")
+summary(pglsModel)
+
+
+gls(RelDiff ~ LMA, correlation = corBrownian(phy = tree$scenario.3, form= ~Names),data= impact, method="ML")
+```
 

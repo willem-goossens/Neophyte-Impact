@@ -14,6 +14,7 @@ library(parallel)
 library(graphics)
 library(lubridate)
 library(climenv)
+library(units)
 
 ##### 2 LOAD ####
 ###### 2.1 HFP #####
@@ -542,8 +543,132 @@ if(saving){
   
 }
 
+#------------------------------------------------------------------------------#
+#------------------------------------------------------------------------------#
+#### 5 HEADER ####
+#------------------------------------------------------------------------------#
+#------------------------------------------------------------------------------#
+###### 5.1 Prepare #####
+#------------------------------------------------------------------------------#
+# read in ecoregion data
+eco<- st_read("../EIVE Data/Ecoregions/Ecoregions2017.shp")
+# transform CSR
+eco <- st_transform(eco, CRS("+proj=longlat +datum=WGS84"))
 
-#### 5 SAC ####
+# look at data and see which realm Europe belongs to
+head(eco)
+unique(eco$REALM)
+
+# only get Europe realm
+eco <- eco[eco$REALM =="Palearctic",]
+
+# get euro-med regions
+medRegions <- read_sf("../Europe-regions-shapefiles-2023", "Emed_regions")
+medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
+
+# create box around Europe
+europe_bbox <- st_bbox(c(xmin = -30, xmax = 80, ymin = 25, ymax = 90))
+europe_polygon <- st_as_sfc(europe_bbox)
+
+# crop to regions
+sf_use_s2(F)
+eco <- st_crop(eco, europe_polygon)
+eco <- st_crop(eco, medRegions, crop=F)
+sf_use_s2(F)
+
+
+# plot
+ggplot() + 
+  geom_sf(data = eco, size = 1.5, aes(fill = COLOR),show.legend = FALSE) + 
+  coord_sf()+
+  theme_minimal()
+
+# read in fullPlotData
+fullPlotData <- read_csv("fullPlotData_ESy.csv")
+fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID))>0,]
+
+# make spatial object
+plotLocations <- st_as_sf(fullPlotData, coords = c("Longitude","Latitude"), remove = FALSE)
+plotLocations <- plotLocations[, c(1:5)]
+st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
+
+
+sf_use_s2(T) #S2 can provide better performance for certain types of spatial operations, especially when dealing with large spatial datasets.
+joinedData <- st_join(plotLocations, eco, join = st_nearest_feature)
+
+joinedData <- joinedData[, c("PlotObservationID","Country","Longitude","Latitude","ECO_NAME","ECO_ID","COLOR", "geometry")]
+
+
+#------------------------------------------------------------------------------#
+###### 5.2 Bohn #####
+#------------------------------------------------------------------------------#
+bohn <- st_read("../EIVE Data/ESy-master/data/DUNES_BOHN/Dunes_BohnMap_buffer500m.shp")
+
+# transform CSR
+bohn <- st_transform(bohn, CRS("+proj=longlat +datum=WGS84"))
+
+# look at data and see which realm Europe belongs to
+head(bohn)
+unique(bohn$CODE)
+
+# P1-2 Arctic
+# P3-4 Baltic
+# P5-8 Arctic
+# P9-12 Mediteranean
+# P13-16 Black Sea
+
+# plot
+ggplot() + 
+  geom_sf(data = bohn, size = 5, aes(fill = CODE),show.legend = T) + 
+  coord_sf()+
+  theme_minimal()
+
+sf_use_s2(T) #S2 can provide better performance for certain types of spatial operations, especially when dealing with large spatial datasets.
+joinedData <- st_join(joinedData, bohn, join = st_within)
+
+joinedData <- joinedData[, c(1:8, 16,25)]
+
+###### 5.3 Coast #####
+coast <- st_read("../EIVE Data/Coast/Europe_coastline.shp")
+coast <- st_transform(coast, CRS("+proj=longlat +datum=WGS84"))
+head(coast)
+
+# buffer 10 km
+coast <- st_buffer(coast, dist= 10000)
+
+# plot
+ggplot() + 
+  geom_sf(data = coast, size = 1.5,show.legend = FALSE) + 
+  coord_sf()+
+  theme_minimal()
+
+# create list of all plots that are within this dataset
+coast_plots <- st_join(joinedData, coast,join= st_within)
+coast_plots$Shape_Leng[!is.na(coast_plots$Shape_Leng)]<- 1
+
+
+# assign to nearest coast value
+coast_test <- st_join(coast_plots[!is.na(coast_plots$Shape_Leng),-c(9:11)], bohn, join= st_nearest_feature)
+
+joinedData$CODE[joinedData$PlotObservationID %in% coast_test$PlotObservationID] <- coast_test$CODE[match(joinedData$PlotObservationID[joinedData$PlotObservationID %in% coast_test$PlotObservationID], coast_test$PlotObservationID)]
+
+joinedData <- joinedData |> mutate(COAST_TYPE = case_when(
+  CODE %in% c("P1", "P2") ~ "ARC_COAST",  # P1-P2 -> ARC_COAST
+  CODE %in% c("P3", "P4") ~ "BAL_COAST",  # P3-P4 -> BAL_COAST
+  CODE %in% c("P5", "P6", "P7", "P8") ~ "ATL_COAST",  # P5-P8 -> ATL_COAST
+  CODE %in% c("P9", "P10", "P11", "P12") ~ "MED_COAST",  # P9-P12 -> MED_COAST
+  CODE %in% c("P13", "P14", "P15", "P16") ~ "BLA_COAST",  # P13-P16 -> BLA_COAST
+  is.na(CODE) ~ "N_COAST",  # NA values -> N_COAST
+  TRUE ~ "N_COAST"  # In case there are any unexpected values
+))
+
+st_geometry(plotLocations) <- NULL
+st_geometry(joinedData) <- NULL
+fullPlotData<- left_join(fullPlotData, joinedData)
+
+#write_csv(fullPlotData, "fullPlotData_EUNIS.csv")
+
+#### 6 SAC ####
 library(devtools)
 library(moranfast)
 fullPlotData <- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)

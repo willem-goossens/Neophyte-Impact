@@ -30,6 +30,10 @@ library(ggpubr)
 library(rstatix)
 library(rcompanion)
 library(ARTool)
+library(brms)
+library(bayesplot)
+library(ggeffects)
+library(emmeans)
 ```
 
 
@@ -101,9 +105,11 @@ table(eva_country_neophyte$Neophyte)
 Reduce EVA to a smaller dataset to accelerate computations.    
 Count the number of plots in which the species in the dataset exist.  
 ```{r, message=F}
+eva <- eva_country_neophyte
+
 if(fast) {
-  eva <- eva_country_neophyte
-  reducedEva <- eva |> select(PlotObservationID, name, `Cover %`, Neophyte, Layer)
+  reducedEva <- eva |> select(PlotObservationID, name, `Cover %`, 
+                              Neophyte, Layer)
 
   uniqueSpecies <- unique(reducedEva[, c(2,4)])
   
@@ -143,6 +149,7 @@ if(fast) {
   round(end-begin)
   
   parallel::stopCluster(cl = my.cluster)
+  write.csv(plotsPerSpecies, "plotsPerSpeciesInEurope.csv")
 } else {
   if(!native_intra_analysis){
   plotsPerSpecies <- read_csv("plotsPerSpeciesInEurope.csv", show_col_types = FALSE)
@@ -364,8 +371,10 @@ computePlantImpact1 <- function(plantName, plantStatus) {
 ## 2.2 Function 2
 ```{r, meassage=F}
 # The name of the first species (to test the function)
-plantName = allPlants$names[58 ]
-plantStatus= allPlants$Neophyte[58 ]
+plantName = allPlants$names[661]
+plantStatus= allPlants$Neophyte[661]
+
+which(allPlants$names=="Viola alba")
 
 # Function to compute the impact for each species, so we only need the plant name as input
 computePlantImpact2 <- function(plantName, plantStatus) {
@@ -524,10 +533,9 @@ computePlantImpact2 <- function(plantName, plantStatus) {
                     rel= numeric())
   
 
-  
-  # Helper function to add rows if the index is within bounds
+
+    # Helper function to add rows if the index is within bounds
   add_row_if_exists <- function(res, baseModel, idx, class, coverClass, plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs) {
-    if (idx <= nrow(baseModel$p.table)) {
       res <- add_row(res, 
                      taxa = plantName, 
                      Estimate = baseModel$p.table[idx, 1],
@@ -543,23 +551,23 @@ computePlantImpact2 <- function(plantName, plantStatus) {
                         mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
                      class = class, n = sum(tmpFullPlotData$coverClass == coverClass),
                      size= size, rel= length(plotsWherePlantOccurs$PlotObservationID)/ size)
-    }
     return(res)
   }
   
-  # Add rows with checks
-  res <- add_row_if_exists(res, baseModel, 2, "0%-1%", "0%-1%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
-  res <- add_row_if_exists(res, baseModel, 3, "1%-10%", "1%-10%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
-  res <- add_row_if_exists(res, baseModel, 4, "10%-30%", "10%-30%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
-  res <- add_row_if_exists(res, baseModel, 5, "30%-50%", "30%-50%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
-  res <- add_row_if_exists(res, baseModel, 6, "50%-70%", "50%-70%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
-  res <- add_row_if_exists(res, baseModel, 7, "70%-100%", "70%-100%", plantName, plantStatus, tmpFullPlotData, plotsWherePlantOccurs)
+  uniqueFactors  <- sort(unique(tmpFullPlotData$coverClass))
+  uniqueFactors
   
+  for(i in 2:  nrow(baseModel$p.table)){
+      index <- uniqueFactors[i]
+      res <- add_row_if_exists(res, baseModel, i, index, index, plantName, plantStatus, tmpFullPlotData,
+                             plotsWherePlantOccurs)
+  }
   res
 
 }
 
 ```
+
 
 
 ## 2.3 Impact
@@ -589,19 +597,12 @@ round(end-begin, 2)
 
 parallel::stopCluster(cl = my.cluster)
 #write_csv(x, 'Impact2_new70%_ENS0_reldiff_PCA.csv')
-x <- read_csv('Impact2_new70%_ENS0_reldiff_PCA.csv')
 }
 
-x <- x[!x$RelDiff=="NaN",]
+
 ```
 
-Analyse the cluster size
-```{r}
-rel <- x$rel[!duplicated(x$taxa)]
 
-hist(rel)
-summary(rel)
-```
 
 
 
@@ -618,16 +619,22 @@ for(i in 1:length(allPlants$names)) {
    allPlantsImpact <- rbind(allPlantsImpact, res)
 }
 end<- Sys.time()
-round(end-begin)µ
+round(end-begin)
 x<- allPlantsImpact
 
 }
 
-#write.csv(x, 'Impact2_new1%_ENS0_squared.csv')
+#write.csv(x, 'Impact2_ENS0.csv')
 
 ```
 
+Analyse the cluster size
+```{r}
+rel <- x$rel[!duplicated(x$taxa)]
 
+hist(rel)
+summary(rel)
+```
 
 
 
@@ -1033,6 +1040,115 @@ plot
 ```
 
 
+## 3.3 New plot
+```{r}
+
+# take cover classes
+cover_class <- unique(x$class)
+
+# if not for loop, choose i value
+i=1
+  
+
+# can be done with for loop, but than it is hard to change some parameters so better not to
+#for(i in 1:6){
+  
+  # create a vector for the title
+  index <- case_when(
+    i == 1  ~ "Very low cover",  
+    i == 2~ "Low cover"  ,
+    i == 3 ~ "Medium cover"  ,
+    i == 4 ~ "High cover"  ,
+    i == 5~ "Very high cover" ,
+    i == 6~ "Dominant cover")
+  
+  # downsize dataset 
+  Dataset <- x[x$class==cover_class[i],]
+  
+  # create title
+  title <- paste(index," ]",cover_class[i], "]", sep="")
+  
+  # test differences and significance
+  fancy=F  
+  if(!fancy){
+    result<-welch_anova_test(Dataset, (RelDiff) ~ Neophyte )
+    result
+    games_howell_test(Dataset, RelDiff ~ Neophyte)
+    ggdensity(Dataset$RelDiff[Dataset$Neophyte=="extra"])
+    ggqqplot(Dataset$RelDiff[Dataset$Neophyte=="extra"])
+    shapiro.test(Dataset$RelDiff[Dataset$Neophyte=="extra"])
+  }
+  
+  
+  # perform fancy test (has to be updated)
+  if(fancy){  
+    # bayesian model test with both mean and sigma depending on the group
+    fit1 <- brm(bf(RelDiff ~ Neophyte, sigma ~ Neophyte), data = Dataset, 
+                family = gaussian())
+    summary(fit1)
+    
+    # calculate the differences between the neophytes
+    ggemmeans(fit1,"Neophyte",x.as.factor = TRUE)
+  
+    # test hypothesis (does not work)
+    hypothesis(fit1, "Neophyteintra - Intercept=0")
+    
+    # also way to compare the species
+    fit2.emm.a <- emmeans(fit1, "Neophyte", data=Dataset)
+    pairs(fit2.emm.a, adjust="tukey")
+    
+    # make 0 models (both with and without sigma)
+    fit2 <- brm(RelDiff~1,data=Dataset)
+    fit3 <- brm(bf(RelDiff~1, sigma ~Neophyte),data=Dataset)
+    
+    # calculate Bayes factor
+    bayes_factor(fit1,fit3)
+  }  
+    
+
+  # plot
+  p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
+                 color = Species, fill = Species))+
+      geom_violin(alpha=0.5, scale="width")+
+      geom_boxplot(width= 0.25, alpha=0.8, fill="white")+
+      theme_pubr()+
+      stat_summary(fun= "mean",
+                   geom = "point", aes(group= Neophyte), size=3)+
+      scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+      scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
+      theme(legend.position = "none")+
+      theme(legend.text= element_text(size=12),legend.title =element_text(size=14))+
+      annotate("text", x = 1, y = max(Dataset$RelDiff) + max(Dataset$RelDiff)/10, 
+               label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
+      annotate("text", x = 2, y = max(Dataset$RelDiff) + max(Dataset$RelDiff)/10, 
+               label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+      annotate("text", x = 3, y = max(Dataset$RelDiff) + max(Dataset$RelDiff)/10, 
+               label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+      annotate("text", x=1, y=max(Dataset$RelDiff) + max(Dataset$RelDiff)/5, 
+               label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="extra"])), 
+               vjust = 0, hjust = 0.5, size=4)+
+      annotate("text", x=2, y=max(Dataset$RelDiff) + max(Dataset$RelDiff)/5, 
+               label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="intra"])), 
+               vjust = 0, hjust = 0.5, size=4)+
+      annotate("text", x=3, y=max(Dataset$RelDiff) + max(Dataset$RelDiff)/5, 
+               label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="native"])), 
+               vjust = 0, hjust = 0.5, size=4)+
+      labs(subtitle = substitute(paste("Welch's ANOVA ", italic("P = 0.87"))))+
+      ylab("Relative difference")+
+      ggtitle(title)+
+      xlab(NULL)+
+      geom_hline(yintercept=0, linetype='dotted', alpha=0.5)
+    assign(gsub(" ","_",index), p)
+    p
+#}
+
+# arrange all plots and save
+plot <- ggarrange(Very_low_cover, Low_cover, Medium_cover, High_cover,
+                  Very_high_cover, Dominant_cover, nrow=3, ncol=2, labels= c("a","b", "c","d","e","f"),
+                  font.label = list(size = 12))
+plot
+ggsave("Impact2.jpg", plot= plot, width = 10, height = 10)
+```
 
 
 

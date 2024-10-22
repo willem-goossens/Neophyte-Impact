@@ -107,18 +107,22 @@ Since Christians code is rather long, I try to simplify it by cutting it into mo
 First, we make a list of the number of plots per species in our smaller dataset (if we do the analysis for all plots we can just make the file created earlier).
 ```{r, message=F}
 
+# create smaller dataset
+reducedEva <- eva_country_neophyte |> select(PlotObservationID, Region,name,
+                                             Neophyte,Layer,`Cover %`)
+
+# sum cover species per plot
+reducedEva <- reducedEva |> group_by(PlotObservationID, Region,name, Neophyte, Layer) |>
+  summarise(cover= sum(`Cover %`))
+
+# Fisher methode  
+reducedEva <- reducedEva|> group_by(PlotObservationID, Region, name, Neophyte) |>
+  summarise(cover = (1-prod((1-ifelse(cover/100>1, 1, cover/100 ))))*100)
+
+# create vector unique species 
+uniqueSpecies <- unique(reducedEva[, c(3,4)])
+
 if(fast) {
-  reducedEva <- eva_country_neophyte |> select(PlotObservationID, Region,name, Neophyte,Layer,`Cover %`)
-
-  reducedEva <- reducedEva |> group_by(PlotObservationID, Region,name, Neophyte, Layer) |> summarise(cover= sum(`Cover %`))
-  
-  reducedEva <- reducedEva|> group_by(PlotObservationID, Region, name, Neophyte) |> 
-    summarise(cover = (1-prod((1-ifelse(cover/100>1, 1, cover/100 ))))*100)
-  
-  uniqueSpecies <- unique(reducedEva[, c(3,4)])
-  
-  # Empty dataset
-
   # Prepare parallel
   parallel::detectCores()
   n.cores <- parallel::detectCores() - 2
@@ -131,17 +135,19 @@ if(fast) {
   foreach::getDoParRegistered()
   foreach::getDoParWorkers()
   
-  
-  plotsPerSpecies <- data.frame(names = character(), numberOfPlots = integer(), Neophyte= character())
+  # empty dataset
+  plotsPerSpecies <- data.frame(names = character(), numberOfPlots = integer(), 
+                                Neophyte= character())
   # Count in how many plots a native species occurs
   begin<- Sys.time()
-plotsPerSpecies<-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
-    tmp <- reducedEva$PlotObservationID[reducedEva$name == uniqueSpecies$name[i]& 
-                                          reducedEva$Neophyte == uniqueSpecies$Neophyte[i]]
-    names=uniqueSpecies$name[i]
-    numberOfPlots= length(unique(tmp))
-    plotsPerSpecies[i,]<- c(names, numberOfPlots,Neophyte=uniqueSpecies$Neophyte[i] )
-}
+  plotsPerSpecies<-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind',
+                           .packages=c("dplyr","mgcv")) %dopar% {
+      tmp <- reducedEva$PlotObservationID[reducedEva$name == uniqueSpecies$name[i]& 
+                                            reducedEva$Neophyte == uniqueSpecies$Neophyte[i]]
+      names=uniqueSpecies$name[i]
+      numberOfPlots= length(unique(tmp))
+      plotsPerSpecies[i,]<- c(names, numberOfPlots,Neophyte=uniqueSpecies$Neophyte[i] )
+  }
 
   plotsPerSpecies<- as.data.frame(plotsPerSpecies)
   plotsPerSpecies<-setNames(plotsPerSpecies, c("names", "numberOfPlots","Neophyte"))
@@ -169,31 +175,44 @@ plotsPerSpecies<-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind', .packages=c
 
 Get the names of the species that are present in more than the required minimum number of plots
 ```{r, message=F}
+# downsize number of species
 minimumNumberOfPlots<- 30
-taxaForCoverClassAnalysis <- plotsPerSpecies[plotsPerSpecies$numberOfPlots >= minimumNumberOfPlots,]
+taxaForCoverClassAnalysis <- plotsPerSpecies[plotsPerSpecies$numberOfPlots >=
+                                               minimumNumberOfPlots,]
 
+# downsize fullPlotData
 fullPlotData <- fullPlotData %>% 
     select(PlotObservationID, ENS0, Area, 
            EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
-           DistSeverity.sqrt, Soil.Disturbance.sqrt, 
-           Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
+           DistSeverity.sqrt , Soil.Disturbance.sqrt , 
+           Grazing.Pressure.sqrt , Mowing.Frequency.sqrt , 
            Latitude, Longitude, Dataset, chelsaP, hfp, elev)
 
 
+# compute total cover per size and add to the fullPlotData
 total_cover <- reducedEva |> group_by(PlotObservationID) |> summarise(cover= sum(cover))
 fullPlotData <- left_join(fullPlotData, total_cover[, c(1,2)])
 colnames(fullPlotData)[19] <- "total"
 
 
-alien_cover <- reducedEva |> group_by(PlotObservationID, Neophyte) |> summarise(cover= sum(cover), n= n())
-alien_cover <- left_join(alien_cover, fullPlotData[,c(1,2,19)])
-alien_cover <- alien_cover |> mutate(cover_rel= cover/total, n_rel=n/ENS0, n_weighted= cover/total/n*ENS0)
+# calculate the sum of cover per plot per class (alien or native) and number of species
+alien_cover <- reducedEva |> group_by(PlotObservationID, Neophyte) |> 
+  summarise(cover= sum(cover), n= n())
 
+# add fullPlotData plot info and total cover
+alien_cover <- left_join(alien_cover, fullPlotData[,c(1,2,19)])
+# calculated weighted values
+alien_cover <- alien_cover |> mutate(cover_rel= cover/total, n_rel=n/ENS0, 
+                                     n_weighted= cover/total/n*ENS0)
+
+# make column per value
 test <- alien_cover |> pivot_wider(names_from = c(Neophyte),
                                    values_from = c(cover, n, cover_rel, n_rel, n_weighted))
 
+# add to full plot data
 fullPlotData <- left_join(fullPlotData, test)
 
+# make all NAs zero
 fullPlotData[is.na(fullPlotData)] <- 0
 ```
 
@@ -209,23 +228,50 @@ fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
 scaled=T
 if(scaled){
   
-  # copy dataset
+  # copy dataset for original values
   fullPlotData2 <-fullPlotData
-  
+
   # scale data 
-  fullPlotData[, c(4:12, 16:18, 20:34 )] <- scale(fullPlotData[, c(4:12, 16:18, 20:34)], center=F)
-  # what about the cover values? Also scale these?
+  fullPlotData[, c(4:12,13:14, 16:18, 20:34 )] <- 
+    scale(fullPlotData[, c(4:12,13:14, 16:18, 20:34)], center=F)
 }
 
 # run model
-MDL <- glmmTMB(ENS0 ~ EIVEresN+ hfp+ cover_rel_intra + cover_rel_extra+ EIVEresM+ EIVEresR+ EIVEresL+ EIVEresT+ 
-                DistSeverity.sqrt+ Soil.Disturbance.sqrt+ Grazing.Pressure.sqrt+ Mowing.Frequency.sqrt+
-                chelsaP+ (1| Dataset), data=fullPlotData, family= poisson(link=log))
+
+sqrt =F
+if(sqrt){
+MDL <- glmmTMB(ENS0 ~ EIVEresN+ hfp+ cover_rel_intra + cover_rel_extra+ EIVEresM+ EIVEresR+
+               EIVEresL+ EIVEresT+ DistSeverity + I(DistSeverity ^2)+
+               Soil.Disturbance + I(Soil.Disturbance ^2)+ 
+               Grazing.Pressure +I(Grazing.Pressure ^2)+ Mowing.Frequency +
+               I(Mowing.Frequency ^2)+ chelsaP+ (1| Dataset), 
+               data=fullPlotData, family= poisson(link=log))
+}
+
+if(!sqrt){
+MDL <- glmmTMB(ENS0 ~ EIVEresN+ hfp+ cover_rel_intra + cover_rel_extra+ EIVEresM+ EIVEresR+
+               EIVEresL+ EIVEresT+ DistSeverity.sqrt + I(DistSeverity.sqrt ^2)+
+               Soil.Disturbance.sqrt + I(Soil.Disturbance.sqrt ^2)+ 
+               Grazing.Pressure.sqrt +I(Grazing.Pressure.sqrt ^2)+ Mowing.Frequency.sqrt +
+               I(Mowing.Frequency.sqrt ^2)+ chelsaP+ (1| Dataset), 
+               data=fullPlotData, family= poisson(link=log))
+}
+
+# the sqrt model works better
 summary(MDL)
 
+mean(fitted(MDL))
+mean(fullPlotData$ENS0)
+```
+
+
+
+
+Visualise
+```{r}
 # predict responses and plot
 pr <- predict_response(MDL, "cover_rel_intra [all]")
-plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+plot(pr, show_data = T, show_residuals = T, show_residuals_line = T)
 pr <- predict_response(MDL, "cover_rel_extra [all]")
 plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
 pr <- predict_response(MDL, "EIVEresN [all]")
@@ -240,15 +286,101 @@ pr <- predict_response(MDL, "EIVEresL [all]")
 plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
 pr <- predict_response(MDL, "hfp [all]")
 plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
-pr <- predict_response(MDL, "Soil.Disturbance.sqrt [all]")
+pr <- predict_response(MDL, "Soil.Disturbance.sqrt  [all]")
+plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "DistSeverity.sqrt  [all]")
+plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "Grazing.Pressure.sqrt  [all]")
+plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+pr <- predict_response(MDL, "Mowing.Frequency.sqrt  [all]")
 plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
 pr <- predict_response(MDL, "chelsaP [all]")
-plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
-
+plot(pr, show_data = T, show_residuals = TRUE, show_residuals_line = TRUE)
 
 # plot using visreg
-visreg::visreg(MDL, gg = TRUE, partial=FALSE, rug = F,  scale="response")
+visreg::visreg(MDL, xvar="EIVEresN", gg = TRUE, partial=FALSE, rug = F,  scale="response")
+visreg::visreg(MDL, xvar="cover_rel_intra", gg = TRUE, partial=FALSE, rug = F,  scale="response")
+visreg::visreg(MDL, xvar="cover_rel_extra", gg = TRUE, partial=FALSE, rug = F,  scale="response")
 ```
+
+
+Check
+```{r}
+# check data
+library(DHARMa)
+
+# create simulation data
+simulationOutput <- simulateResiduals(fittedModel = MDL, plot = F)
+# look at simulation 
+# QQ plot --> line normal (is it correct distribution and is there no overdispersion)
+# residual plot --> if correct line at 0.5
+plot(simulationOutput)
+
+# test dispersion
+testDispersion(simulationOutput)
+plotResiduals(simulationOutput)
+plotResiduals(simulationOutput, fullPlotData$cover_rel_intra, smoothScatter=F, rank=F)
+plotResiduals(simulationOutput, fullPlotData$cover_rel_extra, smoothScatter=F, rank=F)
+plotResiduals(simulationOutput, fullPlotData$EIVEresN)
+plotResiduals(simulationOutput, fullPlotData$EIVEresM)
+plotResiduals(simulationOutput, fullPlotData$EIVEresL)
+plotResiduals(simulationOutput, fullPlotData$EIVEresR)
+plotResiduals(simulationOutput, fullPlotData$EIVEresT)
+plotResiduals(simulationOutput, fullPlotData$DistSeverity.sqrt)
+plotResiduals(simulationOutput, fullPlotData$Grazing.Pressure.sqrt)
+plotResiduals(simulationOutput, fullPlotData$Soil.Disturbance.sqrt)
+plotResiduals(simulationOutput, fullPlotData$Mowing.Frequency.sqrt)
+plotResiduals(simulationOutput, fullPlotData$hfp)
+plotResiduals(simulationOutput, fullPlotData$chelsaP)
+
+
+# are there more outliers than expected by accident
+testOutliers(simulationOutput)
+
+# compare location with expected
+testQuantiles(simulationOutput)
+
+# more zeroes than expected
+testZeroInflation(simulationOutput)
+
+# plot per random effect group
+simulationOutput2 <- recalculateResiduals(simulationOutput, group = fullPlotData$Dataset)
+plot(simulationOutput2, quantreg = FALSE) 
+```
+
+
+
+
+```{r}
+# scale or not
+correlation=T
+if(correlation){
+  
+  # copy dataset
+  fullPlotData3 <-fullPlotData
+  
+  fullPlotData <-fullPlotData[!duplicated(fullPlotData[, c(13,14)]),]
+}
+
+fullPlotData$pos <- numFactor(fullPlotData$Longitude, fullPlotData$Latitude)
+# run model
+MDL <- glmmTMB(ENS0 ~ EIVEresN+ hfp+ cover_rel_intra + cover_rel_extra+ EIVEresM+ EIVEresR+ EIVEresL+ EIVEresT+ 
+                DistSeverity.sqrt+ I(DistSeverity.sqrt^2)+ Soil.Disturbance.sqrt+ I(Soil.Disturbance.sqrt^2)+ 
+                Grazing.Pressure.sqrt+I(Grazing.Pressure.sqrt^2)+ Mowing.Frequency.sqrt+ I(Mowing.Frequency.sqrt^2)+
+                chelsaP+ Longitude*Latitude+ (1| Dataset), data=fullPlotData3, family= poisson(link=log))
+summary(MDL)
+
+# create simulation data
+simulationOutput <- simulateResiduals(fittedModel = MDL, plot = F)
+# look at simulation 
+# QQ plot --> line normal (is it correct distribution and is there no overdispersion)
+# residual plot --> if correct line at 0.5
+plot(simulationOutput)
+
+# this can only be done if reduced dataset
+#testSpatialAutocorrelation(simulationOutput = simulationOutput, x= fullPlotData3$Longitude, y= fullPlotData3$Latitude)
+```
+
 
 
 Compare with the gamm model
@@ -306,16 +438,21 @@ library(gbm)
 library(dismo)
 
 fullPlotData2 <- as.data.frame(fullPlotData2)
-BRTmodel <- gbm.step(data=fullPlotData2,
+BRTmodel1 <- gbm.step(data=fullPlotData2,
                              gbm.x = c(4:12, 27:28), 
                              gbm.y = 2, 
                              family = "poisson",
-                             tree.complexity = 3,
+                             tree.complexity = 4,
                              learning.rate = 0.001,
                              bag.fraction = 0.7)
 
 BRTmodel$contributions
 gbm.plot(BRTmodel, n.plots=11, write.title = F,
+         common.scale = F, y.label="Fitted function",
+         show.contrib = TRUE)
+
+BRTmodel1$contributions
+gbm.plot(BRTmodel1, n.plots=11, write.title = F,
          common.scale = F, y.label="Fitted function",
          show.contrib = TRUE)
 ```
