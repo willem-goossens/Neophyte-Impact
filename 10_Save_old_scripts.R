@@ -396,3 +396,491 @@ add_row_if_exists <- function(res, baseModel, idx, class, coverClass, plantName,
   }
   return(res)
 }
+
+
+
+####Old visualisation ####
+
+
+
+```{r}
+
+obj <- data.frame(
+  cover_rel_intra = median(fullPlotData$cover_rel_intra),
+  cover_rel_extra = median(fullPlotData$cover_rel_extra),
+  hfp = median(fullPlotData$hfp),
+  EIVEresM= median(fullPlotData$EIVEresM),
+  EIVEresN= median(fullPlotData$EIVEresN),
+  EIVEresL= median(fullPlotData$EIVEresL),
+  EIVEresR= median(fullPlotData$EIVEresR),
+  EIVEresT= median(fullPlotData$EIVEresT),
+  DistSeverity.sqrt =  median(fullPlotData$DistSeverity.sqrt),
+  Soil.Disturbance.sqrt= median(fullPlotData$Soil.Disturbance.sqrt),
+  Grazing.Pressure.sqrt= median(fullPlotData$Grazing.Pressure.sqrt),
+  Mowing.Frequency.sqrt= median(fullPlotData$Mowing.Frequency.sqrt),
+  chelsaP= median(fullPlotData$chelsaP),
+  Longitude= median(fullPlotData$Longitude),
+  Latitude= median(fullPlotData$Latitude),
+  Dataset= names(which.max(table(fullPlotData$Dataset)))
+)
+
+test <-summary(MDL)
+index <- which(unique(rownames(test$coefficients[[1]]))=="cover_rel_intra")
+
+int <-predict(MDL, obj, type="response")
+slope <- test$coefficients$cond[index]
+
+impact_intra <- slope/int
+
+```
+
+
+
+
+Visualise
+```{r}
+pred1=F
+if(pred1){
+  # predict responses and plot
+  pr <- predict_response(MDL, "cover_rel_intra [all]")
+  plot(pr, show_data = T, show_residuals = T, show_residuals_line = T)
+  pr <- predict_response(MDL, "cover_rel_extra [all]")
+  plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "EIVEresN [all]")
+  plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "EIVEresM [all]")
+  plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "EIVEresR [all]")
+  plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "EIVEresT [all]")
+  plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "EIVEresL [all]")
+  plot(pr, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "hfp [all]")
+  plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "Soil.Disturbance.sqrt  [all]")
+  plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "DistSeverity.sqrt  [all]")
+  plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "Grazing.Pressure.sqrt  [all]")
+  plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "Mowing.Frequency.sqrt  [all]")
+  plot(pr, show_data = TRUE, show_residuals = TRUE, show_residuals_line = TRUE)
+  pr <- predict_response(MDL, "chelsaP [all]")
+  plot(pr, show_data = T, show_residuals = TRUE, show_residuals_line = TRUE)
+}
+
+# plot using visreg
+visreg::visreg(MDL, xvar="EIVEresN", gg = TRUE, partial=FALSE, rug = F,  scale="response")
+visreg::visreg(MDL, xvar="cover_rel_intra", gg = TRUE, partial=FALSE, rug = F,  scale="response")
+visreg::visreg(MDL, xvar="cover_rel_extra", gg = TRUE, partial=FALSE, rug = F,  scale="response")
+```
+
+
+#### 2.1 Function 1 ####
+```{r, meassage=F}
+# The name of the first species (to test the function)
+plantName = allPlants$names[339]
+plantStatus= allPlants$Neophyte[339]
+
+which(allPlants$names=="Trientalis europaea")
+# Function to compute the impact for each species, so we only need the plant name as input
+computePlantImpact1 <- function(plantName, plantStatus) {
+  
+  # Copy dataset temporarily to be able to make changes
+  tmpFullPlotData <- fullPlotData
+  
+  reducedEva <- reducedEva_official
+  # Select only explanatory variables
+  tmpFullPlotData <- tmpFullPlotData %>% 
+    select(numberOfVascularPlantSpecies,PlotObservationID, Area, 
+           EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
+           DistSeverity.sqrt, Soil.Disturbance.sqrt, 
+           Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
+           Latitude, Longitude, Dataset, totalCover, chelsaP, hfp, PC1,PC2,PC3,PC4)
+  
+  # Copy the full dataset without aberrant totalCover
+  tmpFullPlotData <- tmpFullPlotData %>% filter(totalCover <= 900)
+  reducedEva <- reducedEva[reducedEva$PlotObservationID %in% tmpFullPlotData$PlotObservationID,]
+  
+  # Get the indices of the plant in the eva dataset
+  indexOfPlant <- reducedEva$name == plantName & reducedEva$Neophyte== plantStatus
+  
+  # We select only the rows containing the species first because this is much faster than doing it for all plots.
+  # We make the dataset smaller (only those plots where the species is present), group the data per plot and compute the total cover     (all species) and cover of the species we are highlighting now
+  plotsWherePlantOccurs <- reducedEva[indexOfPlant,c(1,4)]
+  colnames(plotsWherePlantOccurs)[2]<- "speciesCover"
+  
+  # Join the computed cover plots with the full data
+  tmpFullPlotData <- left_join(tmpFullPlotData, plotsWherePlantOccurs, 
+                               by = "PlotObservationID")
+  
+  # Identify all plots where the species investigated occurs
+  tmpFullPlotData$plantOccurs = tmpFullPlotData$PlotObservationID %in% reducedEva$PlotObservationID[indexOfPlant]
+  
+  
+  # reduce the dataset to obtain only those plots in which the species is present
+  species_plots <- tmpFullPlotData[tmpFullPlotData$plantOccurs, c(19:22)  ]
+  species_plot_number <- nrow(species_plots)
+  
+  # make matrix and reduce duplicated columns
+  species_plots<- as.matrix(species_plots)
+  duplicated<- duplicated(species_plots)
+  species_plots<- species_plots[!duplicated, ]
+  
+  # take ConvexHull around the PCA coordinates in which the species is present
+  convex_hull <- convhulln((species_plots))
+  # Extract all points from the dataset that are additionally within this ConvexHull and do not contain the species
+  is_within_hull <- inhulln(convex_hull, as.matrix(tmpFullPlotData[, c(19:22)]))
+  subset_data <- tmpFullPlotData[is_within_hull, ]
+  
+  # Take size of subset data
+  size<- length(subset_data$plantOccurs)
+  species_plot_number <- sum(subset_data$plantOccurs)
+  
+  
+  # check relative size difference datasets
+  rel = species_plot_number/size
+  
+  if(rel< 0.10){
+    needed_size <- (species_plot_number/0.10)-species_plot_number
+    data_to_sample <- subset_data[!subset_data$plantOccurs,]
+    sample <- sample(data_to_sample$PlotObservationID, needed_size, replace=F)
+    update <- data_to_sample[data_to_sample$PlotObservationID %in% sample,]
+    subset_data <- rbind(subset_data[subset_data$plantOccurs,], update)
+    size<- length(subset_data$plantOccurs)
+  }
+  
+  if(rel> 0.30){
+    needed_size <- round((species_plot_number/0.30)-size)
+    data_to_sample <- tmpFullPlotData[!tmpFullPlotData$PlotObservationID %in% subset_data$PlotObservationID,]
+    sample <- sample(data_to_sample$PlotObservationID, needed_size, replace=F)
+    update <- data_to_sample[data_to_sample$PlotObservationID %in% sample,]
+    subset_data <- rbind(subset_data, update)
+    size<- length(subset_data$plantOccurs)
+  }  
+  
+  if(size < 100){
+    needed_size <- 100-size
+    data_to_sample <- tmpFullPlotData[!tmpFullPlotData$PlotObservationID %in% subset_data$PlotObservationID,]
+    sample <- sample(data_to_sample$PlotObservationID, needed_size, replace=F)
+    update <- data_to_sample[data_to_sample$PlotObservationID %in% sample,]
+    subset_data <- rbind(subset_data, update)
+    size<- length(subset_data$plantOccurs)
+  }
+  
+  
+  # change name tmpFullPlotData
+  tmpFullPlotData <- subset_data
+  
+  # If species is not present:
+  # Make 1 total cover and 0 species cover
+  tmpFullPlotData$totalCover[is.na(tmpFullPlotData$totalCover)] <- 100.0
+  tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
+  
+  # Exclude all plots which have 0 total cover
+  tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover >0,] 
+  
+  # Do SR - 1 for all plots in which the species is present
+  tmpFullPlotData$numberOfVascularPlantSpecies <- tmpFullPlotData$numberOfVascularPlantSpecies - tmpFullPlotData$plantOccurs
+  
+  correctArea= F
+  # Correct area: if true we calculate the area that is reserved for the other plant species. 
+  if(correctArea) {
+    tmpFullPlotData$Area <- tmpFullPlotData$Area*(1.0 - tmpFullPlotData$speciesCover/tmpFullPlotData$totalCover)
+  }
+  
+  # There is a numerical problem in the bam function if we provide empty plots...
+  tmpFullPlotData <- tmpFullPlotData |> filter(numberOfVascularPlantSpecies > 0, Area > 0)
+  
+  # Make dataset a factor to add it as a random variable
+  tmpFullPlotData$Dataset <- as.factor(tmpFullPlotData$Dataset)
+  
+  # Add relative species cover
+  tmpFullPlotData <- tmpFullPlotData %>% 
+    mutate(relSpeciesCover = 100 * speciesCover / totalCover)
+  
+  
+  # Species occurrence as factor (not logical)
+  tmpFullPlotData$plantOccursF <- factor(tmpFullPlotData$plantOccurs)
+  
+  # Base model
+  model<-  numberOfVascularPlantSpecies ~ 
+    s(log(Area),bs='tp') + 
+    s(EIVEresM, bs = 'tp') +
+    s(EIVEresN, bs = 'tp') +
+    s(EIVEresR, bs = 'tp') +
+    s(EIVEresL, bs = 'tp') +
+    s(EIVEresT, bs = 'tp') +
+    s(DistSeverity.sqrt, bs = 'tp') +
+    s(Soil.Disturbance.sqrt, bs = 'tp')+
+    s(Grazing.Pressure.sqrt, bs = 'tp')+
+    s(Mowing.Frequency.sqrt, bs = 'tp') +
+    s(Latitude, Longitude, bs = 'tp') +
+    s(hfp, bs='tp')+
+    s(chelsaP, bs='tp')+
+    s(Dataset, bs = 're')+
+    plantOccursF
+  
+  base <- bam(model,family = poisson(link = log), 
+              data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, 
+              nthreads=4)
+  
+  # Get summary from model
+  baseModel <- summary(base)
+  baseModel
+  
+  # Make a dataframe to add the residuals to
+  res <- data.frame(taxa = character(), Estimate = numeric(), 
+                    StdErr = numeric(), `zValue` = numeric(), 
+                    pr = numeric(), numberOfPlots = integer(), 
+                    Neophyte= character(),
+                    RelDiff= numeric(),
+                    size= numeric(),
+                    species_plots= numeric(),
+                    rel= numeric())
+  
+  res <- add_row(res, 
+                 taxa = plantName, Estimate = baseModel$p.table[2,1], 
+                 StdErr = baseModel$p.table[2,2], 
+                 zValue = baseModel$p.table[2,3], 
+                 pr = baseModel$p.table[2,4], 
+                 numberOfPlots = length(plotsWherePlantOccurs$PlotObservationID), 
+                 Neophyte= plantStatus,
+                 RelDiff= 100* 
+                   (mean(fitted(base)[tmpFullPlotData$plantOccursF == TRUE]) -
+                      mean(fitted(base)[tmpFullPlotData$plantOccursF == FALSE])) /
+                   mean(fitted(base)[tmpFullPlotData$plantOccursF == FALSE]),
+                 size= size, 
+                 species_plots = species_plot_number,
+                 rel =species_plot_number/size)
+  
+  res
+}
+```
+
+#### BRMS ####
+# perform fancy test (has to be updated)
+if(fancy){  
+  library(brms)
+  # bayesian model test with both mean and sigma depending on the group
+  fit1 <- brm(bf(RelDiff ~ Neophyte, sigma ~ Neophyte, alpha ~Neophyte), data = Dataset, 
+              family = "skew_normal", warmup= 1000, iter= 10000, chains= 4, cores = 12, control= list(adapt_delta=0.90))
+  summary(fit1)
+  
+  # calculate the differences between the neophytes
+  ggemmeans(fit1,"Neophyte",x.as.factor = TRUE)
+  
+  # test hypothesis (does not work)
+  hypothesis(fit1, "Neophyteintra - Intercept=0")
+  
+  # also way to compare the species
+  fit2.emm.a <- emmeans(fit1, "Neophyte", data=Dataset)
+  pairs(fit2.emm.a, adjust="tukey")
+  plot(fit2.emm.a, comparisons = F)
+  
+  # make 0 models (both with and without sigma)
+  fit2 <- brm(RelDiff~1,data=Dataset)
+  fit3 <- brm(bf(RelDiff~1, sigma ~Neophyte),data=Dataset)
+  
+  # calculate Bayes factor
+  bayes_factor(fit1,fit3)
+  
+  #Check model
+  plot(fit1)
+  pp_check(fit1)
+  summary(fit1)
+}  
+
+
+#### ART ####
+result$eta <- with(result, `Sum Sq`/(`Sum Sq` + `Sum Sq.res`))
+result
+Sum = groupwiseMedian(RelDiff ~ Neophyte*class,
+                      data=x,
+                      bca=FALSE, percentile=TRUE)
+Sum
+
+pd = position_dodge(0.4)
+
+ggplot(Sum,
+       aes(x     = class,
+           y     = Median,
+           color = Neophyte)) +
+  geom_point(shape  = 16,
+             size   = 2,
+             position = pd) +
+  geom_errorbar(aes(ymin  =  Percentile.lower,
+                    ymax  =  Percentile.upper),
+                width =  0.2,
+                size  =  0.7,
+                position = pd) +
+  theme_bw() +
+  theme(axis.title   = element_text(face = "bold"),
+        axis.text    = element_text(face = "bold"),
+        plot.caption = element_text(hjust = 0))
+
+
+
+#### TRY  ####
+
+
+# 2 TRY
+## 2.1 Explore
+```{r}
+# Get all trait data
+Traits <- rtry_import("../TRY/32370.txt", separator = "\t",encoding = "Latin-1", quote = "",showOverview = TRUE)
+
+# How is data structured
+head(Traits)
+colnames(Traits)
+
+# Which traits are in the dataset
+Trait_variability<- rtry_explore(Traits, TraitID, TraitName)
+Species_variability<- rtry_explore(Traits, AccSpeciesID, AccSpeciesName, TraitID, TraitName)
+```
+
+
+## 2.2 Select
+```{r}
+# select columns
+workdata <- rtry_select_col(Traits, ObsDataID, ObservationID, AccSpeciesID, AccSpeciesName, 
+                            ValueKindName, TraitID, TraitName, DataID, DataName, OriglName, 
+                            OrigValueStr, OrigUnitStr, StdValue, UnitName, OrigObsDataID, 
+                            ErrorRisk, Comment)
+
+# explore sorted dataframe
+workdata_explore_anc <- rtry_explore(workdata, DataID, DataName, TraitID, TraitName, sortBy = TraitID)
+
+# Data ID
+# 659, 60, 61    long, lat, alt
+# 62, 80         MAT, MAP
+
+# select which rows we want to keep
+workdata <- rtry_select_row(workdata, TraitID > 0 | DataID %in% c(59, 60, 61, 62, 80, 413))
+```
+
+
+```{r}
+# Save a version before deleting data
+workdata_unexcluded <- workdata
+```
+
+
+## 2.3 Exclude
+Select rows we want to work with
+```{r}
+# explore dataframe
+tmp_unfiltered <- rtry_explore(workdata, DataID, DataName, TraitID, TraitName, sortBy = TraitID)
+
+# exclude some data
+workdata <- rtry_exclude(workdata, DataID %in% c(974, 1629, 1739, 3727, 3728, 8178, 9780:9782,8681,8682), baseOn = ObsDataID)
+
+# select some rows
+all<- rtry_select_row(workdata, DataID %in% c(4, 2568, 14, 15, 16, 30, 31, 258, 65, 100, 407, 
+                                              485, 620, 19,20,448,504, 6575, 6463,6577,6579, 
+                                              6581, 6589,6582, 6584,6598), baseOn=ObsDataID)
+
+# explore newly made dataframe
+tmp_unfiltered <- rtry_explore(all, DataID, DataName, TraitID, TraitName, sortBy = TraitID)
+```
+
+
+Remove values that are likely errors
+```{r}
+# error risk --> distance species/ genus mean --> 3 --> 3 sd away from mean
+tmp_unfiltered <- rtry_explore(all, DataID, DataName, TraitID, TraitName, ErrorRisk, sortBy = ErrorRisk)
+all <- rtry_exclude(all, ErrorRisk >= 5, baseOn = ObsDataID)
+
+```
+
+
+Duplicates
+```{r}
+# Based on OrigObsDataID but important to note that also data is removed that might not be duplicated if not all data was available from the beginning
+workdata <- rtry_remove_dup(workdata)
+```
+
+
+## 2.4 Transform
+```{r}
+# from long to wide (more columns, less rows)
+
+# only select rows with numeric values
+num_traits <- rtry_select_row(workdata, complete.cases(TraitID) & complete.cases(StdValue))
+# take the columns we want to use
+num_traits <- rtry_select_col(num_traits, ObservationID, AccSpeciesID, AccSpeciesName, TraitID, TraitName, StdValue, UnitName)
+
+# before transformation summarise
+num_traits <- num_traits |> group_by(AccSpeciesName, TraitID, TraitName, UnitName) |> summarise(StdValue= mean(StdValue))
+
+# transformation --> get names from trait names and use values as cell values (with mean)
+num_traits_wider <-rtry_trans_wider(num_traits, names_from = c(TraitID, TraitName, UnitName), values_from = c(StdValue), values_fn = list(StdValue = mean))
+```
+
+
+## 2.5 Eva
+```{r}
+# load data
+eva <- read_csv("fullPlotEva_cover_all_layer_cleaned.csv",show_col_types = FALSE)
+
+# get species names of both datasets
+species_try <- unique(num_traits_wider$AccSpeciesName)
+species_eva<- unique(eva$species)
+# count how many of our species are present in TRY
+sum(species_eva %in% species_try)
+
+# merge eva and trait data
+test<- left_join(eva, num_traits_wider, by=c("species"="AccSpeciesName"))
+
+# Count number of NA values per trait
+na_counts <- (apply(test[, 21:48], 2, function(x) sum(!is.na(x))))
+na_counts_df <- data.frame(variable = names(na_counts), value = na_counts)
+na_counts_df
+
+# Summarise data per plot
+x<- test |> group_by(PlotObservationID) |> 
+  summarise(cwm_SSD= mean(`4_Stem specific density (SSD, stem dry mass per stem fresh volume) or wood density_g/cm3`, na.rm=T), 
+            cwm_SLA= mean(`3115_Leaf area per leaf dry mass (specific leaf area, SLA or 1/LMA): petiole excluded_mm2 mg-1`, na.rm=T), 
+            n=n(`4_Stem specific density (SSD, stem dry mass per stem fresh volume) or wood density_g/cm3`))
+```
+
+#### PGLS ####
+```{r}
+library(nlme)
+library(ape)
+library(caper)
+
+mat <- vcv(tree$scenario.3, corr=TRUE)
+
+colnames(impact)[1] <- c("Names")
+```
+
+
+```{r}
+data <- comparative.data(phy= tree$scenario.3, data= impact)
+
+
+fit <- pgls(impact~ LMA, correlation=corSymm(mat[lower.tri(mat)],fixed=TRUE), data=general, na.action= na.omit)
+summary(fit)
+
+
+```
+
+```{r}
+mat <- vcv(tree$scenario.3, corr=TRUE)
+
+fit <- gls(RelDiff~ LMA, correlation=corSymm(mat[lower.tri(mat)],fixed=TRUE), data=impact, na.action= na.omit)
+summary(fit)
+
+impact3 <- impact[!is.na(impact$RelDiff),]
+impact3 <- impact3[!is.na(impact3$LMA),]
+pglsModel <- gls(RelDiff ~ LMA , correlation = corPagel(1, phy = tree$scenario.3),  data = impact3, method = "ML")
+summary(pglsModel)
+
+
+gls(RelDiff ~ LMA, correlation = corBrownian(phy = tree$scenario.3, form= ~Names),data= impact, method="ML")
+```
+
+
+
