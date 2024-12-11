@@ -39,7 +39,17 @@ eva <- read_csv("fullPlotEva_ESy.csv")
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it.
 ```{r, warnings=F, message=F}
 # header like data, filtered and appended with EIVE and DIV
-fullPlotData <- read_csv("fullPlotData_ESy.csv")
+normal = T
+if(normal){
+  fullPlotData <- read_csv("fullPlotData_ESy.csv")
+} else {
+  fullPlotData_EUNIS <- read_csv("fullPlotData_EUNIS.csv")
+  habitats <- unique(fullPlotData$habitat)
+  # adapt here the type you want to assess, e.g. 'grasslands'=1
+  fullPlotData <- fullPlotData[fullPlotData$habitat==habitats[3] & !is.na(fullPlotData$habitat),]
+  eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
+}
+
 
 fast <- F
 if(fast) {
@@ -51,7 +61,7 @@ if(fast) {
 Load the neophyte definitions:
 ```{r, message=F}
 # Data on which species are neophytes
-native_intra_analysis=T
+native_intra_analysis=F
 if(native_intra_analysis){
   species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
 } else{
@@ -59,9 +69,6 @@ if(native_intra_analysis){
   species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
 }
 
-Belgium <- species_country_status[species_country_status$Region=="Belgium",]
-Belgium <- Belgium[Belgium$Neophyte=="intra",]
-Belgium <- Belgium[, c(1,5,7)]
 # Assign these names to the eva list
 extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
 intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
@@ -86,49 +93,71 @@ table(eva_country_neophyte$Neophyte)
 # 2 COVER
 ## 2.1 Synthesis
 ```{r}
-fast=T
+fast=F
 if(fast){
   # For speed optimization we extract only the necessary information from EVA
-  reducedEva <- eva_country_neophyte |> select(PlotObservationID, Region,name, Neophyte,Layer,`Cover %`)
+  reducedEva <- eva_country_neophyte |> select(PlotObservationID, Region,name, Neophyte,
+                                               Layer,`Cover %`)
   
-  reducedEva <- reducedEva |> group_by(PlotObservationID, Region,name, Neophyte, Layer) |> summarise(cover= sum(`Cover %`))
+  # Add covers per layer
+  reducedEva <- reducedEva |> group_by(PlotObservationID, Region,name, Neophyte, Layer) |>
+    summarise(cover= sum(`Cover %`))
   
+  # Fisher for multiple layers
   reducedEva <- reducedEva|> group_by(PlotObservationID, Region, name, Neophyte) |> 
     summarise(cover = (1-prod((1-ifelse(cover/100>1, 1, cover/100 ))))*100)
   
+  # list unique species
   uniqueSpecies <- unique(reducedEva[, c(3,4)])
   
+  # add total cover to fullPlotData
+  fullPlotData <- reducedEva %>% group_by(PlotObservationID) %>% 
+    summarise(totalCover = sum(cover)) %>% 
+    left_join(fullPlotData, by = "PlotObservationID")
+  
+  # Copy the full dataset without aberrant totalCover
+  fullPlotData <- fullPlotData %>% filter(totalCover <= 900)
+  reducedEva <- reducedEva[reducedEva$PlotObservationID %in%
+                             fullPlotData$PlotObservationID,]
+
+  
   # Make empty dataframe
-  speciesDominance <- data.frame(names = character(), coverMedian = numeric(), coverMean = numeric(), var = numeric(), numberOfPlots = integer(), neophyte = logical())
+  speciesDominance <- data.frame(names = character(), coverMedian = numeric(), 
+                                 coverMean = numeric(), var = numeric(), 
+                                 numberOfPlots = integer(), neophyte = logical())
   
   # Prepare running in parallel
   parallel::detectCores()
   n.cores <- parallel::detectCores() - 2
-  my.cluster <- parallel::makeCluster(
-    n.cores, 
-    type = "PSOCK"
-  )
+  my.cluster <- parallel::makeCluster(n.cores, type = "PSOCK")
   print(my.cluster)
   doParallel::registerDoParallel(cl = my.cluster)
   foreach::getDoParRegistered()
   foreach::getDoParWorkers()
   
+  i=1
   # Take time beginning
   begin<- Sys.time()
   # Do calculation of average and median cover+ variance in dataset
- speciesDominance <-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind', .packages=c("dplyr","mgcv")) %dopar% {
+ speciesDominance <-foreach(i= 1:nrow(uniqueSpecies), .combine='rbind',
+                            .packages=c("dplyr","mgcv")) %dopar% {
     # Get dataset for each unique species
-      tmp <- reducedEva[reducedEva$name == uniqueSpecies$name[i]& reducedEva$Neophyte == uniqueSpecies$Neophyte[i],]
+      tmp <- reducedEva[reducedEva$name == uniqueSpecies$name[i]& 
+                          reducedEva$Neophyte == uniqueSpecies$Neophyte[i],]
     # Make ID a factor
     tmp$PlotObservationID <- as.factor(tmp$PlotObservationID)
-    # Group by plot and calculate the mean species cover for that species in all plots where it is present
+    # Group by plot and calculate the mean species cover for that species in all plots where
+    # it is present (this step is not necessary anymore)
     tmp <- tmp |> group_by(PlotObservationID) |> summarise(cover = mean(`cover`))
-    # We are only interested in the dominance of species occurring in at least 50 (?) plots 
+    
+    # We are only interested in the dominance of species occurring in at least 30 plots 
     if(length(tmp$PlotObservationID) >= 30) {
-      # Get the summary (median and mean at place 3 and 4) for when the species is present, also incorporating the variance and number of Plots
+    # Get the summary (median and mean at place 3 and 4) for when the species is present, 
+    # also incorporating the variance and number of Plots
       sum <- summary(tmp$cover)
-      x <- c(names = uniqueSpecies$name[i], coverMedian = sum[[3]], coverMean = sum[[4]], var = var(tmp$cover), 
-          numberOfPlots =length(tmp$PlotObservationID), neophyte = uniqueSpecies$Neophyte[i])
+      x <- c(names = uniqueSpecies$name[i], coverMedian = sum[[3]], coverMean = sum[[4]], 
+             var = var(tmp$cover),numberOfPlots =length(tmp$PlotObservationID), 
+             neophyte = uniqueSpecies$Neophyte[i])
   }
 }
 # Ending and calculate time it took to perform the calculations
@@ -138,14 +167,16 @@ round(end-begin)
 # Make the matrix a dataframe and change the row names
 speciesDominance<- as.data.frame(speciesDominance)
 row.names(speciesDominance)<- c(1:length(speciesDominance$names))
+
 # Make the Median, Mean, Variance and Number numeric
 speciesDominance[,c(2:5)]<- apply(speciesDominance[, c(2:5)], MARGIN= 2, FUN= as.numeric)
+
 # Stop the cluster
 parallel::stopCluster(cl = my.cluster)
-#write_csv(speciesDominance, "speciesDominance_new.csv")
+#write_csv(speciesDominance, "speciesDominance_native_intra.csv")
 } else{
   if(native_intra_analysis){
-  speciesDominance<- read.csv("speciesDominance_native_intra.csv")
+  speciesDominance <- read.csv("speciesDominance_native_intra.csv")
   }else{
   speciesDominance<- read.csv("speciesDominance.csv")
   }
@@ -179,6 +210,7 @@ speciesDominance <- speciesDominance[!speciesDominance$names %in% genus$original
 genus_country <- species_country_status[species_country_status$name %in% genus$original,]
 #write_csv(genus_country, "genus_country.csv")
 ```
+
 
 
 
@@ -272,7 +304,7 @@ p<-ggplot(speciesDominance, mapping = aes(x= (neophyte), y = log10(coverMean), g
   labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.0001"))))
 Dominance <- p
 
-ggsave("Dominance New 30.jpeg", p,width = 5, height = 5)
+#ggsave("Dominance New 30.jpeg", p,width = 5, height = 5)
 }
 
 
@@ -441,7 +473,7 @@ p
 plot <- ggarrange(Dominance,Frequency, nrow=1, ncol=2, labels= c("a","b"),font.label = list(size = 12, color))
 plot
 
-ggsave("Dominance_native_intra.jpg", plot= plot, width = 10, height = 5)
+#ggsave("Dominance_frequency.jpg", plot= plot, width = 10, height = 5)
 
 ```
 
