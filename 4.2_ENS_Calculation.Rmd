@@ -86,19 +86,19 @@ rm(fullPlot2, eva_country_neophyte, tt)
 # 2 ENS
 ## 2.1 Prepare
 ```{r}
-# we calculate the fisher value for species present among multiple layers
+# check duplicates species
 check <- unique(eva[, c(6,10,21)])
 length(unique(eva$name))
 y <-check[duplicated(check$name) | duplicated(check$name, fromLast = T),]
 unique(y$name)
 
-# not possible here yet, as doing so would merge some species that are different subspecies per plot. Will have to be done in every file seperately to be able to keep e.g. EIVE values that differ and have less of an impact. It is important to note that this file takes this into account by calculating the ENSO only on species names (so not subspecies removed through EUNIS-ESy)
+
+# Calculate fisher
+# not necessary here yet, as doing so would merge some species that are different subspecies per plot. It is important to note that this file takes this into account by calculating the ENSO only on species names (so not subspecies removed through EUNIS-ESy)
 
 
 # reduce size eva
-eva2 <- eva
-eva<- eva[,c(1,6,9)]
-head(eva)
+eva<- eva[, c(1,6,9)]
 # change name
 colnames(eva)[3]<- "cover"
 
@@ -121,7 +121,6 @@ eva[eva$name=="Plant",] <- plant
 # check data layer
 # eva$Layer <- as.factor(eva$Layer)
 # We now have some trees, which can possibly affect our calculations
-
 ```
 
 
@@ -139,10 +138,11 @@ foreach::getDoParWorkers()
 plotID<- unique(eva$PlotObservationID)
 which(plotID == 1522409)
 # run for all and time
+i=99
 begin<-Sys.time()
 x<- foreach(i= 1:99, .combine = "rbind", .packages = c("dplyr","mgcv","tidyr","vegan")) %dopar% {
   # create the length of the to be calculated data chunk
-  j <- round(length(plotID)/99)
+  j <- ceiling(length(plotID)/99)
   # create begin and end values for the plot observation ID
   begin<- ((i-1)*j+1)
   end<- (i*j)
@@ -163,7 +163,6 @@ x<- foreach(i= 1:99, .combine = "rbind", .packages = c("dplyr","mgcv","tidyr","v
 # calculate time required
 end<-Sys.time()
 round(end-begin)
-
 colnames(x)<- c("PlotObservationID","ENS0","ENS1","ENS2")
 # stop cluster
 stopCluster(my.cluster)
@@ -175,8 +174,7 @@ stopCluster(my.cluster)
 # check the values --> some difference --> related to summing different layers 
 fullPlotData$PlotObservationID[!fullPlotData$PlotObservationID %in% x$PlotObservationID]
 all.equal(x[,2], fullPlotData$numberOfVascularPlantSpecies)
-(x[x$ENS0 != fullPlotData$numberOfVascularPlantSpecies,])
-
+x[x$ENS0 != fullPlotData$numberOfVascularPlantSpecies,]
 
 # what causes it to be different
 fullPlotData[fullPlotData$numberOfVascularPlantSpecies != x$ENS0, c(1,2,4,9)]
@@ -195,13 +193,18 @@ setdiff(y$PlotObservationID[y$n>1], test$PlotObservationID)
 
 # plot
 apply(x[, 2:4], MARGIN=2, FUN = hist)
+
+# check against previous definition
+all.equal(fullPlotData$ENS0, x$ENS0)
+all.equal(fullPlotData$ENS1, x$ENS1)
+all.equal(fullPlotData$ENS1, x$ENS1)
 ```
 
 
 
 ## 2.4 Save
 ```{r}
-save=T
+save=F
 if(save){
   fullPlotData<- left_join(fullPlotData, x)
   head(fullPlotData)
