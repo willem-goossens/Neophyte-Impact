@@ -26,7 +26,25 @@ ecocrop<- ecocrop[!is.na(ecocrop$Category),]
 
 ecospecies<- (ecocrop$species)
 
+# this has to be changed if further
 eva$name[eva$name=="Medicago sativa"] <- "Medicago sativa aggr."
+
+
+# change crop names
+# change crops 
+crops <- eva[grepl("crop ", eva$name, ignore.case = TRUE),]
+# Create the dataframe
+species_data <- data.frame(old = c( "crop vineyard", "crop barley", "crop maize", "crop wheat", "crop potato","crop hops", "crop pea", "crop digitalis", "crop tomato", 
+                                    "crop currant","crop cabbage", "crop bean", "crop onion", "crop asparagus", "crop spelt","crop carrot", "crop rhubarb", "crop clover", 
+                                    "crop tobacco", "crop zucchini", "crop parsley", "crop gladiolus", "crop salsify", "crop radish", "crop lettuce","crop buckwheat"),
+                          new = c("Vitis vinifera", "Hordeum vulgare", "Zea mays", "Triticum aestivum", "Solanum tuberosum", "Humulus lupulus", "Pisum sativum", 
+                                  "Digitalis purpurea", "Solanum lycopersicum", "Ribes rubrum","Brassica oleracea", "Phaseolus vulgaris", "Allium cepa", 
+                                  "Asparagus officinalis", "Triticum aestivum","Daucus carota", "Rheum rhabarbarum", "Trifolium repens", "Nicotiana tabacum", 
+                                  "Cucurbita pepo", "Petroselinum crispum", "Gladiolus grandiflorus", "Tragopogon porrifolius", "Raphanus sativus", "Lactuca sativa",
+                                  "Fagopyrum esculentum"))
+
+
+eva$name[eva$name %in% species_data$old] <- species_data$new[match(eva$name[eva$name %in% species_data$old], species_data$old)]
 
 # create our own vector
 species_vector <- c("Beta vulgaris subsp. vulgaris","Beta vulgaris", "Secale cereale","Triticum aestivum","Pisum sativum", "Solanum tuberosum",
@@ -49,31 +67,54 @@ species_vector <- as.data.frame(species_vector)
 colnames(species_vector)<- "species"
 species_vector$status <- species_country_status$Neophyte[match(species_vector$species, species_country_status$name)]
 
+
+#### 2 Changes ####
+remove <- c("Entodon concinnus","Hygrohypnum luridum")
+
+which(eva$name %in% remove)
+
+eva <- eva[!eva$name %in% remove,]
+
+
 #write_csv(eva, "fullPlotEva_ESy.csv")
 #write_csv(fullPlotData, "fullPlotData_ESy.csv")
 
+#### 3 Time ####
+# here again check time
+hist(fullPlotData$Date, breaks= 20)
+summary(fullPlotData$Date)
 
+sum(fullPlotData$Date < as.Date("1970-01-01"))/ nrow(fullPlotData)
 
-#### 2 Invasives ####
+#### 4 Invasives ####
+gisd <- read.csv("../EIVE Data/GISD.csv")
+gisd_species <- as.data.frame(gisd$Species)
+colnames(gisd_species) <- "gisd"
 
-gisd <- read.csv("../EIVE Data/GISD.csv", sep = ";")
-gisd_species <- gisd$Species
+# our names
+names <- unique(eva[, c(2:6)])
 
-gisd_species[gisd_species %in% uniqueSpecies]
+# convert species to our name classification
+# name
+gisd_species$eva <- names$name[match(vegdata::taxname.abbr(gisd_species$gisd),vegdata::taxname.abbr(gsub(" aggr\\.", "", names$name)))]
+sum(is.na(gisd_species$eva))
+gisd_species$eva[is.na(gisd_species$eva)] <- names$name[match(vegdata::taxname.simplify(gisd_species$gisd[is.na(gisd_species$eva)]),vegdata::taxname.simplify(gsub(" aggr\\.", "", names$name)))]
+sum(is.na(gisd_species$eva))
+gisd_species$eva[is.na(gisd_species$eva)] <- names$name[match(vegdata::taxname.abbr(gisd_species$gisd[is.na(gisd_species$eva)]),vegdata::taxname.abbr(gsub(" aggr\\.", "", names$species)))]
+sum(is.na(gisd_species$eva))
 
-test <- read.csv("coverClassImpactForCandidates_cover_all_layer_cleaned.csv")
+gisd$eva <- gisd_species$eva
+#write_csv(gisd,"../EIVE Data/GISD.csv")
 
-test$invasive <- test$taxa %in% gisd$Species
+# here we can try whether our species are among the most impactful
+impact <- read.csv("")
+
 
 #### 3 Summary ####
 # data should be complete from now on, we calculate the number of species in our dataset with eive and div values
-eive <- eva[, c(5,8:12)]
+colnames(eva)
 sum(!is.na(eva$eive_name))/ (length(eva$eive_name))
-length(unique(eva$name[!is.na(eva$eive_name)])) / (length(unique(eva$name))-1)
+length(unique(eva$name[!is.na(eva$eive_name)])) / (length(unique(eva$name)))
 
 sum(!is.na(eva$div_name))/ length(eva$div_name)
-length(unique(eva$name[!is.na(eva$div_name)])) / (length(unique(eva$name))-1)
-
-length(unique(eva$name))
-
-# we also have to recalculate the total cover for species names seperately, hereby paying attention to the layer in which they are present
+length(unique(eva$name[!is.na(eva$div_name)])) / (length(unique(eva$name)))
