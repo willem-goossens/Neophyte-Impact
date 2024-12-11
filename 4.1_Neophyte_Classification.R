@@ -36,6 +36,25 @@ neophyte <- read_csv("neophyte_euro.csv", show_col_types = FALSE)
 neophyte <- read_csv("neophyte_ESy.csv", show_col_types = FALSE)
 
 
+# compare with Veronika
+veronika_aliens <- read_xlsx("willem-alien-data-checked-2024-10-10.xlsx", sheet= "aliens")
+veronika_aliens <- veronika_aliens[veronika_aliens$Status != veronika_aliens$Status.checked.VK,]
+veronika_aliens <- veronika_aliens[!is.na(veronika_aliens$Rationale),]
+
+
+# glonaf
+veronika_glonaf <- read_xlsx("willem-alien-data-checked-2024-10-10.xlsx", sheet= "species-not-GloNAF")
+veronika_med <- read_xlsx("willem-alien-data-checked-2024-10-10.xlsx", sheet= "species-not-MED")
+veronika_med <- veronika_med[!veronika_med$reasoning=="POWO,Euro+Med = native AND/OR checklist = archaeophyte, uncertain",]
+
+# how many species in the newest version
+test <- veronika_aliens[veronika_aliens$`Aggregated name` %in% veronika_med$notMed,]
+
+
+# problems
+veronika_problems <- read_xlsx("willem-alien-data-checked-2024-10-10.xlsx", sheet= "merging-problems-status")
+veronika_problems <- veronika_problems[!veronika_problems$Conflict=="no",]
+
 ###### 2.2 Eva and Header #####
 # Load and make smaller to conocate
 fullPlotEva <- read_csv("fullPlotEva_ESy.csv", show_col_types = FALSE)
@@ -83,6 +102,18 @@ setdiff(Poland2, Poland)
 
 
 colnames(species_country)[9] <- "Neophyte"
+
+# change some species with Veronika
+for(i in 1: nrow(veronika_aliens)){
+  species_country$Neophyte[species_country$Region==veronika_aliens$Region[i] & species_country$name==veronika_aliens$`Accepted name`[i]] <- veronika_aliens$Status.checked.VK[i]
+}
+i=1
+# change some species with Veronika
+for(i in 1: nrow(veronika_problems)){
+  species_country$Neophyte[species_country$Region==veronika_problems$Region[i] & species_country$name==veronika_problems$name[i]] <- veronika_problems$`Aggregated.status.VK (with respect to a given region)`[i]
+}
+
+
 #write_csv(species_country, "country_species_ESy.csv")
 
 
@@ -115,8 +146,26 @@ if(intra_analysis){
   
   species_country$Neophyte[species_country$Neophyte=="native" & species_country$species %in% native_intra]<-
     "native_intra"
-  write_csv(species_country, "country_species_ESy.csv")
+  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
 }
+
+###### 2.3 Crops ######
+species_data <- data.frame(old = c( "crop vineyard", "crop barley", "crop maize", "crop wheat", "crop potato","crop hops", "crop pea", "crop digitalis", "crop tomato", 
+                                    "crop currant","crop cabbage", "crop bean", "crop onion", "crop asparagus", "crop spelt","crop carrot", "crop rhubarb", "crop clover", 
+                                    "crop tobacco", "crop zucchini", "crop parsley", "crop gladiolus", "crop salsify", "crop radish", "crop lettuce","crop buckwheat"),
+                           new = c("Vitis vinifera", "Hordeum vulgare", "Zea mays", "Triticum aestivum", "Solanum tuberosum", "Humulus lupulus", "Pisum sativum", 
+                                   "Digitalis purpurea", "Solanum lycopersicum", "Ribes rubrum","Brassica oleracea", "Phaseolus vulgaris", "Allium cepa", 
+                                   "Asparagus officinalis", "Triticum aestivum","Daucus carota", "Rheum rhabarbarum", "Trifolium repens", "Nicotiana tabacum", 
+                                   "Cucurbita pepo", "Petroselinum crispum", "Gladiolus grandiflorus", "Tragopogon porrifolius", "Raphanus sativus", "Lactuca sativa",
+                                   "Fagopyrum esculentum"))
+
+
+species_country$name[species_country$name %in% species_data$old] <- species_data$new[match(species_country$name[species_country$name %in% species_data$old], species_data$old)]
+
+# check for duplicats
+dup <- species_country[duplicated(species_country[,c(1:5)]) |duplicated(species_country[,c(1:5)], fromLast=T), ]
+
+#write_csv(species_country, "country_species_ESy.csv")
 
 # the remainder is not necessary anymore, we have delineated all species
 further= F
@@ -127,7 +176,7 @@ aliens <- species_country_status[species_country_status$Neophyte=="intra"| speci
 colnames(aliens)<- c("Region","Accepted name","Original EVA name","Aggregated name","Status")
 write_csv(aliens, "aliens.csv")  
   
-###### 2.3 extra-EU #######
+###### 2.4 extra-EU #######
 # Data on which species are neophytes from outside of Europe
 neophyteDefinitions <- read_csv("../Neophyte-Impact/Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv", show_col_types = FALSE)
 # get names eva
@@ -248,7 +297,7 @@ arch <- arch[arch %in% fullPlotEva$species]
 # and whether they different (85, 70)
 
 
-###### 2.4 SUMMARY #####
+###### 2.5 SUMMARY #####
 # All extra EU neophytes defined neo
 # dataframe (neophyteDefinitions)
 neophyteNames
@@ -953,3 +1002,10 @@ length(which(EUROPE %in% intra_EU))
 length(which(NOT_EU %in% intra_EU))
 NOT_EU[NOT_EU %in% intra_EU]
 # Again quite some, after checking 10 species (5%), only one was not found native to Europe
+
+
+##### 6 CHECK NSR ####
+###### 6.1 Data #####
+eva <- read.csv( "country_species_ESy.csv")
+
+# not possible due to lack data here, see: https://bien.nceas.ucsb.edu/bien/tools/nsr/nsr-api/
