@@ -1,11 +1,19 @@
-eva <- read_csv("fullPlotEva.csv")
-fullPlotData <- read_csv("fullPlotData2.csv")
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(stats)
 
-native_intra_analysis=T
+##### 1 READ #####
+eva <- read_csv("fullPlotEva_ESy.csv")
+fullPlotData <- read_csv("fullPlotData_ESy.csv")
+
+# Data on which species are neophytes
+native_intra_analysis=F
 if(native_intra_analysis){
-  species_country_status <- read_csv("eva2_country_status_new.csv")
+  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
 } else{
-  species_country_status<- read_csv("species_country_status_new.csv")
+  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
   # or if we want to do it with intra seperately
 }
 
@@ -14,22 +22,26 @@ extra_EU <- unique(species_country_status$species[species_country_status$Neophyt
 intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
 native_intra <- unique(species_country_status$species[species_country_status$Neophyte=="native_intra"])
 
-
 # Only observation ID and Region
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 # Right join to keep only species present in fullplot (otherwise a lot of NAs)
 eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
 rm(list=c("fullPlot2"))
 # Join eva and classification
-eva<- left_join(eva, species_country_status, by= c("Region"= "Region", "species"= "species"))
+eva<- left_join(eva, species_country_status, by= c("Region"= "Region", "name"= "name"))
+eva <- eva[!eva$name=="Plant",]
 
-ggplot(eva, aes(x=Disturbance.Severity, fill= Neophyte))+
-  geom_histogram(bins=20, position = "dodge", alpha = 0.5,
-                 # Note that y = stat(count) is the default behaviour
-                 mapping = aes(y = stat(ncount)))
+
+
+##### 2 DIV #####
+###### 2.1 Disturbance Severity #####
+test <- aov(Disturbance.Severity ~Neophyte, eva)
+summary(test)
+TukeyHSD(test)
 
 ggplot(eva, aes(x=Neophyte, y=Disturbance.Severity, color= Neophyte))+
-  geom_violin()+
+  geom_boxplot()+
+  theme_bw()+
   stat_summary(fun= "mean",
               geom = "point", aes(group= Neophyte), size=3)+
   scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#388E3C"), 
@@ -38,16 +50,41 @@ ggplot(eva, aes(x=Neophyte, y=Disturbance.Severity, color= Neophyte))+
                       labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte"))
 
 
+###### 2.2 N #####
+test <- aov(EIVEresN ~Neophyte, eva)
+summary(test)
+TukeyHSD(test)
 
-result<-(aov((Disturbance.Severity) ~ Neophyte, eva))
-summary(result)
-TukeyHSD(result)
+ggplot(eva, aes(x=Neophyte, y=EIVEresN, color= Neophyte))+
+  geom_boxplot()+
+  theme_bw()+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= Neophyte), size=3)+
+  scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#388E3C"), 
+                      name="Legend",
+                      breaks=c("native","native_intra", "intra","extra"),
+                      labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte"))
 
 
 
+###### 2.3 N niche width #####
+test <- aov(EIVEnwN ~Neophyte, eva)
+summary(test)
+TukeyHSD(test)
+
+ggplot(eva, aes(x=Neophyte, y=EIVEnwN, color= Neophyte))+
+  geom_boxplot()+
+  theme_bw()+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= Neophyte), size=3)+
+  scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#388E3C"), 
+                      name="Legend",
+                      breaks=c("native","native_intra", "intra","extra"),
+                      labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte"))
+
+
+##### 3 Databases #####
 databases <-  readxl::read_excel("../EVA Data/171_NeophyteInvasions20230216_metadata.xlsx")
-
-fullPlotData<- read_csv("fullPlotData_cover_all_layer_cleaned.csv")
 
 data<- fullPlotData |> group_by(Dataset) |> summarise(n=n()) |> mutate(rel_total_in_dataset_used= round(n/length(fullPlotData$PlotObservationID),3))
 
@@ -60,8 +97,9 @@ databases <- databases |> mutate(rel_used_vs_obtained = round(n/`# of plots`, 3)
 
 #write.csv(databases,"databases.csv", row.names = F)
 
-fullPlotData$Date <-  as.Date(fullPlotData$Date, format = "%d.%m.%Y")
 
+##### 4. TIME ####
+fullPlotData$Date <-  as.Date(fullPlotData$Date, format = "%d.%m.%Y")
 
 # save histogram in jpeg format in current directory
 jpeg(file="time histogram.jpeg")
@@ -72,9 +110,9 @@ hist(fullPlotData$Date, breaks= 100, freq=F)
 # call this function to save the file 
 dev.off()
 
-
 summary(fullPlotData$Date)
 
+# extra analysis
 answers_by_date <- fullPlotData %>%
   select(Date, PlotObservationID) %>%
   pad(start_val = min(fullPlotData$Date), end_val = max(fullPlotData$Date), interval = "day") %>%
