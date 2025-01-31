@@ -1,0 +1,371 @@
+---
+title: "Functional traits Chang"
+author: "Willem Goossens"
+date: "2025-01-22"
+output: html_document
+---
+
+# 1 Load
+```{r}
+rm(list=ls())
+```
+
+
+```{r}
+library(readr)
+library(rtry)
+library(dplyr)
+library(lmerTest)
+library(lme4)
+library(sjPlot)
+library(BHPMF)
+library(plantlist)
+library(ggpubr)
+library(vegdata)
+```
+
+
+# 2 Data
+## 2.1 Load
+```{r}
+# Load data
+mean <- read_csv("trait_normalized.csv",show_col_types = FALSE)
+trait <- read_csv("traits_diaz.csv",show_col_types = FALSE)
+
+
+eva <- read_csv("fullPlotEva_ESy_1980.csv", show_col_types = FALSE)
+fullPlotData <- read_csv("fullPlotData_EUNIS_1980.csv", show_col_types = FALSE)
+fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
+
+fast <- F
+if(fast) {
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
+  eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
+}
+
+eva_names <- as.data.frame(unique(eva$`Matched concept`))
+colnames(eva_names)<- "matched"
+eva_names$name <- eva$name[match(eva_names$matched, eva$`Matched concept`)]
+eva_names$irena <- eva$irena[match(eva_names$matched, eva$`Matched concept`)]
+eva_names$species <- eva$species[match(eva_names$matched, eva$`Matched concept`)]
+
+eva_names$taxa <- gsub(" aggr\\.", "", eva_names$name)
+```
+
+
+
+
+```{r}
+Diaz <- read_csv("../TRY/Species_traits_EVA.csv", show_col_types = FALSE)
+eva_names$Diaz <- Diaz$`Species name standardized against TPL`[match(eva_names$name, Diaz$name)]
+
+sum(!is.na(eva_names$Diaz))/nrow(eva_names)
+
+trait_names <- as.data.frame(unique(mean$SpeciesName))
+colnames(trait_names)<-"Diaz"
+
+trait_names$name <- eva_names$name[match(trait_names$Diaz, eva_names$Diaz)]
+sum(is.na(trait_names$name))
+trait_names$name[is.na(trait_names$name)]<- eva_names$name[match(trait_names$Diaz[is.na(trait_names$name)], eva_names$matched)]
+sum(is.na(trait_names$name))
+trait_names$name[is.na(trait_names$name)]<- eva_names$name[match(trait_names$Diaz[is.na(trait_names$name)], eva_names$species)]
+sum(is.na(trait_names$name))
+trait_names$name[is.na(trait_names$name)]<- eva_names$name[match(trait_names$Diaz[is.na(trait_names$name)], eva_names$irena)]
+sum(is.na(trait_names$name))
+
+mean$eva <- trait_names$name[match(mean$SpeciesName, trait_names$Diaz)]
+
+mean$woody <- Diaz$woody
+mean$growth <- Diaz$`Growth Form`
+```
+
+
+```{r}
+colnames(mean) <- c("name","Genus","Family","LA","LN","LMA","H","SM","SSD","eva", "woody", "growth")
+
+eva$LMA <- mean$LMA[match(eva$name, mean$eva)]
+eva$LA <- mean$LA[match(eva$name, mean$eva)]
+eva$SM <- mean$SM[match(eva$name, mean$eva)]
+eva$H <- mean$H[match(eva$name, mean$eva)]
+eva$LN <- mean$LN[match(eva$name, mean$eva)]
+#eva$LP <- mean$LeafP[match(eva$name, mean$eva)]
+eva$SSD <- mean$SSD[match(eva$name, mean$eva)]
+eva$Diaz <- mean$name[match(eva$name, mean$eva)]
+eva$woody <- mean$woody[match(eva$name, mean$eva)]
+eva$growth <- mean$growth[match(eva$name, mean$eva)]
+
+sum(!is.na(eva$Diaz))/nrow(eva)
+sum(!is.na(eva_names$Diaz))/nrow(eva_names)
+```
+
+
+```{r}
+cor(mean$LA, Diaz$`Leaf area (mm2)`, use= "pairwise.complete.obs")
+cor(mean$SM, Diaz$`Diaspore mass (mg)`, use= "pairwise.complete.obs")
+cor(mean$SSD, Diaz$`SSD combined (mg/mm3)`, use= "pairwise.complete.obs")
+cor(mean$LMA, Diaz$`LMA (g/m2)`, use= "pairwise.complete.obs")
+cor(mean$LN, Diaz$`Nmass (mg/g)`, use= "pairwise.complete.obs")
+cor(mean$H, Diaz$`Plant height (m)`, use= "pairwise.complete.obs")
+```
+
+
+
+```{r}
+eva_traits <- eva[,-c(1:5,7:10, 21)] |> group_by(name)
+eva_traits <- eva_traits[!duplicated(eva_traits$name),]
+```
+
+
+# 2 Impact
+## 2.1 Data
+```{r}
+impact<- read.csv("I:/Impact_1980.csv")
+impact <- left_join(impact, eva_traits[, c(1,19:24, 25,26, 27)], by= c("taxa"="name"))
+
+phylo <- read.csv("phylo.csv")
+impact[,23:24] <- phylo[match(impact$taxa, phylo$name), 6:7]
+
+check <-vegdata::parse.taxa(unique(impact$taxa))
+genus <- check[is.na(check$epi1),]
+impact <- impact[!impact$taxa %in% genus$original,]
+
+
+general <- impact |> 
+  group_by(taxa, Neophyte, LA, LN, LMA, H, SM, SSD, family, genus, woody, growth, Diaz) |> 
+  summarise(impact= sum((RelDiff*n)/numberOfPlots))
+
+# Make Neophyte a factor for in the models
+general$Neophyte <- as.factor(general$Neophyte)
+general$Neophyte <- relevel(general$Neophyte, ref="native")
+
+
+general$growth <- gsub("herbaceous non-graminoid","herb",general$growth)
+general$growth <- gsub("herbaceous graminoid","graminoid",general$growth)
+general$growth <- ifelse(general$H <5, gsub("shrub/tree","shrub",general$growth), gsub("shrub/tree","tree",general$growth))
+general$growth <- ifelse(general$H <0.5, gsub("herb/shrub","herb",general$growth), gsub("herb/shrub","shrub",general$growth))
+general$growth <- gsub("succulent","other",general$growth)
+general$growth <- gsub("fern","other",general$growth)
+general$growth <- gsub("climber","other",general$growth)
+
+general$growth <- as.factor(general$growth)
+general$growth <- relevel(general$growth, ref="herb")
+
+
+general[, c(3:8)] <- log(general[,c(3:8)])
+general[, c(3:8)] <- scale(general[, c(3:8)])
+
+test <- general[!duplicated(general$taxa),]
+sum(!is.na(test$Diaz))/nrow(test)
+```
+
+
+```{r}
+# remove outliers (see Diaz et al 2016 for number 4)
+
+for(j in 1:6){
+  i = j+ 2
+  tr <- as.matrix(general[,i])
+  print(sum(is.na(tr)))
+  tr <- ifelse(tr <= -4, NA, tr)
+  tr <- ifelse(tr >= 4, NA, tr)
+  print(sum(is.na(tr)))
+  general[,i] <- as.data.frame(tr)
+}
+```
+
+
+
+## 2.2 MODEL
+```{r}
+# create new vector to only assess species that have all data
+general2 <- general[!is.na(general$LA)& !is.na(general$LMA)& !is.na(general$SSD)& !is.na(general$SM)& !is.na(general$LN)& !is.na(general$H),]
+
+# run this if you want to see which species we loose
+lost_species <- general[!general$taxa %in% general2$taxa,]
+
+# test PCA
+PCA <- prcomp(general2[, c(3:8)], scale=F)
+eig.val <- factoextra::get_eigenvalue(PCA)
+eig.val
+biplot(PCA)
+PCA
+
+# assign axes to the data
+general2$PC1 <- PCA$x[,1]
+general2$PC2 <- PCA$x[,2]
+general2$PC3 <- PCA$x[,3]
+```
+
+
+```{r}
+# run model with PC1 (size) and PC2 (econ), also include the growth form
+MDL<- lmer(impact ~ PC1+ PC1: Neophyte+PC2+ PC2: Neophyte + Neophyte+ growth+ (1|family/genus), 
+           general2)
+
+# summarise and look at the differences
+summary(MDL)
+emmeans(MDL, pairwise ~Neophyte)
+#emmeans(MDL, pairwise ~woody)
+emmeans(MDL, pairwise ~growth)
+```
+
+
+```{r}
+# plot easy version
+visreg::visreg(MDL,"PC1", by="Neophyte", overlay=F)
+visreg::visreg(MDL,"PC2", by="Neophyte", overlay=TRUE)
+visreg::visreg(MDL,"growth", by="Neophyte")
+```
+
+
+## 2.3 PLOT
+```{r}
+test <- ggpredict(MDL, terms= c("PC1","Neophyte"))
+
+test$group <- gsub("native","Native",test$group)
+test$group <- gsub("intra","Intra-European",test$group)
+test$group <- gsub("extra","Extra-European",test$group)
+
+general2$Neophyte <- gsub("native","Native",general2$Neophyte)
+general2$Neophyte <- gsub("intra","Intra-European",general2$Neophyte)
+general2$Neophyte <- gsub("extra","Extra-European",general2$Neophyte)
+
+PC1<- ggplot(test, aes(x, predicted, colour= group))+
+  geom_point(data= general2, aes(x= PC1, y= impact, colour=Neophyte, alpha= ifelse(Neophyte=="Native", 0.1, 0.3)))+
+  geom_line()+
+  geom_ribbon(aes(ymin= conf.low, ymax= conf.high, colour= group, fill=group), alpha=0.5, linetype=0)+  
+  theme_pubr()+
+  xlab(expression(PC[size]))+
+  ylab("Overall impact")+
+  geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
+  scale_colour_manual(values=c( "#004D40", "#FFC107","#1E88E5"))+
+  scale_fill_manual(values = c( "#004D40", "#FFC107","#1E88E5"))+ 
+  labs(fill = "Origin", colour= "Origin")+ 
+  scale_alpha_identity() + 
+  theme(legend.position="bottom")
+PC1
+
+test <- ggpredict(MDL, terms= c("PC2","Neophyte"))
+
+test$group <- gsub("native","Native",test$group)
+test$group <- gsub("intra","Intra-European",test$group)
+test$group <- gsub("extra","Extra-European",test$group)
+
+
+
+PC2<- ggplot(test, aes(x, predicted, colour= group))+
+  geom_point(data= general2, aes(x= PC2, y= impact, colour=Neophyte, alpha= ifelse(Neophyte=="Native", 0.1, 0.3)))+
+  geom_line()+
+  geom_ribbon(aes(ymin= conf.low, ymax= conf.high, colour= group, fill=group), alpha=0.5, linetype=0)+  
+  theme_pubr()+
+  xlab(expression(PC[economics]))+
+  ylab("Overall impact")+
+  geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
+  scale_colour_manual(values=c( "#004D40", "#FFC107","#1E88E5"))+
+  scale_fill_manual(values = c( "#004D40", "#FFC107","#1E88E5"))+ 
+  labs(fill = "Origin", colour= "Origin")+ 
+  scale_alpha_identity() + 
+  theme(legend.position="bottom")
+PC2
+
+plot <- ggarrange(PC1, PC2, labels= c("a","b"), common.legend = TRUE, legend="bottom", align="hv")
+
+plot
+
+
+
+growth_neophyte=F
+if(growth_neophyte){
+
+test <- ggpredict(MDL, terms= c("growth", "Neophyte"))
+test <- test[!is.na(test$group),]
+test$group <- gsub("native","Native",test$group)
+test$group <- gsub("intra","Intra-European",test$group)
+test$group <- gsub("extra","Extra-European",test$group)
+  
+  
+growth<- ggplot(test, aes(x, predicted, colour= group))+
+  geom_violin(data= general2[!is.na(general2$growth),], aes(x= growth, y= impact, colour=Neophyte, fill=Neophyte, alpha= 0.3),  
+              position = position_dodge(width=0.8))+
+  geom_point(size=2, position = position_dodge2(width = 0.8, preserve = "single")) +
+  geom_errorbar(aes(ymin= conf.low, ymax= conf.high, colour= group), position = position_dodge(width = 0.8))+
+  theme_pubr()+
+  xlab("Life form")+
+  ylab("Overall impact")+
+  geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
+  scale_colour_manual(values=c( "#004D40", "#FFC107","#1E88E5"))+
+  scale_fill_manual(values = c( "#004D40", "#FFC107","#1E88E5"))+ 
+  labs(fill = "Origin", colour= "Origin")+ 
+  scale_alpha_identity() + 
+  theme(legend.position="bottom")
+} else {
+
+test <- ggpredict(MDL, terms= c("growth"))
+test <- test[!is.na(test$group),]  
+test$x <- as.factor(test$x)
+
+growth<- ggplot(test, aes(x= factor(x, level= c("herb","graminoid","shrub","tree","other")), predicted))+
+  geom_violin(data= general2[!is.na(general2$growth),], aes(x= factor(growth, level= c("herb","graminoid","shrub","tree","other")), y= impact, alpha= 0.3,
+                                                            fill= "lightgrey"),
+              position = position_dodge(width=0.8))+
+  geom_point(size=2, position = position_dodge2(width = 0.8, preserve = "single")) +
+  geom_errorbar(aes(ymin= conf.low, ymax= conf.high), position = position_dodge(width = 0.8))+
+  theme_pubr()+
+  xlab("Life form")+
+  ylab("Overall impact")+
+  geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
+  scale_alpha_identity() + 
+  theme(legend.position="none")+
+  theme(axis.title.x=element_blank())+
+  #scale_y_continuous(name= "Overall impact", limits= c(-1, max(general2$impact)+0.01))+
+  # Significance letters (lower position)
+  annotate("text", x=1, y=max(general2$impact), label="a", size=4, hjust=0.5, alpha=1, vjust= -0.3) +
+  annotate("text", x=2, y=max(general2$impact), label="ab", size=4, hjust=0.5, alpha=1, vjust= -0.3) +
+  annotate("text", x=3, y=max(general2$impact), label="b", size=4, hjust=0.5, alpha=1, vjust= -0.3)+
+  annotate("text", x=4, y=max(general2$impact), label="b", size=4, hjust=0.5, alpha=1, vjust= -0.3)+
+  annotate("text", x=5, y=max(general2$impact), label="b", size=4, hjust=0.5, alpha=1, vjust= -0.3)
+
+growth
+}
+
+
+
+plot <- ggarrange(PC1, PC2, growth, labels= c("a","b","c"), common.legend = TRUE, legend="bottom", align="hv", nrow=1, ncol=3)
+
+plot
+#ggsave("FTs.jpg", plot, width=12, height=4)
+
+
+```
+
+```{r}
+scores <- as.data.frame(PCA$x)
+scores$Neophyte <- general2$Neophyte
+
+loadings <- as.data.frame(PCA$rotation)
+
+PCA_plot <-ggplot(data = scores, aes(x = PC1, y = PC2, color = Neophyte)) +
+  geom_point(aes(alpha= ifelse(Neophyte=="Native", 0.1, 0.5)), size = 2) +
+  geom_segment(data = loadings, aes(x = 0, y = 0, xend = PC1*5, yend = PC2*5),
+               arrow = arrow(length = unit(0.2, "cm")), color = "black") +
+  geom_text(data = loadings, aes(x = PC1*5, y = PC2*5, label = rownames(loadings)),
+            color = "black", vjust = -0.5, size=5) +
+  theme_pubr() +
+  xlab(paste("PC1 (", round(PCA$sdev[1]^2/sum(PCA$sdev^2)*100, 0), "%)", sep = "")) +
+  ylab(paste("PC2 (", round(PCA$sdev[2]^2/sum(PCA$sdev^2)*100, 0), "%)",sep = "")) +
+  scale_colour_manual(values=c( "#004D40", "#FFC107","#1E88E5"))+
+  scale_fill_manual(values = c( "#004D40", "#FFC107","#1E88E5"))+ 
+  scale_alpha_identity() + 
+  theme(legend.position="bottom")+ 
+  labs(fill = "Origin", colour= "Origin")
+PCA_plot
+
+
+plot <- ggarrange(PC1, PC2, PCA_plot, growth, labels= c("a","b","c","d"), common.legend = TRUE, legend="bottom", align="hv", nrow=2, ncol=2)
+
+plot
+
+ggsave("FTs.jpg", plot, width=8, height=8)
+
+```
+
