@@ -33,7 +33,7 @@ neophyte<- readxl::read_excel("../Neophyte-Impact/country_species-2024-01-30-IA-
 # my own one, only species also present in our plots --> all known
 neophyte <- read_csv("neophyte_euro.csv", show_col_types = FALSE)
 # newest version
-neophyte <- read_csv("neophyte_ESy.csv", show_col_types = FALSE)
+neophyte <- read_csv("neophyte_ESy_1980.csv", show_col_types = FALSE)
 
 
 # compare with Veronika
@@ -57,16 +57,16 @@ veronika_problems <- veronika_problems[!veronika_problems$Conflict=="no",]
 
 ###### 2.2 Eva and Header #####
 # Load and make smaller to conocate
-fullPlotEva <- read_csv("fullPlotEva_ESy.csv", show_col_types = FALSE)
+fullPlotEva <- read_csv("fullPlotEva_ESy_1980.csv", show_col_types = FALSE)
 eva2<- fullPlotEva[,c("PlotObservationID","species", "irena","Matched concept", "name")]
-fullPlotData<- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+fullPlotData<- read_csv("fullPlotData_ESy_1980.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
 
 # Load summarized data
 # these is the full region-species database
 # these include unknown classifications
-species_country <- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+species_country <- read_csv("country_species_ESy_1980.csv", show_col_types = FALSE)
 
 # Join eva and header (species per plot and plot info respectively)
 eva_country<- left_join(eva2, fullPlot2)
@@ -143,7 +143,7 @@ if(intra_analysis){
   country_neophyte <- eva2 |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
   table(country_neophyte['Neophyte'])
   eva_country_neophyte<- eva2
-  
+  eva2[is.na(eva2$Neophyte) & eva2$name != "Plant",]
   species_country$Neophyte[species_country$Neophyte=="native" & species_country$species %in% native_intra]<-
     "native_intra"
   species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
@@ -165,7 +165,12 @@ species_country$name[species_country$name %in% species_data$old] <- species_data
 # check for duplicats
 dup <- species_country[duplicated(species_country[,c(1:5)]) |duplicated(species_country[,c(1:5)], fromLast=T), ]
 
-#write_csv(species_country, "country_species_ESy.csv")
+dup <- species_country[duplicated(species_country[,c(1,5)]) |duplicated(species_country[,c(1,5)], fromLast=T), ]
+
+species_country <- species_country[!duplicated(species_country[,c(1,5)]),]
+
+#write_csv(species_country, "country_species_ESy_1980.csv")
+
 
 # the remainder is not necessary anymore, we have delineated all species
 further= F
@@ -174,7 +179,7 @@ if(further){
 species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
 aliens <- species_country_status[species_country_status$Neophyte=="intra"| species_country_status$Neophyte=="extra",c(1:2,4:5, 9) ] 
 colnames(aliens)<- c("Region","Accepted name","Original EVA name","Aggregated name","Status")
-write_csv(aliens, "aliens.csv")  
+#write_csv(aliens, "aliens.csv")  
   
 ###### 2.4 extra-EU #######
 # Data on which species are neophytes from outside of Europe
@@ -666,6 +671,7 @@ medRegions <- read_sf("../Europe-regions-shapefiles-2023", "Emed_regions")
 medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
 
 # join with the number of species per class per area
+country_neophyte<- country_neophyte[!is.na(country_neophyte$Neophyte),]
 density <- left_join(medRegions, country_neophyte, by= c("Region"="Region"))
 # calculate the density
 density$dens<- density$n/density$Shape_Area
@@ -889,9 +895,9 @@ for (j in 1:length(glonafRegionNames)){
 sum(species_not_glonaf$notGlonaf %in% part$name)
 sum(species_not_MED$notMed %in% part$name)
 
-write_csv(species_not_MED,"species_not_MED.csv")
-write_csv(species_not_glonaf,"species_not_GLONAF.csv")
-write_csv(eva_names, "eva_names.csv")
+#write_csv(species_not_MED,"species_not_MED.csv")
+#write_csv(species_not_glonaf,"species_not_GLONAF.csv")
+#write_csv(eva_names, "eva_names.csv")
 
 species_MED<- data_frame(country= c(), notMed=c())
 species_glonaf<- data_frame(country= c(), notGlonaf= c())
