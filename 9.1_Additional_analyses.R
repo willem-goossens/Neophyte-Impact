@@ -1,18 +1,20 @@
+rm(list=ls())
+
 library(readr)
 library(dplyr)
 library(ggplot2)
 library(stats)
 
 ##### 1 READ #####
-eva <- read_csv("fullPlotEva_ESy.csv")
-fullPlotData <- read_csv("fullPlotData_ESy.csv")
+eva <- read_csv("fullPlotEva_ESy_1980.csv")
+fullPlotData <- read_csv("fullPlotData_ESy_1980.csv")
 
 # Data on which species are neophytes
 native_intra_analysis=F
 if(native_intra_analysis){
-  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("country_species_ESy_1980.csv", show_col_types = FALSE)
 } else{
-  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("country_species_ESy_1980.csv", show_col_types = FALSE)
   species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
   # or if we want to do it with intra seperately
 }
@@ -28,9 +30,8 @@ fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
 rm(list=c("fullPlot2"))
 # Join eva and classification
-eva<- left_join(eva, species_country_status, by= c("Region"= "Region", "name"= "name"))
+eva<- left_join(eva, species_country_status[, -c(2:4,6:8)], by= c("Region"= "Region", "name"= "name"))
 eva <- eva[!eva$name=="Plant",]
-
 
 
 ##### 2 DIV #####
@@ -126,4 +127,18 @@ p
 
 #ggsave("Cumulative time distribution.jpeg", p, width = 25, height = 15, units = "cm")
 
+
+#### 5. Numbers ####
+##### 5.1 Species #####
+eva_names <- eva |> group_by(name) |> summarise(n =n())
+sum(eva_names$n >=30)
+
+eva_names$div <- eva$div_name[match(eva_names$name, eva$name)]
+eva_names$eive <- eva$eive_name[match(eva_names$name, eva$name)]
+
+sum(!is.na(eva_names$div))/ nrow(eva_names)
+sum(!is.na(eva_names$eive)) / nrow(eva_names)
+
+sum(!is.na(eva$eive_name)) / nrow(eva)
+sum(!is.na(eva$div_name)) / nrow(eva)
 
