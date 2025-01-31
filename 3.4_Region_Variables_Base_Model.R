@@ -31,7 +31,7 @@ cat(crs(medRegions))
 
 ###### 2.3 Plots #####
 # load full plot data
-fullPlotData <- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
 fullPlotData<- fullPlotData[,c(1:5)]
 
 # reduce size
@@ -118,7 +118,7 @@ for(i in 1:nrow(remainingPlots)){
 }
 
 # assign the new values to the previous NAs  
-#plotLocations[is.na(plotLocations$test),] <- remainingPlots
+plotLocations[is.na(plotLocations$test),] <- remainingPlots
 #write_csv(plotLocations, "remainingPlotsHFP2009.csv")
 
 # Make dataset with all plots that are still not assigned --> probably due to the raster nature --> maybe make the distance larger
@@ -136,9 +136,9 @@ saving= T
 if(saving){
   st_geometry(plotLocations) <- NULL
   colnames(plotLocations)[6]<- "hfp2009"
-  fullPlotData <- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+  fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
   fullPlotData<- left_join(fullPlotData, plotLocations)
-  write_csv(fullPlotData, "fullPlotData_ESy.csv")
+  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
 }
 
 ###### 3.3 HFP 1993 #####
@@ -201,7 +201,7 @@ for(i in 1:nrow(remainingPlots)){
 # assign the new values to the previous NAs  
 plotLocations[is.na(plotLocations$test),] <- remainingPlots
 
-write_csv(plotLocations, "remainingPlotsHFP1993.csv")
+#write_csv(plotLocations, "remainingPlotsHFP1993.csv")
 
 # Make dataset with all plots that are still not assigned --> probably due to the raster nature --> maybe make the distance larger
 remainingPlots<- plotLocations[is.na(plotLocations$test),]
@@ -218,16 +218,16 @@ if(plotting){
 saving= T
 if(saving){
   st_geometry(plotLocations) <- NULL
-  fullPlotData <- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+  fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
   colnames(plotLocations)[6]<- "hfp1993"
   fullPlotData<- left_join(fullPlotData, plotLocations)
-  write_csv(fullPlotData, "fullPlotData_ESy.csv")
+  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
   #write_csv(fullPlotData, "fullPlotData_euro.csv")
 }
 # Note that the lengths are not of the same length --> strange?
 # for safety reasons also did it in _euro
 
-#fullPlotData <- read_csv("fullPlotData_ESy.csv")
+#fullPlotData <- read_csv("fullPlotData_ESY_1980.csv")
 
 ###### 3.4 Time #####
 # Load dataset again if not wanting to do all previous work
@@ -244,7 +244,7 @@ nrow(fullPlotData[(is.na(fullPlotData$hfp)),])
 
 saving= T
 if(saving){
-  write_csv(fullPlotData, "fullPlotData_ESy.csv")
+  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
 }
 
 # TO DO: think about too old plots (is 1870s still represented by the level of human pressure 100 years later)
@@ -354,10 +354,10 @@ if(plotting){
 saving= T
 if(saving){
   st_geometry(plotLocations) <- NULL
-  fullPlotData <- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+  fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
   colnames(plotLocations)[6]<- "chelsaT"
   fullPlotData<- left_join(fullPlotData, plotLocations)
-  write_csv(fullPlotData, "fullPlotData_ESy.csv")
+  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
 }
 
 
@@ -435,9 +435,9 @@ saving= T
 if(saving){
   st_geometry(plotLocations) <- NULL
   colnames(plotLocations)[6]<- "chelsaP"
-  fullPlotData <- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+  fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
   fullPlotData<- left_join(fullPlotData, plotLocations)
-  write_csv(fullPlotData, "fullPlotData_ESy.csv")
+  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
 }
 
 
@@ -523,23 +523,23 @@ saving= T
 if(saving){
   st_geometry(plotLocations) <- NULL
   colnames(plotLocations)[6]<- "elev"
-  fullPlotData <- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+  fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
   fullPlotData<- left_join(fullPlotData, plotLocations)
   fullPlotData$elev <- as.numeric(fullPlotData$elev)
-  write_csv(fullPlotData, "fullPlotData_ESy.csv")
+  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
 }
  
 
 ###### 4.4 Remove data ###### 
-eva <- read_csv("fullPlotEva_ESy.csv")
+eva <- read_csv("fullPlotEva_ESy_1980.csv")
 eva <- eva[!eva$PlotObservationID %in% fullPlotData$PlotObservationID[is.na(fullPlotData$hfp)],]
 fullPlotData <- fullPlotData[!is.na(fullPlotData$hfp),]
 
 # Save
 saving= T
 if(saving){
-  write_csv(fullPlotData, "fullPlotData_ESy.csv")
-  write_csv(eva, "fullPlotEva_ESy.csv")
+  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
+  write_csv(eva, "fullPlotEva_ESy_1980.csv")
   
 }
 
@@ -584,7 +584,7 @@ ggplot() +
   theme_minimal()
 
 # read in fullPlotData
-fullPlotData <- read_csv("fullPlotData_ESy.csv")
+fullPlotData <- read_csv("fullPlotData_ESY_1980.csv")
 fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID))>0,]
 
 # make spatial object
@@ -666,10 +666,27 @@ st_geometry(plotLocations) <- NULL
 st_geometry(joinedData) <- NULL
 fullPlotData<- left_join(fullPlotData, joinedData)
 
-#write_csv(fullPlotData, "fullPlotData_EUNIS.csv")
+nrow(fullPlotData[(duplicated(fullPlotData$PlotObservationID)),])
+checking <- fullPlotData[fullPlotData$PlotObservationID=="144939",]
+
+fullPlotData <- fullPlotData[!duplicated(fullPlotData$PlotObservationID),]
+
+#write_csv(fullPlotData, "fullPlotData_EUNIS_1980.csv")
 
 #### 6 SAC ####
 library(devtools)
 library(moranfast)
-fullPlotData <- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
 moranfast(fullPlotData$ENS0, fullPlotData$Longitude, fullPlotData$Latitude)
+
+
+#### 7 LINK ####
+full <- read_csv("fullPlotData_EUNIS.csv", show_col_types = FALSE)
+fullPlotData <- read_csv("fullPlotData_EUNIS_1980.csv", show_col_types = FALSE)
+
+setdiff(colnames(full), colnames(fullPlotData))
+
+test <- left_join(fullPlotData, full)
+
+all.equal(fullPlotData[fullPlotData$PlotObservationID %in% full$PlotObservationID,], full[full$PlotObservationID %in% fullPlotData$PlotObservationID,])
+
