@@ -26,13 +26,17 @@ library(parallel)
 library(doParallel)
 library(IDPmisc)
 library(ggeffects)
+library(MASS)
 ```
 
 ## 1.1 Load
 ```{r, message=F}
 # Data from header with the EIVE and DIV data
-fullPlotData <- read_csv("fullPlotData_cover_all_layer_cleaned.csv")
+fullPlotData <- read_csv("fullPlotData_EUNIS_1980.csv")
 fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
+
+fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
+fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
 
 fullPlotData<- fullPlotData[!is.na(fullPlotData$Date),]
 fast <- F
@@ -46,7 +50,7 @@ if(fast) {
 Checking for correlation among predictor variables:
 ```{r}
 # take correlation omitting the INF values in the log disturbances
-correlation <- cor(NaRV.omit(fullPlotData[,c(9,11:58)]))
+correlation <- cor(NaRV.omit(fullPlotData[,c(9:53)]))
 # set all values to 0 which are not highly correlated
 correlation[correlation < 0.7 & correlation> -0.7] <- 0
 correlation
@@ -85,7 +89,7 @@ model<- (ENS0 ~ log(Area) +
 glm1 <- glm(model, family=poisson, fullPlotData)
 dispersiontest(glm1)
 # To account for overdispersion, we also test the quasipoisson distribution
-glm2 <- glm(model, family=quasipoisson, fullPlotData)
+glm2 <- glm(model, family= quasipoisson, fullPlotData)
 
 summary(glm1)
 summary(glm2)
@@ -118,16 +122,19 @@ model<- (ENS0 ~
               s(Mowing.Frequency, bs = 'tp'))
 gam0 <- bam(model, family = poisson(link=log), data = fullPlotData,  method = 'fREML',discrete=TRUE, nthreads=4)
 gam1 <- bam(model, family = quasipoisson, data = fullPlotData,  method = 'fREML',discrete=TRUE, nthreads=4)
+gam1 <- bam(model, family = nb(), data = fullPlotData,  method = 'fREML',discrete=TRUE, nthreads=4)
 
 summary(gam0)
 summary(gam1)
 
 # GAM has a considerably lower AIC
-AIC(gam0)
+AIC(gam0, gam1)
 
-# GAM0 has a considerably higher Dsquared
 dsquaredGam0 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam0), family = "poisson")
 dsquaredGam0
+
+dsquaredGam1 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam1), family = "poisson")
+dsquaredGam1
 ```
 
 
@@ -162,7 +169,7 @@ model2<- ENS0 ~
               s(Mowing.Frequency, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               Dataset
-gam3 <- bam(model,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam3 <- bam(model,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 #gam4 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 summary(gam3)
@@ -220,9 +227,9 @@ model3<- ENS0 ~
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
 
-gam4 <- bam(model1,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam5 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam6 <- bam(model3,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam4 <- bam(model1,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam5 <- bam(model2,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam6 <- bam(model3,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 # fREML is lowest for GAM with no weight
 summary(gam3)
@@ -230,7 +237,7 @@ summary(gam4)
 summary(gam5)
 summary(gam6)
 
-# AIC is lowest for GAM6
+# AIC is lowest for GAM6 (in case of poisson, does not calculate for quasipoisson)
 AIC(gam3,gam4,gam5,gam6)
 
 # DSQUARED is lowest for GAM6
@@ -284,8 +291,8 @@ model3<- ENS0 ~
               s(logMowingFrequency, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-gam7 <- bam(model1,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam8 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam7 <- bam(model1,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam8 <- bam(model2,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 #gam9 <- bam(model3,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 # GAM 8 has a lower AIC
@@ -298,6 +305,11 @@ AIC(gam7,gam8)
 # Check gam 6 and 8 against each other
 plot(gam6)
 plot(gam8)
+
+dsquaredGam4 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam7), family = "poisson")
+dsquaredGam4
+dsquaredGam5 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam8), family = "poisson")
+dsquaredGam5
 ```
 
 
@@ -340,9 +352,9 @@ model3<-  ENS0 ~
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
 
-gam9 <- bam(model,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam10 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam11 <- bam(model3,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam9 <- bam(model,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam10 <- bam(model2,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam11 <- bam(model3,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 
 # GAM 10 is the best now
 summary(gam9)
@@ -350,6 +362,14 @@ summary(gam10)
 summary(gam11)
 
 AIC(gam11, gam9, gam10)
+
+
+dsquaredGam4 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam9), family = "poisson")
+dsquaredGam4
+dsquaredGam5 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam10), family = "poisson")
+dsquaredGam5
+dsquaredGam6 <- Dsquared(obs = fullPlotData$ENS0, pred = fitted(gam11), family = "poisson")
+dsquaredGam6
 ```
 
 ## 3.5 HFP and Climate
@@ -426,17 +446,17 @@ model6<-  ENS0 ~
               s(elev, bs='tp')+
               s(Latitude, Longitude, bs = 'tp') +
               s(Dataset, bs = 're')
-gam12 <- bam(model2,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam13 <- bam(model3,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam14 <- bam(model4,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam15 <- bam(model5,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam16 <- bam(model6,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam12 <- bam(model2,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam13 <- bam(model3,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam14 <- bam(model4,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam15 <- bam(model5,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+gam16 <- bam(model6,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
 summary(gam12)
 summary(gam13)
 summary(gam14)
 summary(gam15)
 summary(gam16)
-AIC(gam1,gam3,gam4,gam5,gam6,gam7,gam8,gam9,gam10,gam11,gam12, gam13,gam14,gam15)
+AIC(gam1,gam3,gam4,gam5,gam6,gam7,gam8,gam9,gam10,gam11,gam12, gam13,gam14,gam15, gam16)
 
 ```
 
@@ -444,8 +464,8 @@ AIC(gam1,gam3,gam4,gam5,gam6,gam7,gam8,gam9,gam10,gam11,gam12, gam13,gam14,gam15
 ## 3.6 Final check
 ```{r}
 gam10 <- bam(model6,family = poisson(link = log), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-gam11 <- bam(model6,family = quasipoisson, data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-
+gam11 <- bam(model6,family = nb(), data = fullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+AIC(gam10, gam11)
 summary(gam10)
 plot(gam10)
 summary(gam11)
@@ -455,22 +475,38 @@ plot(gam11)
 
 # 4 PLOT
 ```{r}
-visreg(gam13, xvar = "Area", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam13, xvar = "EIVEresM", ylab = "Richness", xlab = "M", gg = TRUE, partial=FALSE, rug = F,  scale="response") 
-visreg(gam13, xvar = "EIVEresN", ylab = "Richness", xlab = "N", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam13, xvar = "EIVEresR", ylab = "Richness", xlab = "R", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam13, xvar = "EIVEresL", ylab = "Richness", xlab = "L", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam13, xvar = "EIVEresT", ylab = "Richness", xlab = "T", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam13, xvar = "DistSeverity.sqrt", ylab = "Richness", xlab = "Distrubance Severity (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam13, xvar = "Soil.Disturbance.sqrt", ylab = "Richness", xlab = "Soil Disturbance (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam13, xvar = "Grazing.Pressure.sqrt", ylab = "Richness", xlab = "Grazing Pressure (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam13, xvar = "Mowing.Frequency.sqrt", ylab = "Richness", xlab = "Mowing Frequency (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam13, xvar = "hfp", ylab = "Richness", xlab = "hfp", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam13, xvar = "chelsaP", ylab = "Richness", xlab = "P mean", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(gam11, xvar = "elev", ylab = "Richness", xlab = "elev", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-plot(ggpredict(gam13, terms=c("EIVEresM")))
+visreg(gam16, xvar = "Area", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "EIVEresM", ylab = "Richness", xlab = "M", gg = TRUE, partial=FALSE, rug = F,  scale="response") 
+visreg(gam16, xvar = "EIVEresN", ylab = "Richness", xlab = "N", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "EIVEresR", ylab = "Richness", xlab = "R", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "EIVEresL", ylab = "Richness", xlab = "L", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "EIVEresT", ylab = "Richness", xlab = "T", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "DistSeverity.sqrt", ylab = "Richness", xlab = "Distrubance Severity (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "Soil.Disturbance.sqrt", ylab = "Richness", xlab = "Soil Disturbance (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "Grazing.Pressure.sqrt", ylab = "Richness", xlab = "Grazing Pressure (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "Mowing.Frequency.sqrt", ylab = "Richness", xlab = "Mowing Frequency (SQRT)", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "hfp", ylab = "Richness", xlab = "hfp", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "chelsaP", ylab = "Richness", xlab = "P mean", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(gam16, xvar = "elev", ylab = "Richness", xlab = "elev", gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
 ```
 
 
+```{r}
+library(DHARMa)
+
+MDL <- mgcv::bam(model6, family = nb(), data = fullPlotData,  
+                 method = 'fREML',  discrete=T, nthreads=4)
+
+# create simulation data
+simulationOutput <- simulateResiduals(fittedModel = MDL, plot = F)
+# look at simulation 
+# QQ plot --> line normal (is it correct distribution and is there no overdispersion)
+# residual plot --> if correct line at 0.5
+plot(simulationOutput)
+
+# test dispersion
+testDispersion(simulationOutput)
+plotResiduals(simulationOutput)
+```
 
 
