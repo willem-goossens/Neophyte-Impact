@@ -882,5 +882,351 @@ summary(pglsModel)
 gls(RelDiff ~ LMA, correlation = corBrownian(phy = tree$scenario.3, form= ~Names),data= impact, method="ML")
 ```
 
+#### Significance test dominance ####
+
+speciesDominance<- speciesDominance[speciesDominance$coverMean>0,]
+speciesDominance <- speciesDominance[!speciesDominance$names %in% genus$original,]
+
+# test the distributions
+hist(log10(speciesDominance$coverMean))
+hist(log10(speciesDominance$coverMean[speciesDominance$neophyte=="extra"]))
+hist(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native"]))
+hist(log10(speciesDominance$coverMean[speciesDominance$neophyte=="intra"]))
+#hist(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native_intra"]))
+
+# test the variance per group 
+leveneTest(log10(speciesDominance$coverMean), speciesDominance$neophyte, location="mean")
+# not normal residuals
+shapiro.test(resid(aov(log10(speciesDominance$coverMean) ~ speciesDominance$neophyte))[1:5000])
+hist(resid(aov(log10(speciesDominance$coverMean) ~ speciesDominance$neophyte)))
+# test homoscedasticity
+bartlett.test(log10(speciesDominance$coverMean), speciesDominance$neophyte)
 
 
+```{r}
+# non parametric
+
+# ranked test
+model<-(aov(rank(log10(coverMean)) ~ neophyte, data= speciesDominance))
+summary(model)
+TukeyHSD(model)
+plot(TukeyHSD(model, conf.level=.95), las = 2)
+
+# Welch Anova
+model<-(oneway.test((log10(coverMean)) ~ neophyte, data= speciesDominance, var.equal = F))
+model
+tt1 <- posthoc_anova(log10(coverMean) ~ neophyte, data= speciesDominance, method="Tukey")
+#comp<- agricolae::kruskal(log10(speciesDominance$coverMean),speciesDominance$neophyte, p.adj="BH")
+tt1$groups
+
+# kruskal wallis test
+KW<-kruskal.test(log10(coverMean) ~ neophyte, data = speciesDominance)
+KW$p.value
+pairwise.wilcox.test(log10(speciesDominance$coverMean), speciesDominance$neophyte,
+                     p.adjust.method = "BH")
+dunnTest(log10(coverMean) ~ neophyte, data = speciesDominance,method = "bh")
+```
+
+
+# distribution
+hist((log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="extra"])))
+hist(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native"]))
+hist(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="intra"]))
+# test the variance per group 
+leveneTest(log10(speciesDominance$numberOfPlots), speciesDominance$neophyte, location="mean")
+# not normal residuals
+shapiro.test(resid(aov(log10(speciesDominance$numberOfPlots) ~ speciesDominance$neophyte))[1:5000])
+hist(resid(aov(log10(speciesDominance$numberOfPlots) ~ speciesDominance$neophyte)))
+# test homoscedasticity
+bartlett.test(log10(speciesDominance$numberOfPlots), speciesDominance$neophyte)
+
+
+# ranked test
+model<-(aov(log10(numberOfPlots) ~ neophyte, data= speciesDominance))
+summary(model)
+TukeyHSD(model)
+plot(TukeyHSD(model, conf.level=.95), las = 2)
+
+
+# kruskal wallis test
+kruskal.test(log10(numberOfPlots) ~ neophyte, data = speciesDominance)
+pairwise.wilcox.test(log10(speciesDominance$numberOfPlots), speciesDominance$neophyte,
+                     p.adjust.method = "BH")
+dunnTest(log10(coverMean) ~ neophyte, data = speciesDominance,method = "bh")
+
+
+##### Dominance plot ####
+if(!native_intra_analysis){
+  my_comparisons <- list( c("extra", "intra"), c("intra", "native"), c("extra", "native") )
+  
+  p<-ggplot(speciesDominance, mapping = aes(x= (neophyte), y = log10(coverMean), group= neophyte, colour = neophyte, fill= neophyte)) + 
+    # create violin plot with x axis no title and y 
+    geom_violin(alpha= 0.5, scale= "width")+
+    geom_boxplot(width= 0.25, alpha=0.8, fill="white") +
+    theme_pubr()+
+    stat_compare_means(comparisons=my_comparisons, label= "p.signif", label.y = c(2.1, 2.3, 2.5))+
+    ylab("Mean cover when present (%)") +
+    scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
+                        breaks=c("native", "intra","extra"),
+                        labels=c("native species", "intra European aliens", "extra European aliens")) +
+    guides(color="none")+
+    theme(legend.position = "none")+
+    stat_summary(fun= "mean",
+                 geom = "point", aes(group= neophyte), size=3)+
+    scale_y_continuous(breaks = c(-1, 0, 1, 2), labels = c(0.1,1,10,100), limits=c(-1, 2.7))+
+    scale_x_discrete(labels=  c("extra-European \n aliens",  "intra-European \n aliens", "native species")) +
+    theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=12), axis.title.x = element_blank(), 
+          axis.text.y = element_text(size=10)) +
+    annotate("text", x = 1, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="extra"])), label = "a", size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8) +
+    annotate("text", x = 2, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="intra"])), label = "b", size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8)+
+    annotate("text", x = 3, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native"])), label = "c", size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8)+
+    annotate("text", x=1, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = 0, hjust = 0.5, size=3.5)+
+    annotate("text", x=2, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = 0, hjust = 0.5, size=3.5)+
+    annotate("text", x=3, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = 0, hjust = 0.5, size=3.5)+
+    labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.0001"))))
+  Dominance <- p
+  
+  #ggsave("Dominance New 30.jpeg", p,width = 5, height = 5)
+}
+
+
+if(native_intra_analysis){
+  my_comparisons <- list( c("extra", "intra"), c("intra", "native"), c("extra", "native"), c("native", "native_intra"),
+                          c("native_intra", "intra"), c("native_intra", "extra"))
+  
+  p<-ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(coverMean), group= neophyte,  fill= neophyte, colour=neophyte)) + 
+    # create violin plot with x axis no title and y 
+    geom_violin(alpha= 0.3, scale= "width")+
+    geom_boxplot(width= 0.25, alpha=0.8, fill="white") +
+    theme_pubr()+
+    stat_compare_means(comparisons=my_comparisons, label= "p.signif", label.y = c(2.1, 2.3, 2.5, 2.7,2.9,3.1), size= 3)+
+    ylab("Mean cover when present (%)") +
+    scale_colour_manual(values=c( "#004D40","#FFC107", "#1E88E5", "darkgreen"), 
+                        breaks=c("extra","intra", "native",  "native_intra")) +
+    scale_fill_manual(values=c( "#004D40","#FFC107", "#1E88E5", "darkgreen"), 
+                      breaks=c("extra","intra", "native",  "native_intra")) +
+    guides(color="none")+
+    theme(legend.position = "none")+
+    stat_summary(fun= "mean",
+                 geom = "point", aes(group= neophyte), size=3)+
+    scale_y_continuous(breaks = c(-1, 0, 1, 2), labels = c(0.1,1,10,100), limits=c(-1, 3.3))+
+    scale_x_discrete(labels=  c("extra-European \n neophytes",  "intra-European \n neophytes","native species", 
+                                "native species \nalien elsewhere")) +
+    theme(axis.text.x = element_text(size=10), axis.title.y=element_text(size=12), axis.title.x = element_blank(), 
+          axis.text.y = element_text(size=10)) +
+    annotate("text", x = 1, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="extra"])), label = "a", size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8) +
+    annotate("text", x = 2, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="intra"])), label = "b", size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8)+
+    annotate("text", x = 3, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native"])), label = "d", size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8)+
+    annotate("text", x = 4, y = mean(log10(speciesDominance$coverMean[speciesDominance$neophyte=="native_intra"])), label = "c", size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8)+
+    annotate("text", x=1, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = 0, hjust = 0.5, size=3.5)+
+    annotate("text", x=2, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = 0, hjust = 0.5, size=3.5)+
+    annotate("text", x=3, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = 0, hjust = 0.5, size=3.5)+
+    annotate("text", x=4, y=2.0, label= paste("n=",sum(speciesDominance$neophyte=="native_intra")), vjust = 0, hjust = 0.5, size=3.5)+
+    labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.0001"))))
+  p
+  Dominance <- p
+}
+p
+
+p<- ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(numberOfPlots), colour = neophyte, group=neophyte, fill= neophyte)) + 
+  geom_violin(alpha= 0.5, scale= "width")+
+  geom_boxplot(width= 0.25, alpha=0.8, fill="white") +
+  theme_pubr()+
+  stat_compare_means(comparisons=my_comparisons, label= "p.signif", label.y = c(5.5, 5.8, 6.1), size=3)+
+  ylab(expression("log"[10]* " number of occurences")) + xlab(NULL)+
+  scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"), 
+                      name="Legend",
+                      breaks=c("native", "intra","extra"),
+                      labels=c("native species", "intra European aliens", "extra European aliens")) +
+  guides(color="none")+
+  stat_summary(fun= "mean",
+               geom = "point", aes(group= neophyte), size=3)+
+  guides(color="none")+
+  theme(legend.position = "none")+
+  scale_x_discrete(labels= c("extra-European \n aliens",  "intra-European \n aliens", "native species")) +
+  theme(axis.text.x = element_text(size=12), axis.title.y=element_text(size=12) )  +
+  theme(plot.subtitle=element_text(size=12)) + 
+  annotate("text", x = 1, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="extra"])), label = "b", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8) +
+  annotate("text", x = 2, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="intra"])), label = "c", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x = 3, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native"])), label = "a", size = 4, 
+           vjust = -0.7, hjust = 0.5, alpha=0.8)+
+  annotate("text", x=1, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=2, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  annotate("text", x=3, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = -0.5, hjust = 0.5, size=3.5)+
+  labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.0001"))))
+Frequency <- p
+p
+#ggsave("Frequency New 10.jpeg", p,width = 6, height = 4)
+} else {
+  p<- ggplot(speciesDominance, mapping = aes(x= neophyte, y = log10(numberOfPlots), colour = neophyte, group=neophyte, fill= neophyte)) + 
+    geom_violin(alpha= 0.3, scale= "width")+
+    geom_boxplot(width= 0.25, alpha=0.8, fill="white") +
+    theme_pubr()+
+    stat_compare_means(comparisons=my_comparisons, label= "p.signif", label.y = c(5.5, 5.8, 6.1, 6.4,6.7,7), size=3)+
+    ylab(expression("log"[10]* " number of occurences")) + xlab(NULL)+
+    scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40", "darkgreen"), 
+                        name="Legend",
+                        breaks=c("native", "intra","extra", "native_intra"),
+                        labels=c("native species", "intra European aliens", "extra European aliens", "native species alien elsewhere")) +
+    scale_fill_manual(values=c( "#004D40","#FFC107", "#1E88E5", "darkgreen"), 
+                      breaks=c("extra","intra", "native",  "native_intra")) +
+    guides(color="none")+
+    stat_summary(fun= "mean",
+                 geom = "point", aes(group= neophyte), size=3)+
+    guides(color="none")+
+    theme(legend.position = "none")+
+    scale_x_discrete(labels= c("extra-European \n aliens",  "intra-European \n aliens", "native species",
+                               "native species \nalien elsewhere")) +
+    theme(axis.text.x = element_text(size=10), axis.title.y=element_text(size=12) )  +
+    theme(plot.subtitle=element_text(size=12)) + 
+    annotate("text", x = 1, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="extra"])), label = "c", size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8) +
+    annotate("text", x = 2, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="intra"])), label = "d", size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8)+
+    annotate("text", x = 3, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native"])), label = "b", size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8)+
+    annotate("text", x = 4, y = mean(log10(speciesDominance$numberOfPlots[speciesDominance$neophyte=="native_intra"])), label = "a",size = 4, 
+             vjust = -0.7, hjust = 0.5, alpha=0.8)+
+    annotate("text", x=1, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="extra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+    annotate("text", x=2, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+    annotate("text", x=3, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="native")), vjust = -0.5, hjust = 0.5, size=3.5)+
+    annotate("text", x=4, y=5.2, label= paste("n=",sum(speciesDominance$neophyte=="native_intra")), vjust = -0.5, hjust = 0.5, size=3.5)+
+    labs(subtitle = substitute(paste("Kruskal-Wallis test ", italic("P < 0.0001"))))
+  Frequency <- p
+  p  
+
+  
+  #### BRTs ####
+  
+  ## 2.5 BRTs
+  Try boosted regression tree
+  ```{r}
+  library(gbm)
+  library(dismo)
+  
+  fullPlotData2 <- as.data.frame(fullPlotData)
+  BRTmodel1 <- gbm.step(data=fullPlotData2,
+                        gbm.x = c(4:12, 27:28), 
+                        gbm.y = 2, 
+                        family = "poisson",
+                        tree.complexity = 4,
+                        learning.rate = 0.001,
+                        bag.fraction = 0.7)
+  
+  BRTmodel1$contributions
+  gbm.plot(BRTmodel1, n.plots=11, write.title = F,
+           common.scale = F, y.label="Fitted function",
+           show.contrib = TRUE)
+  
+  BRTmodel1$contributions
+  gbm.plot(BRTmodel1, n.plots=11, write.title = F,
+           common.scale = F, y.label="Fitted function",
+           show.contrib = TRUE)
+  ```
+#### GLMM ####
+
+  
+  
+  ## 2.4 GLMM
+  ```{r}
+  # run model
+  
+  sqrt =F
+  if(sqrt){
+    MDL <- glmmTMB(ENS0 ~ EIVEresN+ hfp+ cover_rel_intra + cover_rel_extra+ EIVEresM+ EIVEresR+
+                     EIVEresL+ EIVEresT+ DistSeverity + I(DistSeverity ^2)+ log(Area)+
+                     Soil.Disturbance + I(Soil.Disturbance ^2)+ 
+                     Grazing.Pressure +I(Grazing.Pressure ^2)+ Mowing.Frequency +
+                     I(Mowing.Frequency ^2)+ chelsaP+Longitude+Latitude+ (1| Dataset), 
+                   data=fullPlotData, family= poisson(link=log))
+  } else {
+    MDL <- glmmTMB(n_native ~ EIVEresN+ hfp+ n_intra+ n_extra + EIVEresM+ EIVEresR+
+                     EIVEresL+ EIVEresT+ DistSeverity.sqrt + I(DistSeverity.sqrt ^2)+ log(Area)+
+                     Soil.Disturbance.sqrt + I(Soil.Disturbance.sqrt ^2)+ 
+                     Grazing.Pressure.sqrt +I(Grazing.Pressure.sqrt ^2)+ Mowing.Frequency.sqrt +
+                     I(Mowing.Frequency.sqrt ^2)+ chelsaP+Longitude+Latitude+ (1| Dataset), 
+                   data=fullPlotData, family= poisson(link=log))
+  }
+  
+  
+  # the sqrt model works better
+  sum<- summary(MDL)
+  sum
+  piecewiseSEM::rsquared(MDL)
+  ```
+  
+  
+  
+  
+  
+  ```{r}
+  # plot using visreg
+  z<- visreg::visreg(MDL, xvar="EIVEresN", gg = TRUE, partial=FALSE, rug = F,  scale="response", plot=F)
+  eive_n_coef <- sum$coefficients$cond[2,1]/ z$fit$visregFit[1]
+  
+  z2 <- visreg::visreg(MDL, xvar="n_extra", gg = TRUE, partial=FALSE, rug = F,  scale="response", plot=F)
+  extra_coef <- sum$coefficients$cond[5,1]/ z2$fit$visregFit[1]
+  
+  z3 <-visreg::visreg(MDL, xvar="n_intra", gg = TRUE, partial=FALSE, rug = F,  scale="response", plot=F)
+  intra_coef <- sum$coefficients$cond[4,1]/ z3$fit$visregFit[1]
+  ```
+  
+  
+  
+  Check
+  ```{r}
+  # check data
+  library(DHARMa)
+  
+  # create simulation data
+  simulationOutput <- simulateResiduals(fittedModel = MDL, plot = F)
+  # look at simulation 
+  # QQ plot --> line normal (is it correct distribution and is there no overdispersion)
+  # residual plot --> if correct line at 0.5
+  plot(simulationOutput)
+  
+  # test dispersion
+  testDispersion(simulationOutput)
+  plotResiduals(simulationOutput)
+  
+  # are there more outliers than expected by accident
+  testOutliers(simulationOutput)
+  
+  # compare location with expected
+  testQuantiles(simulationOutput)
+  
+  # more zeroes than expected
+  testZeroInflation(simulationOutput)
+  
+  # plot per random effect group
+  simulationOutput2 <- recalculateResiduals(simulationOutput, group = fullPlotData$Dataset)
+  plot(simulationOutput2, quantreg = FALSE) 
+  ```
+  
+  ```{r}
+  library(xgboost)
+  train <- fullPlotData2[runif(length(fullPlotData2$PlotObservationID)) > 0.30,]
+  test <- fullPlotData2[!fullPlotData2$PlotObservationID %in% train$PlotObservationID,]
+  
+  bst <- xgboost(data = as.matrix(train[, c(4:12)]), label = train$ENS0, max.depth = 4, eta = 1, nthread = 1, nrounds = 20, objective = "count:poisson")
+  
+  pred <- predict(bst, as.matrix(test[,c(4:12)]))
+  err <- mean(as.numeric(pred)- test$ENS0)
+  err
+  max(pred)
+  mean(pred)
+  max(train$ENS0)
+  mean(train$ENS0)
+  
+  ```
+  
+  
