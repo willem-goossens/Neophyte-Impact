@@ -4,8 +4,8 @@ library(readr)
 library(dplyr)
 
 # Load eva and plot data
-eva <- read_csv("fullPlotEva_ESy.csv", show_col_types = FALSE)
-fullPlotData <- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+eva <- read_csv("fullPlotEva_ESy_1980.csv", show_col_types = FALSE)
+fullPlotData <- read_csv("fullPlotData_ESy_1980.csv", show_col_types = FALSE)
 
 # Downsample by a factor of 100 if fast is selected
 fast <- F
@@ -50,7 +50,13 @@ eva$name[eva$name %in% species_data$old] <- species_data$new[match(eva$name[eva$
 species_vector <- c("Beta vulgaris subsp. vulgaris","Beta vulgaris", "Secale cereale","Triticum aestivum","Pisum sativum", "Solanum tuberosum",
                     "Hordeum vulgare", "Avena sativa", "Zea mays", "Brassica napus","Oryza sativa","Triticum turgidum","Glycine max",
                     "Brassica oleracea", "Sorghum bicolor","Helianthus annuus","Arachis hypogaea","Raphanus sativus", "Medicago sativa aggr.",
-                    "Trifolium incarnatum","Phacelia tanacetifolia","Fagopyrum esculentum")
+                    "Trifolium incarnatum","Phacelia tanacetifolia","Fagopyrum esculentum", "Vitis vinifera", "Hordeum vulgare", "Zea mays", "Triticum aestivum", 
+                    "Solanum tuberosum", "Humulus lupulus", "Pisum sativum", 
+                    "Digitalis purpurea", "Solanum lycopersicum", "Ribes rubrum","Brassica oleracea", "Phaseolus vulgaris", "Allium cepa", 
+                    "Asparagus officinalis", "Triticum aestivum","Daucus carota", "Rheum rhabarbarum", "Trifolium repens", "Nicotiana tabacum", 
+                    "Cucurbita pepo", "Petroselinum crispum", "Gladiolus grandiflorus", "Tragopogon porrifolius", "Raphanus sativus", "Lactuca sativa",
+                    "Fagopyrum esculentum")
+length(unique(species_vector$species))
 
 # check number of observations higher than 50
 x <- eva[eva$name %in% species_vector & eva$`Cover %`>=50,]
@@ -62,7 +68,7 @@ fullPlotData<- fullPlotData[!fullPlotData$PlotObservationID %in% plots_cultivate
 eva <- eva[!eva$PlotObservationID %in% plots_cultivated,]
 
 # check status species
-species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+species_country_status<- read_csv("country_species_ESy_1980.csv", show_col_types = FALSE)
 species_vector <- as.data.frame(species_vector)
 colnames(species_vector)<- "species"
 species_vector$status <- species_country_status$Neophyte[match(species_vector$species, species_country_status$name)]
@@ -76,8 +82,10 @@ which(eva$name %in% remove)
 eva <- eva[!eva$name %in% remove,]
 
 
-#write_csv(eva, "fullPlotEva_ESy.csv")
-#write_csv(fullPlotData, "fullPlotData_ESy.csv")
+#write_csv(eva, "fullPlotEva_ESy_1980.csv")
+#write_csv(fullPlotData, "fullPlotData_ESy_1980.csv")
+#write_csv(y, "removed_cultivated.csv")
+
 
 #### 3 Time ####
 # here again check time
