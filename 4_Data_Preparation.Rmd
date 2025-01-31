@@ -204,10 +204,16 @@ if(coverzero){
 
 Compute total cover for each plot.
 ```{r}
+# fisher calculation
+reducedEva <- eva |> select(PlotObservationID, name, `Cover %`, Layer)
+reducedEva <- reducedEva |> group_by(PlotObservationID, name, Layer) |> summarise(cover= sum(`Cover %`))
+reducedEva <- reducedEva|> group_by(PlotObservationID, name) |> 
+  summarise(cover = (1-prod((1-ifelse(cover/100>1, 1, cover/100 ))))*100)
+
 totalCover <- 
-  eva %>% 
+  reducedEva %>% 
   group_by(PlotObservationID) %>% 
-  summarise(totalCover = sum(`Cover %`))
+  summarise(totalCover = sum(cover))
 
 # Check distribution (we max on 2000, but total cover goes up to 25000)
 hist(totalCover$totalCover[totalCover$totalCover> 750 & totalCover$totalCover<2000 ])
@@ -756,6 +762,7 @@ fullPlotData <- fullPlotData[!plotsForWhichNotAllIndicatorValuesWereEstimated,]
 fullPlotData$Date<- as.Date(fullPlotData$Date, format = "%d.%m.%Y")
 numberOfPlotsWithoutDate<-length(fullPlotData$PlotObservationID[is.na(fullPlotData$Date)])
 fullPlotData<- fullPlotData[!is.na(fullPlotData$Date),]
+fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
 ```
 
 
@@ -929,14 +936,14 @@ eva_names$div <- eva$div_name[match( eva_names$`Matched concept`, eva$`Matched c
 # Make sure all plot data is in eva
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
-#write_csv(fullPlotData, "fullPlotData_ESy.csv")
+#write_csv(fullPlotData, "fullPlotData_ESy_1980.csv")
 
 
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 fullPlotEva <- eva
 head(eva)
-#write_csv(eva, "fullPlotEva_ESy.csv")
+#write_csv(eva, "fullPlotEva_ESy_1980.csv")
 ```
 
 
@@ -946,9 +953,9 @@ head(eva)
 ```{r}
 # File for Irena
 # Eva
-fullPlotEva <- read_csv("fullPlotEva_ESy.csv", show_col_types = FALSE)
+fullPlotEva <- read_csv("fullPlotEva_ESy_1980.csv", show_col_types = FALSE)
 eva2<- fullPlotEva[,c("PlotObservationID","species","irena", "Matched concept", "name","source")]
-fullPlotData<- read_csv("fullPlotData_ESy.csv", show_col_types = FALSE)
+fullPlotData<- read_csv("fullPlotData_ESy_1980.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
 # eva names
@@ -1048,7 +1055,7 @@ neophyte <- neophyte[, -c(1,6,7,9)]
 head(neophyte)
 
 # save
-#write_csv(neophyte, "neophyte_ESy.csv")
+#write_csv(neophyte, "neophyte_ESy_1980.csv")
 ```
 
 
@@ -1114,8 +1121,8 @@ eva$name[eva$name %in% name_change$old.name] <-
   name_change$new.name[match(eva$name[eva$name %in% name_change$old.name], name_change$old.name)]
 
 
-#write_csv(species_country,"country_species_ESy.csv")
-#write_csv(eva, "fullPlotEva_ESy.csv")
+#write_csv(species_country,"country_species_ESy_1980.csv")
+#write_csv(eva, "fullPlotEva_ESy_1980.csv")
 ```
 
 
