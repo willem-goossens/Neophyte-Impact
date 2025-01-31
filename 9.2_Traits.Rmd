@@ -34,8 +34,8 @@ Diaz_original <- readxl::read_excel("../TRY/Diaz.xlsx", guess_max = min(2000, n_
 
 Diaz$woody <- Diaz_original$Woodiness
 
-eva <- read_csv("fullPlotEva_ESy.csv", show_col_types = FALSE)
-fullPlotData <- read_csv("fullPlotData_EUNIS.csv", show_col_types = FALSE)
+eva <- read_csv("fullPlotEva_ESy_1980.csv", show_col_types = FALSE)
+fullPlotData <- read_csv("fullPlotData_EUNIS_1980.csv", show_col_types = FALSE)
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 
 fast <- F
@@ -43,8 +43,10 @@ if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
+```
 
 
+```{r}
 # vector with species names
 Diaz_names<- Diaz$`Species name standardized against TPL`
 Diaz_names<- as.data.frame(Diaz_names)
@@ -179,6 +181,10 @@ sum(is.na(eva$`Diaspore mass (mg)`))
 sum(is.na(eva$`Nmass (mg/g)`))
 sum(is.na(eva$`Plant height (m)`))
 
+eva_names <- eva |> group_by(name)|> summarise(n= n())
+eva_names$diaz <- eva$Diaz[match(eva_names$name, eva$name)]
+
+sum(!is.na(eva_names$diaz))/ length(eva_names$name[eva_names$n >=30])
 
 # 60.1% of the species have their name in the Diaz database
 length(unique(eva$name[!is.na(eva$Diaz)]))/length(unique(eva$name))
@@ -232,8 +238,7 @@ fullPlotData[!fullPlotData$PlotObservationID %in% y$PlotObservationID,]
 ## 4.1 Explore
 ```{r}
 # Load impact data
-fileName <- paste("Impact2_new70%_ENS0_reldiff_PCA.csv")
-impact<- read.csv( fileName)
+impact<- read.csv("I:/Impact_1980.csv")
 
 # get species that are in Diaz and for which we have the impact calculated
 impact_sp <- Diaz$`Species name standardized against TPL`[Diaz_names %in% impact$taxa]
@@ -249,55 +254,44 @@ impact_sp <- Diaz$`Species name standardized against TPL`[Diaz_names %in% impact
 impact<- left_join(impact, Diaz[, c(15, 2, 3:14,17)], by=c("taxa"="name"))
 
 # Calculate correlations
-cor_extra<-cor(impact[impact$Neophyte=="extra", c(2,9, 22:27)],  use= "pairwise.complete.obs", method="pearson")
-cor_intra <-cor(impact[impact$Neophyte=="intra", c(2,9, 22:27)],  use="pairwise.complete.obs", method="pearson")
-cor_native <-cor(impact[impact$Neophyte=="native", c(2,9, 22:27)],  use="pairwise.complete.obs", method="pearson")
-cor <- cor(impact[, c(2,9, 22:27)],  use="pairwise.complete.obs", method="pearson")
+cor_extra<-cor(impact[impact$Neophyte=="extra", c(2,9, 20:25)],  use= "pairwise.complete.obs", method="spearman")
+cor_intra <-cor(impact[impact$Neophyte=="intra", c(2,9,  20:25)],  use="pairwise.complete.obs", method="spearman")
+cor_native <-cor(impact[impact$Neophyte=="native", c(2,9,  20:25)],  use="pairwise.complete.obs", method="spearman")
+cor <- cor(impact[, c(2,9,  20:25)],  use="pairwise.complete.obs", method="spearman")
 ```
 
 
 ## 4.3 Phylogenetic
+```{r}
+phylo <- read.csv("phylo.csv")
+impact[,15:16] <- phylo[match(impact$taxa, phylo$name), 6:7]
+
+library(vegdata)
+check <-vegdata::parse.taxa(unique(impact$taxa))
+genus <- check[is.na(check$epi1),]
+impact <- impact[!impact$taxa %in% genus$original,]
+```
+
+
+
 Diaz and TPL
 ```{r}
-# change crops 
-crops <- eva_names[grepl("crop ", eva_names$name, ignore.case = TRUE),]
-eva_names$name <- gsub("crop vineyard","Vitis vinifera", eva_names$name)
-eva_names$name <- gsub("crop barley","Hordeum vulgare", eva_names$name)
-eva_names$name <- gsub("crop maize","Zea mays", eva_names$name)
-eva_names$name <- gsub("crop wheat","Triticum aestivum", eva_names$name)
-eva_names$name <- gsub("crop potato","Solanum tuberosum", eva_names$name)
-eva_names$name <- gsub("crop hops","Humulus lupulus", eva_names$name)
-eva_names$name <- gsub("crop pea","Pisum sativum", eva_names$name)
-eva_names$name <- gsub("crop digitalis","Digitalis purpurea", eva_names$name)
-eva_names$name <- gsub("crop tomato","Solanum lycopersicum", eva_names$name)
-eva_names$name <- gsub("crop currant","Ribes rubrum", eva_names$name)
-eva_names$name <- gsub("crop cabbage","Brassica oleracea", eva_names$name)
-eva_names$name <- gsub("crop bean","Phaseolus vulgaris", eva_names$name)
-eva_names$name <- gsub("crop onion","Allium cepa", eva_names$name)
-eva_names$name <- gsub("crop asparagus","Asparagus officinalis", eva_names$name)
-eva_names$name <- gsub("crop spelt","Triticum aestivum", eva_names$name)
-eva_names$name <- gsub("crop carrot","Daucus carota", eva_names$name)
-eva_names$name <- gsub("crop rhubarb","Rheum rhabarbarum", eva_names$name)
-eva_names$name <- gsub("crop clover","Trifolium repens", eva_names$name)
-eva_names$name <- gsub("crop tobacco","Nicotiana tabacum", eva_names$name)
-eva_names$name <- gsub("crop zucchini","Cucurbita pepo", eva_names$name)
-eva_names$name <- gsub("crop parsley","Petroselinum crispum", eva_names$name)
-eva_names$name <- gsub("crop gladiolus","Gladiolus grandiflorus", eva_names$name)
-eva_names$name <- gsub("crop salsify","Tragopogon porrifolius", eva_names$name)
-eva_names$name <- gsub("crop radish","Raphanus sativus", eva_names$name)
-eva_names$name <- gsub("crop lettuce","Lactuca sativa", eva_names$name)
-eva_names$name <- gsub("crop buckwheat","Fagopyrum esculentum", eva_names$name)
+eva_names<- as.data.frame(unique(eva$`Matched concept`))
+colnames(eva_names) <- "Matched concept"
+eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$diaz <- eva$Diaz[match( eva_names$`Matched concept`, eva$`Matched concept`)]
 
 # create name vector
 eva_names$taxa <- gsub(" aggr\\.", "", eva_names$name)
 
 # get info from Diaz
-eva_names$genus <- Diaz$Genus[match(eva_names$Diaz, Diaz$`Species name standardized against TPL`)]
-eva_names$family <- Diaz$Family[match(eva_names$Diaz, Diaz$`Species name standardized against TPL`)]
+eva_names$genus <- Diaz$Genus[match(eva_names$diaz, Diaz$`Species name standardized against TPL`)]
+eva_names$family <- Diaz$Family[match(eva_names$diaz, Diaz$`Species name standardized against TPL`)]
 
 # remove all "plant" species from eva
 eva_names <- eva_names[!eva_names$name=="Plant",]
-sum(is.na(eva_names$Diaz))
+sum(is.na(eva_names$diaz))
 
 
 
@@ -310,8 +304,8 @@ eva_names$TPL_genus <- TPL$POSSIBLE_GENUS[match(eva_names$taxa, TPL$YOUR_SEARCH)
 eva_names$TPL_family <- TPL$FAMILY[match(eva_names$taxa, TPL$YOUR_SEARCH)]
 
 # check difference
-setdiff(eva_names$genus[!is.na(eva_names$Diaz)], eva_names$TPL_genus[!is.na(eva_names$Diaz)])
-setdiff(eva_names$family[!is.na(eva_names$Diaz)], eva_names$TPL_family[!is.na(eva_names$Diaz)])
+setdiff(eva_names$genus[!is.na(eva_names$diaz)], eva_names$TPL_genus[!is.na(eva_names$diaz)])
+setdiff(eva_names$family[!is.na(eva_names$diaz)], eva_names$TPL_family[!is.na(eva_names$diaz)])
 
 # change fabaceae and asteraceae
 eva_names$family <- gsub("Leguminosae","Fabaceae", eva_names$family)
@@ -404,21 +398,22 @@ Genera
 ```{r}
 # check genera
 # check difference
-setdiff(eva_names$genus[!is.na(eva_names$Diaz)], eva_names$TPL_genus[!is.na(eva_names$Diaz)])
-setdiff(eva_names$TPL_genus[!is.na(eva_names$Diaz)], eva_names$genus[!is.na(eva_names$Diaz)])
+setdiff(eva_names$genus[!is.na(eva_names$diaz)], eva_names$TPL_genus[!is.na(eva_names$diaz)])
+setdiff(eva_names$TPL_genus[!is.na(eva_names$diaz)], eva_names$genus[!is.na(eva_names$diaz)])
 
 
 # calculated vegdist
 eva_names$veg_genus <- vegdata::parse.taxa(eva_names$taxa)$genus
 
 # check
-setdiff(eva_names$TPL_genus[!is.na(eva_names$Diaz)], eva_names$veg_genus[!is.na(eva_names$Diaz)])
-setdiff(eva_names$veg_genus[!is.na(eva_names$Diaz)], eva_names$TPL_genus[!is.na(eva_names$Diaz)])
-setdiff(eva_names$veg_genus[!is.na(eva_names$Diaz)], eva_names$genus[!is.na(eva_names$Diaz)])
+setdiff(eva_names$TPL_genus[!is.na(eva_names$diaz)], eva_names$veg_genus[!is.na(eva_names$diaz)])
+setdiff(eva_names$veg_genus[!is.na(eva_names$diaz)], eva_names$TPL_genus[!is.na(eva_names$diaz)])
+setdiff(eva_names$veg_genus[!is.na(eva_names$diaz)], eva_names$genus[!is.na(eva_names$diaz)])
 
 # this function gives the best view
-change_genus <- setdiff(eva_names$genus[!is.na(eva_names$Diaz)], eva_names$veg_genus[!is.na(eva_names$Diaz)])
+change_genus <- setdiff(eva_names$genus[!is.na(eva_names$diaz)], eva_names$veg_genus[!is.na(eva_names$diaz)])
 eva_names$genus[eva_names$genus %in% change_genus] <- eva_names$veg_genus[eva_names$genus %in% change_genus]
+
 
 # assign all other genera from this function
 eva_names$genus[is.na(eva_names$genus)] <- eva_names$veg_genus[is.na(eva_names$genus)]
@@ -434,9 +429,15 @@ test <- test[!is.na(test$family),]
 test <- test[duplicated(test$genus) | duplicated(test$genus, fromLast=T),]
 
 change <- data.frame(genus = c("Arum", "Ammophila","Aphanes","Asphodeline","Athyrium","Corrigiola", "Dryopteris","Melampyrum",
-                               "Polystichum", "Angallis", "Asphodelus"),
+                               "Polystichum", "Angallis", "Asphodelus", "Anagallis","Anisantha",
+                               "Arisarum","Asteriscus","Blechnum","Celtis","Consolida","Cystopteris","Dictamnus",
+                               "Digitalis","Dorycnium","Geranium","Glaux","Gymnocarpium","Hemerocallis",
+                               "Lens","Myosurus","Onoclea","Phegopteris"),
                      family= c("Araceae", "Poaceae", "Rosaceae","Asphodelaceae","Aspleniaceae","Caryophyllaceae","Polypodiaceae",
-                               "Orobanchaceae","Polypodiaceae","Primulaceae", "Xanthorrhoeaceae"))
+                               "Orobanchaceae","Polypodiaceae","Primulaceae", "Xanthorrhoeaceae","Primulaceae","Poaceae",
+                               "Araceae","Asteraceae","Aspleniaceae","Cannabaceae","Boraginaceae","Aspleniaceae","Lamiaceae",
+                               "Plantaginaceae","Fabaceae","Geraniaceae","Primulaceae","Cystopteridaceae","Asphodelaceae",
+                               "Fabaceae","Ranunculaceae","Onocleaceae","Thelypteridaceae"))
 
 # change 
 eva_names$family[eva_names$genus %in% change$genus] <- change$family[match(eva_names$genus[eva_names$genus %in% change$genus], change$genus)]
@@ -480,6 +481,8 @@ check <- eva_names[is.na(eva_names$family),]
 
 # remove rest
 eva_names <- eva_names[!eva_names$name %in% check$name,]
+
+#write_csv(eva_names , "phylo.csv")
 ```
 
 Assign
@@ -500,9 +503,12 @@ impact$Family[is.na(impact$Family)]<- eva_names$family[match(impact$taxa[is.na(i
 
 ## 4.4 General impact
 ```{r}
+impact <- cbind(impact, eva[match(impact$taxa, eva$name), c(11:15, 22:28)]) 
+colnames(impact)
+
 # Change names FT
-colnames(impact)[22:28]<- c("LA", "N", "LMA","H","SM","SSD","number")
-colnames(impact)[35:41]<- c("Sev","Sev_herb","Freq","Freq_herb","Gras","Mow","Soil") 
+colnames(impact)[20:26]<- c("LA", "N", "LMA","H","SM","SSD","number")
+colnames(impact)[33:39]<- c("Sev","Sev_herb","Freq","Freq_herb","Gras","Mow","Soil") 
 
 general <- impact |> 
   group_by(taxa, Neophyte, LA, N, LMA, H, SM, SSD,number, Family, Genus, `Growth Form`, woody, 
@@ -584,6 +590,8 @@ And DIV
 # Make Neophyte a factor for in the models
 general$Neophyte <- as.factor(general$Neophyte)
 general$Neophyte <- relevel(general$Neophyte, ref="native")
+general$woody <- as.factor(general$woody)
+general$woody <- relevel(general$woody,ref="woody")
 
 # scale EIVE?
 #general[, c(11:15)] <- scale(general[,c(11:15)])
@@ -623,14 +631,35 @@ visreg::visreg(MDL_gras,"Gras", by="Neophyte")
 # split analysis between woody and non-woody species?
 nw <- subset(general, woody != "woody",drop=T)
 w <- subset(general, woody == "woody", drop=T)
+alien <- subset(general, Neophyte != "native", drop=T)
 
 # scale predictors
 # Model for all traits together
 MDL<- lmer(impact ~-1+ SSD: Neophyte+ LMA: Neophyte+ H: Neophyte+ LA: Neophyte+ 
-             SM: Neophyte+ N: Neophyte+ Neophyte +(1|Family/Genus), 
+             SM: Neophyte+ N: Neophyte+ Neophyte+ woody +(1|Family/Genus), 
            general)
 summary(MDL)
 
+# Model for all traits together
+MDL<- lmer(impact ~-1+SM+SSD+LMA+H+LA+N+woody+Neophyte+(1|Family/Genus), 
+           general)
+summary(MDL)
+
+impact[, c(20:25)] <- log(impact[, c(20:25)])
+impact[, c(20:25)] <- scale(impact[, c(20:25)])
+
+MDL<- lmer(RelDiff ~-1+SM+SSD+LMA+H+LA+N+woody+Neophyte+(1|Family/Genus), 
+           impact[impact$class=="70%-100%",])
+summary(MDL)
+
+sum(!is.na(general$LA))
+sum(!is.na(general$LMA))
+sum(!is.na(general$N))
+sum(!is.na(general$SM))
+sum(!is.na(general$SSD))
+sum(!is.na(general$H))
+
+plot(DHARMa::simulateResiduals(MDL))
 
 # plot
 test_plot <- plot_model(MDL, type = "re", facet.grid=FALSE) 
@@ -643,6 +672,7 @@ plot
 simulation <- DHARMa::simulateResiduals(MDL)
 plot(simulation)
 ```
+
 
 
 ```{r}
@@ -708,7 +738,7 @@ plot(effects::Effect(c("SSD","Neophyte"), MDL, se=T, confint=T, confidence.level
 ```{r}
 #
 library(ggeffects)
-plot(ggpredict(MDL,terms= c("SSD", "Neophyte") ))
+plot(ggpredict(MDL,terms= c("LA", "Neophyte") ))
 
 get_model_data(MDL, type = "pred", terms= c("SSD", "Neophyte"), pred.type="re")
 
