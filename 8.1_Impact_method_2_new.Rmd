@@ -23,17 +23,16 @@ library(modEvA)
 library(ggplot2)
 library(doParallel)
 library(foreach)
-library(tidyverse)
+#library(tidyverse)
 library(geometry)
 library(factoextra)
 library(ggpubr)
-library(rstatix)
-library(rcompanion)
-library(ARTool)
-library(brms)
-library(bayesplot)
+#library(rstatix)
+#library(rcompanion)
 library(ggeffects)
 library(emmeans)
+library(lmerTest)
+
 ```
 
 
@@ -63,8 +62,10 @@ if(chose_eunis){
 Downsample by a factor of 100 if fast is selected
 ```{r}
 fast <- T
+fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
+fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.90,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.999,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 
@@ -241,8 +242,6 @@ fullPlotData <- cbind(fullPlotData, PCA)
 plantName = allPlants$names[1]
 plantStatus= allPlants$Neophyte[1]
 
-which(allPlants$names=="Malva cretica")
-
 # Function to compute the impact for each species, so we only need the plant name as input
 computePlantImpact <- function(plantName, plantStatus) {
   
@@ -258,7 +257,7 @@ computePlantImpact <- function(plantName, plantStatus) {
            EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
            DistSeverity.sqrt, Soil.Disturbance.sqrt, 
            Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
-           Latitude, Longitude, Dataset, chelsaP, hfp, totalCover, PC1, PC2, PC3,PC4, ENS0)
+           Latitude, Longitude, Dataset, chelsaP, hfp, totalCover, PC1, PC2, PC3,PC4, ENS0, elev)
   
   # Get the indices of the plant in the eva dataset
   indexOfPlant <- reducedEva$name == plantName & reducedEva$Neophyte== plantStatus
@@ -379,33 +378,13 @@ computePlantImpact <- function(plantName, plantStatus) {
               s(chelsaP, bs='tp')+
               s(hfp, bs='tp')+
               s(Dataset, bs="re")+
+              s(elev, bs="tp")+
               coverClass
   
   
-  base <- bam(model,family = quasipoisson, data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
+  base <- bam(model,family = nb(), data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
   baseModel<- summary(base)
   baseModel
-  
-  model2<-  (numberOfVascularPlantSpecies) ~ 
-              s(log(Area),bs='tp') + 
-              s(EIVEresM, bs = 'tp') +
-              s(EIVEresN, bs = 'tp') +
-              s(EIVEresR, bs = 'tp') +
-              s(EIVEresL, bs = 'tp') +
-              s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
-              s(Latitude, Longitude, bs = 'tp') +
-              s(chelsaP, bs='tp')+
-              s(hfp, bs='tp')+
-              s(Dataset, bs="re")+
-              relSpeciesCover
-  
-  base2 <- bam(model2,family = quasipoisson, data = tmpFullPlotData,  method = 'fREML',  discrete=TRUE, nthreads=4)
-  baseModel2<- summary(base2)
-  baseModel2
   
   
   # Make a dataframe to add the residuals to
@@ -419,9 +398,7 @@ computePlantImpact <- function(plantName, plantStatus) {
                     RelDiff= numeric(),
                     class= character(), n=numeric(),
                     size= numeric(),
-                    rel= numeric(),
-                    int = numeric(),
-                    slope= numeric())
+                    rel= numeric())
   
 
 
@@ -442,9 +419,7 @@ computePlantImpact <- function(plantName, plantStatus) {
                         mean(fitted(base)[tmpFullPlotData$coverClass == "0%"])) /
                         mean(fitted(base)[tmpFullPlotData$coverClass == "0%"]),
                      class = class, n = sum(tmpFullPlotData$coverClass == coverClass),
-                     size= size, rel= length(plotsWherePlantOccurs$PlotObservationID)/ size,
-                     int= baseModel2$p.coeff[1],
-                     slope= baseModel2$p.coeff[2])
+                     size= size, rel= length(plotsWherePlantOccurs$PlotObservationID)/ size)
     return(res)
   }
   
@@ -516,9 +491,19 @@ round(end-begin)
 x<- allPlantsImpact
 
 #write.csv(x, 'Impact2_ENS0.csv')
-#x <- read_csv('Impact2_ENS0.csv')
+x <- read_csv('I:/Impact_1980.csv')
 }
 ```
+
+Remove genus level observations
+```{r}
+# remove genus data
+library(vegdata)
+check <-vegdata::parse.taxa(unique(x$taxa))
+genus <- check[is.na(check$epi1),]
+x <- x[!x$taxa %in% genus$original,]
+```
+
 
 
 ## 2.3 Significance
@@ -541,7 +526,7 @@ shapiro.test(x$RelDiff[x$Neophyte=="extra"])
 # perform Whelch ANOVA --> this only possible for one variable
 # if we want to combine both class and neophyte perform ranked ANOVA
 oneway.test(RelDiff ~ Neophyte, data = x, var.equal = FALSE)
-games_howell_test(data = x, RelDiff ~ Neophyte)
+rstatix::games_howell_test(data = x, RelDiff ~ Neophyte)
 
 # plot
 ggplot(x, aes(Neophyte, RelDiff, color=Neophyte, fill=Neophyte))+
@@ -557,20 +542,77 @@ TukeyHSD(ranked)
 
 
 ```{r}
-phylo <- read_csv("phylogeny.csv")
-x[, c(15,16)] <- phylo[match(x$taxa, phylo$name), 3:4]
+# load phylogenetic data
+phylo <- read_csv("phylo.csv")
+x[, c(14,15)] <- phylo[match(x$taxa, phylo$name), 6:7]
+colnames(x)[14:15]<- c("genus","family")
 
 # glmm
-model <- lmer((RelDiff) ~ -1+ Neophyte + class + (1|family/genus), data= x)
+model <- lmer((RelDiff) ~ -1+ Neophyte+class + (1|family/genus), data= x)
 summary(model)
 
+emmeans::emmeans(model, pairwise ~ Neophyte)
+
+# check assumptions
 simulation <- DHARMa::simulateResiduals(model)
 plot(simulation)
-
 
 # check pairwise differences
 emmeans_results <- emmeans(model, pairwise ~ Neophyte)
 summary(emmeans_results)
+
+# number of observations
+table(x$Neophyte)
+
+set.seed(1)
+
+# we will 'bootstrap' or results using 1000 replications
+result <- data.frame(contrast = character(), estimate = numeric(), SE= numeric(), df=numeric(), t.ratio=numeric(), p.value= numeric())
+# Counter for successful runs
+successful_runs <- 0
+
+# Run until we get 1000 successful models
+while (successful_runs < 1000) {
+# sample natives
+natives <- x[x$Neophyte=="native",]
+natives <- natives[sample(nrow(natives),1000, replace=F),]
+# sample intras
+intras <- x[x$Neophyte=="intra",]
+intras <- intras[sample(nrow(intras),1000, replace=T),]
+# sample extras
+extras <- x[x$Neophyte=="extra",]
+extras <- extras[sample(nrow(extras),1000, replace=T),]
+all <- rbind(natives, intras, extras)
+
+# model again
+model <- lmer((RelDiff) ~ -1+ Neophyte+class + (1|family/genus), data= all)
+
+summary(model)
+
+if(isSingular(model)) next
+
+# plot(DHARMa::simulateResiduals(model))
+
+# check pairwise differences
+emmeans_results <- emmeans::emmeans(model, pairwise ~ Neophyte)
+# save in data frame
+sum <- summary(emmeans_results)$contrasts
+# add to large table
+result <- rbind(result, sum)
+
+successful_runs <- successful_runs +1 
+}
+
+
+
+# look at aggregated results (mean and sd)
+aggregated_result <- aggregate(. ~ contrast, data = result, FUN = function(x) c(mean = mean(x), sd = sd(x)))
+
+# assess number of significant
+result$significant <- result$p.value < 0.001
+table(result$significant)
+
+result |> group_by(contrast)|> summarise(n_t = sum(significant)/length(significant))
 ```
 
 
@@ -593,8 +635,7 @@ cover_class <- unique(x$class)
 cover_class
 
 # if not for loop, choose i value
-i=3
-  
+i=6
 
 # can be done with for loop, but than it is hard to change some parameters so better not to
 #for(i in 1:6){
@@ -612,23 +653,120 @@ index <- case_when(
 Dataset <- x[x$class==cover_class[i],]
   
 # create title
-title <- paste(index," ]",cover_class[i], "]", sep="")
-  
+title <- paste(index)
+class <- paste("]",cover_class[i], "]", sep="")
+
 # test differences and significance
-result<-welch_anova_test(Dataset, RelDiff ~ Neophyte )
+result<- rstatix::welch_anova_test(Dataset, RelDiff ~ Neophyte )
 result
-games_howell_test(data= Dataset, RelDiff ~ Neophyte)
+rstatix::games_howell_test(data= Dataset, RelDiff ~ Neophyte)
 
 # glmm
-model <- lmer(RelDiff ~ -1 + Neophyte + (1|family/genus), Dataset)
+model <- lmer(RelDiff ~ Neophyte + (1|family/genus), Dataset)
 summary(model)
 
 simulation <- DHARMa::simulateResiduals(model)
 plot(simulation)
 
 # check pairwise differences
-emmeans_results <- emmeans(model, pairwise ~ Neophyte)
-summary(emmeans_results) 
+emmeans_results <- emmeans::emmeans(model, pairwise ~ Neophyte)
+summary(emmeans_results)
+
+table(Dataset$Neophyte)
+
+
+# we will 'bootstrap' or results using 1000 replications
+result <- data.frame(contrast = character(), estimate = numeric(), SE= numeric(), df=numeric(), t.ratio=numeric(), p.value= numeric(), singular= factor())
+
+result_2 <- as.data.frame(matrix(nrow=0, ncol=6))
+colnames(result_2)<- c(colnames(summary(model)$coefficients), "Neophyte")
+
+# Counter for successful runs
+successful_runs <- 0
+
+# Run until we get 1000 successful models
+while (successful_runs < 1000) {
+  # sample natives
+  natives <- Dataset[Dataset$Neophyte=="native",]
+  natives <- natives[sample(nrow(natives),200, replace=F),]
+  # sample intras
+  intras <- Dataset[Dataset$Neophyte=="intra",]
+  intras <- intras[sample(nrow(intras),200, replace=T),]
+  # sample extras
+  extras <- Dataset[Dataset$Neophyte=="extra",]
+  extras <- extras[sample(nrow(extras),200, replace=T),]
+  all <- rbind(natives, intras, extras)
+  
+  # model again
+
+  model<- lmer((RelDiff) ~ -1+ Neophyte + (1|family/genus), data= all)
+  summary(model)
+  
+  if(isSingular(model)) next
+  
+  sum <- as.data.frame(summary(model)$coefficients)
+  sum$Neophyte <- c("extra","intra","native")
+  
+  result_2 <- rbind(result_2, sum)
+  
+  # Check pairwise differences
+  emmeans_results <- emmeans::emmeans(model, pairwise ~ Neophyte)
+
+  # Save results
+  sum <- summary(emmeans_results)$contrasts
+  
+  sum$singular <- isSingular(model)
+
+  # Append to results dataframe
+  result <- rbind(result, sum)
+  
+  successful_runs <- successful_runs+1
+}
+
+# look at aggregated results (mean and sd)
+aggregated_result <- aggregate(. ~ contrast, data = result, FUN = function(x) c(mean = mean(x), sd = sd(x)))
+
+# assess number of significant
+result$significant <- result$p.value < 0.05
+table(result$significant)
+
+result <- `Result_ Dominant_cover`
+
+test <- result |> group_by(contrast, significant) |> summarise(n=n(), diff= mean(estimate), sd= sd(estimate), se= sd/sqrt(n))
+test
+
+assign(paste("Result_",gsub(" ","_",index)), result)
+```
+
+
+```{r}
+
+# if not for loop, choose i value
+i= 1
+
+# can be done with for loop, but than it is hard to change some parameters so better not to
+#for(i in 1:6){
+  
+# create a vector for the title
+index <- case_when(
+  i == 1  ~ "Very low cover",  
+  i == 2~ "Low cover"  ,
+  i == 3 ~ "Medium cover"  ,
+  i == 4 ~ "High cover"  ,
+  i == 5~ "Very high cover" ,
+  i == 6~ "Dominant cover")
+  
+# downsize dataset 
+Dataset <- x[x$class==cover_class[i],]
+  
+# create title
+title <- paste(index)
+class <- paste("]",cover_class[i], "]", sep="")
+
+
+max5 <- max(Dataset$RelDiff)
+min6 <- min(Dataset$RelDiff)
+
 
 # plot
 p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
@@ -642,36 +780,50 @@ p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
     scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
     theme(legend.position = "none")+
     theme(legend.text= element_text(size=12),legend.title =element_text(size=14))+
-    annotate("text", x = 1, y = max(Dataset$RelDiff) + max(Dataset$RelDiff)/10, 
-             label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
-    annotate("text", x = 2, y = max(Dataset$RelDiff) + max(Dataset$RelDiff)/10, 
+    annotate("text", x = 1, y = max5 + max5/10, 
+             label = "c", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
+    annotate("text", x = 2, y = max5 + max5/10, 
              label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
-    annotate("text", x = 3, y = max(Dataset$RelDiff) + max(Dataset$RelDiff)/10, 
+    annotate("text", x = 3, y = max5 + max5/10, 
              label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
-    annotate("text", x=1, y=max(Dataset$RelDiff) + max(Dataset$RelDiff)/5, 
+    annotate("text", x=1, y=max5 + max5/5, 
              label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="extra"])), 
              vjust = 0, hjust = 0.5, size=4)+
-    annotate("text", x=2, y=max(Dataset$RelDiff) + max(Dataset$RelDiff)/5, 
+    annotate("text", x=2, y=max5 + max5/5, 
              label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="intra"])), 
              vjust = 0, hjust = 0.5, size=4)+
-    annotate("text", x=3, y=max(Dataset$RelDiff) + max(Dataset$RelDiff)/5, 
+    annotate("text", x=3, y=max5 + max5/5, 
              label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="native"])), 
              vjust = 0, hjust = 0.5, size=4)+
-    labs(subtitle = substitute(paste("Welch's ANOVA ", italic("P = 0.87"))))+
-    ylab("Relative difference")+
+    #labs(subtitle = "Significance level: NS")+
+    ylab("Relative impact")+
     ggtitle(title)+
     xlab(NULL)+
-    geom_hline(yintercept=0, linetype='dotted', alpha=0.5)
+    geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
+    theme(plot.title= element_text(hjust=0.01),
+      plot.subtitle = element_text( hjust = 0.01))+
+    scale_y_continuous(limits=c(min6, max5+max5/5))
   assign(gsub(" ","_",index), p)
   p
 
 
+  
 # arrange all plots and save
 plot <- ggarrange(Very_low_cover, Low_cover, Medium_cover, High_cover,
                   Very_high_cover, Dominant_cover, nrow=3, ncol=2, labels= c("a","b", "c","d","e","f"),
-                  font.label = list(size = 12))
+                  font.label = list(size = 12), align="hv")
+
 plot
-#ggsave("Impact2.jpg", plot= plot, width = 10, height = 10)
+ggsave("Impact.svg", plot= plot, width = 10, height = 10)
+
+# save individually
+ggsave("Very_low.png", plot= Very_low_cover, width = 5, height = 3)
+ggsave("Low.jpg", plot= Low_cover, width = 5, height = 3)
+ggsave("Medium.jpg", plot= Medium_cover, width = 5, height = 3)
+ggsave("High.jpg", plot= High_cover, width = 5, height = 3)
+ggsave("Very_high.jpg", plot= Very_high_cover, width = 5, height = 3)
+ggsave("Dominant.jpg", plot= Dominant_cover, width = 5, height = 3)
+
 ```
 
 
