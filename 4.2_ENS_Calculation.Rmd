@@ -31,13 +31,13 @@ library(janitor)
 Then, we load data of EVA
 ```{r, warnings=F, message=F}
 # Eva data for which plots are available and after correcting for incorrect or weird plot observations
-eva <- read_csv("fullPlotEva_ESy.csv")
+eva <- read_csv("fullPlotEva_ESy_1980.csv")
 ```
 
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it.
 ```{r, warnings=F, message=F}
 # header like data, filtered and appended with EIVE and DIV
-fullPlotData <- read_csv("fullPlotData_ESy.csv")
+fullPlotData <- read_csv("fullPlotData_ESy_1980.csv")
 
 fast <- F
 if(fast) {
@@ -52,9 +52,9 @@ Load the neophyte definitions:
 # Data on which species are neophytes
 native_intra_analysis=F
 if(native_intra_analysis){
-  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("country_species_ESy_1980.csv", show_col_types = FALSE)
 } else{
-  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("country_species_ESy_1980.csv", show_col_types = FALSE)
   species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
 }
 
@@ -178,8 +178,8 @@ x[x$ENS0 != fullPlotData$numberOfVascularPlantSpecies,]
 
 # what causes it to be different
 fullPlotData[fullPlotData$numberOfVascularPlantSpecies != x$ENS0, c(1,2,4,9)]
-eva[eva$PlotObservationID=="27146",]
-fullPlotData[fullPlotData$PlotObservationID=="27146",]
+eva[eva$PlotObservationID=="205618",]
+fullPlotData[fullPlotData$PlotObservationID=="205618",]
 # some species were present multiple times
 
 # these are all plots
@@ -208,7 +208,7 @@ save=F
 if(save){
   fullPlotData<- left_join(fullPlotData, x)
   head(fullPlotData)
-  write_csv(fullPlotData, "fullPlotData_ESy.csv")
+  write_csv(fullPlotData, "fullPlotData_ESy_1980.csv")
 }
 ```
 
