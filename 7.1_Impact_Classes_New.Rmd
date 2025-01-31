@@ -29,7 +29,7 @@ library(DescTools)
 library(asbio)
 library(lme4)
 library(glmmTMB)
-library(gam.hp)
+#library(gam.hp)
 library(ggeffects)
 ```
 
@@ -44,10 +44,12 @@ eva <- read_csv("fullPlotEva_ESy.csv",show_col_types = FALSE)
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it:
 ```{r}
 fullPlotData <- read_csv("fullPlotData_ESy.csv",show_col_types = FALSE)
+fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
+fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
 
 fast <- F
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.999,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 
@@ -74,8 +76,6 @@ if(native_intra_analysis){
 extra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="extra"])
 intra_EU <- unique(species_country_status$species[species_country_status$Neophyte=="intra"])
 native_intra <- unique(species_country_status$species[species_country_status$Neophyte=="native_intra"])
-
-
 ```
 
 
@@ -162,7 +162,7 @@ if(fast) {
   #write.csv(plotsPerSpecies,"plotsPerSpeciesInEurope.csv", row.names = F )
 } else {
   if(!native_intra_analysis){
-  plotsPerSpecies <- read_csv("speciesDominance.csv", show_col_types = FALSE)
+  plotsPerSpecies <- read_csv("speciesDominance_1980.csv", show_col_types = FALSE)
   plotsPerSpecies <- plotsPerSpecies[,c(-1)]
   colnames(plotsPerSpecies) <- c("names","numberOfPlots","neophyte")
   } else {
@@ -266,85 +266,15 @@ if(scaled){
 ```
 
 
-## 2.3 GLMM
-```{r}
-# run model
-
-sqrt =F
-if(sqrt){
-  MDL <- glmmTMB(ENS0 ~ EIVEresN+ hfp+ cover_rel_intra + cover_rel_extra+ EIVEresM+ EIVEresR+
-               EIVEresL+ EIVEresT+ DistSeverity + I(DistSeverity ^2)+ log(Area)+
-               Soil.Disturbance + I(Soil.Disturbance ^2)+ 
-               Grazing.Pressure +I(Grazing.Pressure ^2)+ Mowing.Frequency +
-               I(Mowing.Frequency ^2)+ chelsaP+Longitude+Latitude+ (1| Dataset), 
-               data=fullPlotData, family= poisson(link=log))
-} else {
-  MDL <- glmmTMB(n_native ~ EIVEresN+ hfp+ n_intra+ n_extra + EIVEresM+ EIVEresR+
-               EIVEresL+ EIVEresT+ DistSeverity.sqrt + I(DistSeverity.sqrt ^2)+ log(Area)+
-               Soil.Disturbance.sqrt + I(Soil.Disturbance.sqrt ^2)+ 
-               Grazing.Pressure.sqrt +I(Grazing.Pressure.sqrt ^2)+ Mowing.Frequency.sqrt +
-               I(Mowing.Frequency.sqrt ^2)+ chelsaP+Longitude+Latitude+ (1| Dataset), 
-               data=fullPlotData, family= poisson(link=log))
-}
-
- 
-# the sqrt model works better
-sum<- summary(MDL)
-sum
-piecewiseSEM::rsquared(MDL)
-```
 
 
-
-```{r}
-# plot using visreg
-z<- visreg::visreg(MDL, xvar="EIVEresN", gg = TRUE, partial=FALSE, rug = F,  scale="response", plot=F)
-eive_n_coef <- sum$coefficients$cond[2,1]/ z$fit$visregFit[1]
-
-z2 <- visreg::visreg(MDL, xvar="n_extra", gg = TRUE, partial=FALSE, rug = F,  scale="response", plot=F)
-extra_coef <- sum$coefficients$cond[5,1]/ z2$fit$visregFit[1]
-
-z3 <-visreg::visreg(MDL, xvar="n_intra", gg = TRUE, partial=FALSE, rug = F,  scale="response", plot=F)
-intra_coef <- sum$coefficients$cond[4,1]/ z3$fit$visregFit[1]
-```
-
-
-
-Check
-```{r}
-# check data
-library(DHARMa)
-
-# create simulation data
-simulationOutput <- simulateResiduals(fittedModel = MDL, plot = F)
-# look at simulation 
-# QQ plot --> line normal (is it correct distribution and is there no overdispersion)
-# residual plot --> if correct line at 0.5
-plot(simulationOutput)
-
-# test dispersion
-testDispersion(simulationOutput)
-plotResiduals(simulationOutput)
-
-# are there more outliers than expected by accident
-testOutliers(simulationOutput)
-
-# compare location with expected
-testQuantiles(simulationOutput)
-
-# more zeroes than expected
-testZeroInflation(simulationOutput)
-
-# plot per random effect group
-simulationOutput2 <- recalculateResiduals(simulationOutput, group = fullPlotData$Dataset)
-plot(simulationOutput2, quantreg = FALSE) 
-```
-
-
-## 2.4 GAMM
+## 2.3 GAMM
 Compare with the gamm model
 ```{r}
 # this is the model 
+# we take the log of the area already (cannot be in model)
+fullPlotData$Area <- log(fullPlotData$Area)
+
 model<-  n_native ~ 
               s(log(Area),bs='tp') + 
               s(EIVEresM, bs = 'tp') +
@@ -374,25 +304,48 @@ model<-  n_native ~
               s(DI_intra) + s(DI_extra) # factors of interest
 
 # run gamm
-baseModel <- bam(model, family = poisson, data = fullPlotData,  
+mod <- bam(model, family = quasipoisson, data = fullPlotData,  
                  method = 'fREML',  discrete=T, nthreads=4)
 
 sum <- summary(baseModel)
 sum
 baseModel
-
-gam.hp=F
-if(gam.hp){
-  baseModel <- gam(model, family = poisson, data = fullPlotData,  
-                 method = 'REML')
-  sum <- summary(baseModel)
-  sum
-  z <- gam.hp(baseModel, type="dev")
-  z
-  plot(z)
-}
+```
 
 
+```{r}
+library(DHARMa)
+
+MDL <- mgcv::bam(model, family = nb(), data = fullPlotData,  
+                 method = 'fREML',  discrete=T, nthreads=4)
+
+# create simulation data
+simulationOutput <- simulateResiduals(fittedModel = MDL, plot = F)
+# look at simulation 
+# QQ plot --> line normal (is it correct distribution and is there no overdispersion)
+# residual plot --> if correct line at 0.5
+plot(simulationOutput)
+
+# test dispersion
+testDispersion(simulationOutput)
+plotResiduals(simulationOutput)
+```
+
+
+```{r}
+source("C:/Users/u0166342/Documents/Boeren/Extra/Gam.hp/gam.hp/R/gam.hp.R")
+source("C:/Users/u0166342/Documents/Boeren/Extra/Gam.hp/gam.hp/R/creatbin.R")
+source("C:/Users/u0166342/Documents/Boeren/Extra/Gam.hp/gam.hp/R/genList.R")
+source("C:/Users/u0166342/Documents/Boeren/Extra/Gam.hp/gam.hp/R/plot.gamhp.R")
+
+
+z <- gam.hp(baseModel, type="dev")
+z
+plot(z)
+```
+
+
+```{r}
 # use visreg for all
 visreg::visreg(baseModel, scale= "response")
 
@@ -407,90 +360,100 @@ plot(z, ylim=c(0,50))
 points(fullPlotData$cover_rel_intra, fullPlotData$ENS0, col= rgb(red=0.5, green=0, blue=0.5, 0.1))
 ```
 
-
+## 2.4 Plot
 ```{r}
-# this is the model I want to fit
-model<-  n_native ~ 
-              s(log(Area),bs='tp') + # variable between 0 and 100
-              # Ecological indicator values
-              s(EIVEresM, bs = 'tp') +
-              s(EIVEresN, bs = 'tp') + # factor of interest
-              s(EIVEresR, bs = 'tp') +
-              s(EIVEresL, bs = 'tp') +
-              s(EIVEresT, bs = 'tp') +
-              # Disturbance indicator values
-              s(DistSeverity.sqrt, bs = 'tp') + # factor of interest
-              s(Soil.Disturbance.sqrt, bs = 'tp')+ # factor of interest
-              s(Grazing.Pressure.sqrt, bs = 'tp')+ # factor of interest
-              s(Mowing.Frequency.sqrt, bs = 'tp') + # factor of interest
-              s(hfp, bs="tp")+ # factor of interest (human footprint value Venter et al)
-              s(chelsaP, bs="tp")+ # MAP
-              s(elev, bs='tp')+ 
-              s(Latitude, Longitude, bs = 'tp') +
-              s(Dataset, bs = 're')+
-              s(DI_intra) + s(DI_extra) # factors of interest, percentage 
 
-# all explanatory variables are scaled, except for Longitude, Latitude and Dataset
+library(rlist)
+library(ggplot2)
+library("ggsci")
 
-# run gamm using the BAM function (fast)
-baseModel <- bam(model, family = quasipoisson, data = fullPlotData,  
-                 method = 'fREML',  discrete=T, nthreads=4)
+setwd("I:/")
+load(file = "importance.rdata") 
+plot(x)
 
-# summarise the output
-summary(baseModel)
+y <- x$hierarchical.partitioning
+sum(y[, 4])
 
-# perform gam.hp
-# only works with gam, not bam
-baseModel <- gam(model, family = quasipoisson, data = fullPlotData,  
-                 method = 'REML')
-# gam.hp
-z <- gam.hp(baseModel, type="dev")
-z
-plot(z)
+data <- data.frame(variable = character(), variance = numeric())
+add <- data.frame(variable= "Extra", variance =sum(y[c(15),4]))
+data <- add_row(data, add)
+
+
+data <- data[order(data$variance, decreasing=T),]
+
+ggplot(data, aes(x= reorder(variable, -variance), y= variance))+
+  geom_bar(stat = "identity")+
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  NULL+
+  theme_bw()+
+  xlab("Variable type")+
+  ylab("Explained variance (%)")
+
+rownames(y) <- c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil","DIV grazing","DIV mowing","HFP","MAP","Elevation","Intra","Extra")
+
+y <- as.data.frame(y)
+y$name <- c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil","DIV grazing","DIV mowing","HFP","MAP","Elevation","Intra","Extra")
+
+data <- y
+data$type <- c(1,2,2,2,2,2,3,3,3,3,3,2,2,4,5)
+data$type <- as.factor(data$type)
+colnames(data)[4] <- c("variance")
+
+
+data <- data %>% mutate(type = factor(type, 
+                          levels = c("1", "2","3","4","5"),
+                          labels = c("Plot", 
+                                     "Environment", 
+                                     "Disturbance",
+                                     "Intra-European alien",
+                                     "Extra-European alien")))
+
+plot <- ggplot(data, aes(x= reorder(name, -variance), y= variance, fill=type))+
+  geom_bar(stat = "identity")+
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  NULL+
+  theme_bw()+
+  xlab("Variable type")+
+  ylab("Explained variance (%)")+
+  scale_fill_npg(name= "Variable type")+ 
+  theme(legend.position = "bottom",
+          legend.box = "vertical")
+plot
+
+setwd("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Neophyte-Impact")
+#ggsave("variance.png", width=7.5, height=5)
+
 ```
 
 
-## 2.5 BRTs
-Try boosted regression tree
+# 3 MAP
 ```{r}
-library(gbm)
-library(dismo)
+# get regions back to FullPlotData
+fullPlotData$Region <- fullPlot2$Region[match(fullPlotData$PlotObservationID, fullPlot2$PlotObservationID)]
+colnames(fullPlotData)
+map <- fullPlotData[, c(1,20, 25,26,27)]
+colnames(map)
+#map[is.na(map)] <- 0
 
-fullPlotData2 <- as.data.frame(fullPlotData)
-BRTmodel1 <- gbm.step(data=fullPlotData2,
-                             gbm.x = c(4:12, 27:28), 
-                             gbm.y = 2, 
-                             family = "poisson",
-                             tree.complexity = 4,
-                             learning.rate = 0.001,
-                             bag.fraction = 0.7)
-
-BRTmodel1$contributions
-gbm.plot(BRTmodel1, n.plots=11, write.title = F,
-         common.scale = F, y.label="Fitted function",
-         show.contrib = TRUE)
-
-BRTmodel1$contributions
-gbm.plot(BRTmodel1, n.plots=11, write.title = F,
-         common.scale = F, y.label="Fitted function",
-         show.contrib = TRUE)
+density <- map |> group_by(Region) |> summarise(rel_invaded = sum(!is.na(n_extra) | !is.na(n_intra))/length(PlotObservationID))
 ```
 
 
 ```{r}
-library(xgboost)
-train <- fullPlotData2[runif(length(fullPlotData2$PlotObservationID)) > 0.30,]
-test <- fullPlotData2[!fullPlotData2$PlotObservationID %in% train$PlotObservationID,]
+library(sf)
+library(sp)
+library(terra)
+# We load the Med regions and give correct CRS
+medRegions <- read_sf("../Europe-regions-shapefiles-2023", "Emed_regions")
+medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
+density <- left_join(medRegions, density, by= c("Region"="Region"))
 
-bst <- xgboost(data = as.matrix(train[, c(4:12)]), label = train$ENS0, max.depth = 4, eta = 1, nthread = 1, nrounds = 20, objective = "count:poisson")
+rel_invaded<- ggplot()+
+  geom_sf(data= density, aes(fill= rel_invaded))+
+  scale_fill_viridis_c(option = "magma",begin = 0.1)+
+  labs(title = "Relative number of invaded plots") +
+  theme_bw()
 
-pred <- predict(bst, as.matrix(test[,c(4:12)]))
-err <- mean(as.numeric(pred)- test$ENS0)
-err
-max(pred)
-mean(pred)
-max(train$ENS0)
-mean(train$ENS0)
-
+#ggsave(rel_invaded, file="rel_invaded.png", bg="white")
 ```
 
