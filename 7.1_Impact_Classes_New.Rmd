@@ -34,6 +34,9 @@ library(ggeffects)
 ```
 
 
+For complete data, load "I:/imporance.RData"
+
+
 ## 1.1 Eva + header
 We load the eva data with the species per plot
 ```{r}
@@ -47,7 +50,7 @@ fullPlotData <- read_csv("fullPlotData_ESy.csv",show_col_types = FALSE)
 fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
 fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
 
-fast <- F
+fast <- T
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
@@ -275,8 +278,9 @@ Compare with the gamm model
 # we take the log of the area already (cannot be in model)
 fullPlotData$Area <- log(fullPlotData$Area)
 
+# final model
 model<-  n_native ~ 
-              s(log(Area),bs='tp') + 
+              s(Area,bs='tp') + 
               s(EIVEresM, bs = 'tp') +
               s(EIVEresN, bs = 'tp') +
               s(EIVEresR, bs = 'tp') +
@@ -289,38 +293,22 @@ model<-  n_native ~
               s(hfp, bs="tp")+
               s(chelsaP, bs="tp")+
               s(elev, bs='tp')+
-              s(Latitude, Longitude, bs = 'tp') +
-              s(Dataset, bs = 're')+
               s(DI_intra) + s(DI_extra)
 
-
-model<-  n_native ~ 
-              s(EIVEresN, bs = 'tp') + # factor of interest
-              s(DistSeverity.sqrt, bs = 'tp') + # factor of interest
-              s(Soil.Disturbance.sqrt, bs = 'tp')+ # factor of interest
-              s(Grazing.Pressure.sqrt, bs = 'tp')+ # factor of interest
-              s(Mowing.Frequency.sqrt, bs = 'tp') + # factor of interest
-              s(hfp, bs="tp")+ # factor of interest
-              s(DI_intra) + s(DI_extra) # factors of interest
-
 # run gamm
-mod <- bam(model, family = quasipoisson, data = fullPlotData,  
+mod <- bam(model, family = nb(), data = fullPlotData,  
                  method = 'fREML',  discrete=T, nthreads=4)
 
-sum <- summary(baseModel)
+sum <- summary(mod)
 sum
-baseModel
 ```
 
 
 ```{r}
 library(DHARMa)
 
-MDL <- mgcv::bam(model, family = nb(), data = fullPlotData,  
-                 method = 'fREML',  discrete=T, nthreads=4)
-
 # create simulation data
-simulationOutput <- simulateResiduals(fittedModel = MDL, plot = F)
+simulationOutput <- simulateResiduals(fittedModel = mod, plot = F)
 # look at simulation 
 # QQ plot --> line normal (is it correct distribution and is there no overdispersion)
 # residual plot --> if correct line at 0.5
@@ -339,28 +327,175 @@ source("C:/Users/u0166342/Documents/Boeren/Extra/Gam.hp/gam.hp/R/genList.R")
 source("C:/Users/u0166342/Documents/Boeren/Extra/Gam.hp/gam.hp/R/plot.gamhp.R")
 
 
-z <- gam.hp(baseModel, type="dev")
+z <- gam.hp(mod, type="dev")
 z
 plot(z)
 ```
 
 
+I made the graph here...
 ```{r}
-# use visreg for all
-visreg::visreg(baseModel, scale= "response")
+var = c("EIVEresT","EIVEresN","EIVEresM","EIVEresR","EIVEresL","DistSeverity.sqrt",
+        "Soil.Disturbance.sqrt","Grazing.Pressure.sqrt","Mowing.Frequency.sqrt","hfp",
+        "DI_intra","DI_extra")
+i=c(1:12)
+plotList <- lapply(
+  i ,
+  FUN= function(i){
+    j <- var[i]
+    plot_pred <- ggeffects::predict_response(mod, j)
+    plot_end <- ggplot(plot_pred, aes(x=x, y= predicted))+
+                      geom_line()+
+                      geom_ribbon(aes(ymin= conf.low, ymax=conf.high), alpha=0.2)+
+                      xlab(j) #+
+                      #geom_point(data= fullPlotData, 
+                                 #aes(x= as.vector(fullPlotData[, colnames(fullPlotData)==j]), y= n_native))
+    assign(paste("plot_", i,sep=""), plot_end)
+    plot_end
+    }
+)
 
-# try to get it for only EIVEresN
-z <-visreg::visreg(baseModel, xvar = "EIVEresN", gg = TRUE, partial=T, rug = F,  scale="response", plot=F)
-plot(z, ylim=c(0,50))      
-points(fullPlotData$EIVEresN, fullPlotData$ENS0,  col = rgb(red=0.5, green=0, blue=0.5, 0.1))
-
-# now only cover intra
-z <-visreg::visreg(baseModel, xvar = "DI_extra", gg = TRUE, partial=T, rug = F,  scale="response", plot=F)
-plot(z, ylim=c(0,50)) 
-points(fullPlotData$cover_rel_intra, fullPlotData$ENS0, col= rgb(red=0.5, green=0, blue=0.5, 0.1))
+plot <- ggpubr::ggarrange(plotlist= plotList, ncol=3, nrow=4, labels= letters[1:12])
+plot
 ```
 
-## 2.4 Plot
+
+## 2.4 GAMM EXTRA
+Compare with the gamm model
+```{r}
+# this is the model 
+# we take the log of the area already (cannot be in model)
+
+model2<-  n_extra ~ 
+              s(Area,bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Soil.Disturbance.sqrt, bs = 'tp')+
+              s(Grazing.Pressure.sqrt, bs = 'tp')+
+              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(hfp, bs="tp")+
+              s(chelsaP, bs="tp")+
+              s(elev, bs='tp')
+
+# run gamm
+mod2 <- bam(model2, family= nb(), data = fullPlotData,  method = 'fREML',  discrete=T, nthreads=4)
+
+sum2 <- summary(mod2)
+sum2
+```
+
+
+```{r}
+# create simulation data
+simulationOutput <- simulateResiduals(fittedModel = mod2, plot = F)
+# look at simulation 
+# QQ plot --> line normal (is it correct distribution and is there no overdispersion)
+# residual plot --> if correct line at 0.5
+plot(simulationOutput)
+
+# test dispersion
+testDispersion(simulationOutput)
+plotResiduals(simulationOutput)
+```
+
+
+
+```{r}
+library(visreg)
+visreg(mod2, xvar = "EIVEresN", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(mod2, xvar = "DistSeverity.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
+visreg(mod2, xvar = "Soil.Disturbance.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
+visreg(mod2, xvar = "Mowing.Frequency.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
+visreg(mod2, xvar = "Grazing.Pressure.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
+visreg(mod2, xvar = "hfp", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
+```
+
+
+```{r}
+z_extra <- gam.hp(mod2, type="dev")
+z_extra
+change <- data.frame(old= test,
+                     new = c("Area","EIVE M","EIVE N","EIVE R","EIVE L","EIVE T","DIV severity",
+                             "DIV soil","DIV grazing","DIV mowing","HFP","MAP","Elevation"))
+rownames(z_extra$hierarchical.partitioning) <- change$new
+z_extra$variables <- change$new
+plot(z_extra)
+```
+
+
+## 2.5 GAMM INTRA
+```{r}
+# this is the model 
+# we take the log of the area already (cannot be in model)
+
+model3<-  n_intra ~ 
+              s(Area,bs='tp') + 
+              s(EIVEresM, bs = 'tp') +
+              s(EIVEresN, bs = 'tp') +
+              s(EIVEresR, bs = 'tp') +
+              s(EIVEresL, bs = 'tp') +
+              s(EIVEresT, bs = 'tp') +
+              s(DistSeverity.sqrt, bs = 'tp') +
+              s(Soil.Disturbance.sqrt, bs = 'tp')+
+              s(Grazing.Pressure.sqrt, bs = 'tp')+
+              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(hfp, bs="tp")+
+              s(chelsaP, bs="tp")+
+              s(elev, bs='tp')
+
+# run gamm
+mod3 <- bam(model3, family= nb(), data = fullPlotData,  method = 'fREML',  discrete=T, nthreads=4)
+
+sum3 <- summary(mod3)
+sum3
+```
+
+
+```{r}
+# create simulation data
+simulationOutput <- simulateResiduals(fittedModel = mod3, plot = F)
+# look at simulation 
+# QQ plot --> line normal (is it correct distribution and is there no overdispersion)
+# residual plot --> if correct line at 0.5
+plot(simulationOutput)
+
+# test dispersion
+testDispersion(simulationOutput)
+plotResiduals(simulationOutput)
+```
+
+
+
+
+```{r}
+visreg(mod3, xvar = "EIVEresN", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
+visreg(mod3, xvar = "DistSeverity.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
+visreg(mod3, xvar = "Soil.Disturbance.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
+visreg(mod3, xvar = "Mowing.Frequency.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
+visreg(mod3, xvar = "Grazing.Pressure.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
+visreg(mod3, xvar = "hfp", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
+```
+
+
+
+```{r}
+z_intra <- gam.hp(mod3, type="dev")
+z_intra
+change <- data.frame(old= test,
+                     new = c("Area","EIVE M","EIVE N","EIVE R","EIVE L","EIVE T","DIV severity",
+                             "DIV soil","DIV grazing","DIV mowing","HFP","MAP","Elevation"))
+rownames(z_intra$hierarchical.partitioning) <- change$new
+z_intra$variables <- change$new
+
+plot(z_intra)
+```
+
+
+# 3 PLOT
 ```{r}
 
 library(rlist)
@@ -426,7 +561,7 @@ setwd("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Neophyte-Impact")
 ```
 
 
-# 3 MAP
+# 4 MAP
 ```{r}
 # get regions back to FullPlotData
 fullPlotData$Region <- fullPlot2$Region[match(fullPlotData$PlotObservationID, fullPlot2$PlotObservationID)]
