@@ -82,8 +82,6 @@ for(i in 1:6){
   mean[,i] <- 10^(mean[,i]*back_trans_pars[[i]]$slogx+back_trans_pars[[i]]$mlogx)
 }
 
-
-
 boxplot(mean[,1])
 boxplot(mean[,2])
 boxplot(mean[,3])
@@ -91,7 +89,9 @@ boxplot(mean[,4])
 boxplot(mean[,5])
 boxplot(mean[,6])
 
+mean <- cbind(hier[, -1], mean)
 
+write_csv(mean, "trait_normalized.csv")
 
 for(i in 1:6){
   Q <- quantile(mean[,i], probs= c(.25, .75), na.rm=T)
@@ -102,7 +102,3 @@ for(i in 1:6){
   #mean[!is.na(trait[, 6+i]), i] <- save_mean
   print(sum(is.na(mean[,i])))
 }
-
-mean <- cbind(hier[, -1], mean)
-
-write_csv(mean, "trait_normalized.csv")
