@@ -40,13 +40,13 @@ For complete data, load "I:/imporance.RData"
 ## 1.1 Eva + header
 We load the eva data with the species per plot
 ```{r}
-eva <- read_csv("fullPlotEva_ESy.csv",show_col_types = FALSE)
+eva <- read_csv("fullPlotEva_ESy_1980.csv",show_col_types = FALSE)
 ```
 
 
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it:
 ```{r}
-fullPlotData <- read_csv("fullPlotData_ESy.csv",show_col_types = FALSE)
+fullPlotData <- read_csv("fullPlotData_ESy_1980.csv",show_col_types = FALSE)
 fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
 fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
 
@@ -256,7 +256,7 @@ fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
 Here we try the glmm approach
 ```{r}
 # scale or not
-scaled=T
+scaled=F
 if(scaled){
   
   # copy dataset for original values
@@ -566,9 +566,11 @@ setwd("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Neophyte-Impact")
 # get regions back to FullPlotData
 fullPlotData$Region <- fullPlot2$Region[match(fullPlotData$PlotObservationID, fullPlot2$PlotObservationID)]
 colnames(fullPlotData)
-map <- fullPlotData[, c(1,20, 25,26,27)]
+map <- fullPlotData[, c(1,38,13,14, 2, 23, 24, 25)]
 colnames(map)
 #map[is.na(map)] <- 0
+
+map$alien <- map$n_extra+map$n_intra
 
 density <- map |> group_by(Region) |> summarise(rel_invaded = sum(!is.na(n_extra) | !is.na(n_intra))/length(PlotObservationID))
 ```
@@ -590,5 +592,44 @@ rel_invaded<- ggplot()+
   theme_bw()
 
 #ggsave(rel_invaded, file="rel_invaded.png", bg="white")
+```
+
+
+
+```{r}
+
+# make geometry with long and lat
+plotLocations <- st_as_sf(map, coords = c("Longitude","Latitude"), remove = FALSE)
+st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
+
+
+# make a fishnet grid over the countries
+grd <- st_make_grid(medRegions, n = 100)
+# visualize the grid
+plot(grd)
+
+sf_use_s2(F)
+# find which grid points intersect `polygons` (countries) 
+# and create an index to subset from
+index <- which(lengths(st_intersects(grd, medRegions)) > 0)
+sf_use_s2(T)
+
+# subset the grid to make a fishnet
+fishnet <- grd[index]
+
+# visualize the fishnet
+plot(fishnet)
+
+fishnet |>  
+  st_as_sf() |> # cast to sf
+  mutate(grid_id = row_number()) |> # create unique ID
+  st_join(plotLocations) |> # join the species dataset
+  group_by(grid_id) |> # group by the grid id
+  summarise(n = sum(alien>0)/length(ENS0)) |> # count the number of rows
+  # fill the plot by the number of points in the grid
+  ggplot(aes(fill = n)) + 
+  # make kinda pretty 
+  geom_sf(lwd = 0.0001 , color="white")
+
 ```
 
