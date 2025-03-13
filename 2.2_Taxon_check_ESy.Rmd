@@ -17,18 +17,21 @@ setwd("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Neophyte-Impact")
 
 ```{r, echo=F, warning=F, message=FALSE}
 #Load required packages
-library(readr)
-library(tidyr)
-library(dplyr)
-library(magrittr)
-library(ggplot2)
-library(stringr)
+#library(readr)
+library(tidyverse)
+library(RSQLite)
 library(plantlist)
+#library(tidyr)
+#library(dplyr)
+#library(magrittr)
+#library(ggplot2)
+#library(stringr)
+
 library(vegdata)
 library(kewr)
-library(RSQLite)
-library(taxize)
-library(rgbif)
+
+#library(taxize)
+#library(rgbif)
 ```
 
 
@@ -501,6 +504,13 @@ eva_names$name <- eva$name[match( eva_names$species, eva$`Matched concept`)]
 
 # how many of these are vascular plants --> 1240
 length(eva_names$species[eva_names$taxon=="Vascular plant"])
+
+eva_names<- as.data.frame(unique(eva$`Matched concept`))
+colnames(eva_names) <- "Matched concept"
+eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$source<- eva$source[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names |> group_by(source) |> summarise(n=n())
 ```
 
 
@@ -849,6 +859,13 @@ plants$source <- "Matched concept"
 # give remaining plants just name
 eva$species[is.na(eva$species)] <- plants$species[match(eva$`Matched concept`[is.na(eva$species)], plants$species)]
 eva$source[is.na(eva$species)] <- plants$source[match(eva$`Matched concept`[is.na(eva$species)], plants$species)]
+
+eva_names<- as.data.frame(unique(eva$`Matched concept`))
+colnames(eva_names) <- "Matched concept"
+eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$source<- eva$source[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names |> group_by(source) |> summarise(n=n())
 ```
 
 
@@ -961,11 +978,22 @@ eva <- eva[!eva$species %in% c("Cephalophysis species", "Blyxa mangalensis"),]
 
 
 # save
-write_csv(eva, "eva_ESy.csv")
+#write_csv(eva, "eva_ESy.csv")
 
 
 # look at how sources are handled
 eva |> group_by(source) |> summarise(n=n())
+
+colnames(eva)
+eva_needed <- eva[, c(6,12,13,14,15)]
+head(eva_needed)
+
+eva_names<- as.data.frame(unique(eva$`Matched concept`))
+colnames(eva_names) <- "Matched concept"
+eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$source<- eva$source[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names |> group_by(source) |> summarise(n=n())
 ```
 
 
@@ -1049,7 +1077,7 @@ eva$name[eva$name %in% z$original] <- z$TaxonName[match(eva$name[eva$name %in% z
 
 
 # save
-write_csv(eva, "eva_ESy.csv")
+#write_csv(eva, "eva_ESy.csv")
 ```
 
 
