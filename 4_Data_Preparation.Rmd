@@ -943,7 +943,7 @@ fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 fullPlotEva <- eva
 head(eva)
-#write_csv(eva, "fullPlotEva_ESy_1980.csv")
+write_csv(eva, "fullPlotEva_ESy_1980_all.csv")
 ```
 
 
