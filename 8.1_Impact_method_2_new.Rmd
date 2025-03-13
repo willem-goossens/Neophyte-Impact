@@ -45,8 +45,8 @@ correctArea<- F
 ## 1.2 Data
 Load eva and plot data
 ```{r, warnings=F, message=F}
-eva <- read_csv("fullPlotEva_ESy.csv")
-fullPlotData <- read_csv("fullPlotData_EUNIS.csv")
+eva <- read_csv("fullPlotEva_ESy_1980.csv")
+fullPlotData <- read_csv("fullPlotData_EUNIS_1980.csv")
 
 # habitat choice
 habitats <- unique(fullPlotData$habitat)
