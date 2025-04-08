@@ -11,13 +11,14 @@ output: html_document
 rm(list = ls())
 
 # set working directory
-setwd("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Neophyte-Impact")
+setwd("C:/Users/u0166342/Documents/Doctoraat/Impact/Neophyte-Impact")
 ```
 
 
 ```{r, echo=F, warning=F, message=FALSE}
 #Load required packages
 #library(readr)
+
 library(tidyverse)
 library(RSQLite)
 library(plantlist)
@@ -26,10 +27,8 @@ library(plantlist)
 #library(magrittr)
 #library(ggplot2)
 #library(stringr)
-
 library(vegdata)
 library(kewr)
-
 #library(taxize)
 #library(rgbif)
 ```
@@ -43,7 +42,7 @@ library(kewr)
 Here we load the data and chose which dataset we want to use.  
 We later remove all rows without a plot ID and check which taxa are present in the dataset
 ```{r Load data, message= F, warning=FALSE}
-fast <- F
+fast <- T
 if(fast) {
   eva <- read_delim("../EVA Data/onePromilleEva.csv", "\t")
 } else {
@@ -64,7 +63,7 @@ unique(eva$`Taxon group`)
 ## 3.1 Load database
 ```{r}
 # connect to the database
-con <- dbConnect(drv=RSQLite::SQLite(), dbname="C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/EIVE Data/EuroSL.sqlite")
+con <- dbConnect(drv=RSQLite::SQLite(), dbname="C:/Users/u0166342/Documents/Doctoraat/Impact/Extra Data/EURO+MED/EuroSL.sqlite")
 
 # list all tables
 tables <- dbListTables(con)
@@ -218,7 +217,6 @@ source("2.2.1_Bruelheide.R")
 # add names to our dataset
 eva$name <- obs$TaxonName
 
-
 # some species are still not known
 unknown <- eva[is.na(eva$species),]
 # also check these in the dataframe using the matched concept name
@@ -305,7 +303,7 @@ dup_MC_not_dup_name <- dup_MC_not_dup_name[is.na(dup_MC_not_dup_name$species),]
 
 ## 3.5 Idoia file
 ```{r}
-idoia <- readxl::read_excel("~/Boeren/Impact/eva_neophytes/Core authors/Neophyte paper_taxonomic issues_IB.xlsx")
+idoia <- readxl::read_excel("~/Doctoraat/Impact/Extra data/Species names/Idoia_check_taxa.xlsx")
 
 change <- data.frame(old = c("Acantholimon echinus", "Adenostyles platyphylloides", "Anemone narcissifolia subsp. biarmiensis", 
                              "Anthemis montana var. Linneana","Astragalus microcephalus","Atropis distans var. convulata",
@@ -418,7 +416,7 @@ if(fast){
   #saveRDS(mybiglist, "species_powo_ESy_new.RData")
 } else {
     # read all data
-    mybiglist<- readRDS("species_powo_ESy_new.RData")
+    mybiglist<- readRDS("~/Doctoraat/Impact/Extra data/Species names/species_powo_ESy_new.RData")
 }
 ```
 
@@ -555,7 +553,7 @@ eva$`Taxon group`[!is.na(eva$species)& eva$`Taxon group`=="Unknown"] <- "Vascula
 ## 5.2 Irena file
 ```{r}
 # load file 
-taxonNameCorrections <- read_csv("../Neophyte-Impact/Neophyte Assignments/UniqueTaxaEurope-2023-04-23.csv", show_col_types = FALSE)
+taxonNameCorrections <- read_csv("~/Doctoraat/Impact/Extra data/Species names/Irena_taxa_check_Christian.csv", show_col_types = FALSE)
 
 
 # add column
@@ -655,7 +653,7 @@ eva$species[is.na(eva$species)] <- eva$irena[is.na(eva$species)]
 
 ## 5.3 Test Irena 2
 ```{r}
-irena <- readxl::read_excel("species_status_region-VK-IA.xlsx")
+irena <- readxl::read_excel("~/Doctoraat/Impact/Extra data/Species names/Irena_taxa_update.xlsx")
 
 eva_names <- as.data.frame(unique(eva$`Matched concept`[is.na(eva$species)]))
 colnames(eva_names) <- "species"
@@ -1000,7 +998,7 @@ eva_names |> group_by(source) |> summarise(n=n())
 ## 7.1 subspecies removal
 ```{r}
 # read data
-eva <- read_csv("eva_ESy_subsp.csv", show_col_types = FALSE)
+eva <- read_csv("../EVA Data/eva_ESy_subsp.csv", show_col_types = FALSE)
 
 
 # vector with eva names
