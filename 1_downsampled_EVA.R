@@ -23,7 +23,7 @@ onePercentEva <- eva[onePercentOfPlotIDs[eva$PlotObservationID],]
 onePromilleEva <- eva[onePromilleOfPlotIDs[eva$PlotObservationID],]
 
 
-# Verify that the expected number of plots was actually selected
+# Verify that the expected number of plots was actually selecte
 numberOfUniquePlotIDsInEva <- nUniquePlotIDs(eva)
 fractionOfPlotsInOnePercentEva <- numberOfUniquePlotIDsInEva / nUniquePlotIDs(onePercentEva)
 # Should be about 100
