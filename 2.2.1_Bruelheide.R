@@ -1,6 +1,6 @@
 
 
-setwd('C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/EIVE Data/ESy-master')
+setwd('C:/Users/u0166342/Documents/Doctoraat/Impact/Extra Data/EURO+MED/ESy-master')
 source('code/prep.R') #### Loading packages
 
 ### define expert file:
@@ -30,5 +30,5 @@ source('code/step1and2_load-and-parse-the-expert-file.R')
 # also changed file to return all non found species as na
 source('code/step4_aggregate-taxon-levels.R')
 
-setwd("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Neophyte-Impact")
+setwd("C:/Users/u0166342/Documents/Doctoraat/Impact/Neophyte-Impact")
 stopCluster(cl)
