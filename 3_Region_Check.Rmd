@@ -14,18 +14,13 @@ rm(list=ls())
 ## 1.1 Load
 ```{r, echo=F, warning=F, message=F}
 library(readr)
-library(ggplot2)
+library(tidyverse)
 library(sf)
 library(sp)
-library(units)
-library(tibble)
-library(tidyverse)
-library(sp)
+library(CoordinateCleaner)
+library(doParallel)
 library(units)
 library(lwgeom)
-library(arsenal)
-library(doParallel)
-library(CoordinateCleaner)
 ```
 
 
@@ -33,7 +28,7 @@ library(CoordinateCleaner)
 Read data from header
 ```{r, warning= F, message= F}
 header <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_header.csv", "\t")
-fast <- F
+fast <- T
 if(fast) {
   header <- header[runif(length(header$PlotObservationID)) > 0.999,]
 }
@@ -64,7 +59,7 @@ st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 
 Load the Euro+Med European region shapefiles and give the same CRS
 ```{r, warning=F, message=F}
-medRegions <- read_sf("../Europe-regions-shapefiles-2023", "Emed_regions")
+medRegions <- read_sf("../Extra data/EURO+MED/Regions", "Emed_regions")
 medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
 ```
 
@@ -93,55 +88,6 @@ First we compute the distances to a bounding box, which facilitates the calculat
 # Percentage not assigned
 percentNotAssignedPlots <- sum(is.na(joinedData$Region))/length(joinedData$PlotObservationID)*100
 percentNotAssignedPlots
-```
-
-
-```{r}
-use_for =F
-if(use_for){
-# For the remaining plots we assign them to the closest region which is no more than 10 km away. Else we ignore the data.
-distanceThreshold <- set_units(10000,m)
-
-# Plots with no assigned region
-remainingPlots <- plotLocations[is.na(joinedData$Region),]
-remainingPlots<- remainingPlots[, c("PlotObservationID","Country", "geometry")]
-# Compute bounding boxes for the regions, this allows to decide faster, if a plot is outside the distanceThreshold from a region
-# a bounding box is just the surrounding
-boundingBoxes <- medRegions
-for(i in 1:length(boundingBoxes$country)) {
-  boundingBoxes$geometry[i] <- st_as_sfc(st_bbox(boundingBoxes$geometry[i]))
-}
-
-# Remaining plots two extra parts
-remainingPlots$Region <- NA
-remainingPlots$Distance <- -1
-
-begin<- Sys.time()
-for(i in 1:length(remainingPlots$PlotObservationID)) {
-  region <- NA
-  distance <- set_units(1000000,m)
-
-  for(j in 1:length(medRegions$Region)) {
-    distBoundingBox <- st_distance(boundingBoxes[j,], remainingPlots[i,]) #Calculate the distance
-    # Only if the distance to the bounding box is smalle than distanceThreshold we need to compute the real distance to the region
-    if(distBoundingBox < distanceThreshold){
-      dist <- st_distance(medRegions[j,], remainingPlots[i,])
-      if(dist < distanceThreshold & dist < distance) {
-        region <- medRegions$Region[j]
-        distance <- dist
-      }
-    }
-  }
-  # Print the progress
-  message(i/length(remainingPlots$PlotObservationID)*100, "% ", remainingPlots$Country[i], " ", region)
-  remainingPlots$Region[i] <- region
-  remainingPlots$Distance[i] <- distance
-}
-end<-Sys.time()
-round(end-begin, 2) 
-
-remainingPlots2<- remainingPlots
-}
 ```
 
 ## 3.2 Sea 
@@ -239,12 +185,6 @@ parallel::stopCluster(cl = my.cluster)
 
 # Change type of distance in plot
 remainingPlots$Distance<- as.double(remainingPlots$Distance)
-
-# check whether the for and foreachloop gave similar results
-if(use_for){
-  setdiff(st_drop_geometry(remainingPlots), st_drop_geometry(remainingPlots2))
-  comparedf(st_drop_geometry(remainingPlots), st_drop_geometry(remainingPlots2))
-}
 ```
 
 
@@ -279,14 +219,6 @@ st_geometry(allPlotsWithRegion) <- NULL
 # save file
 #write_csv(allPlotsWithRegion, "plot_to_region_assignment_new.csv")
 #write_csv(sea, "sea_3.csv")
-
-#check whether my 'plot to region' is different than the one from Christian
-if(use_for){
-  myPlot<- read.csv("plot_to_region_assignment_euro.csv")
-  hisPlot<- read_csv("../Intermediate Data/plot_to_region_assignment.csv")
-  # totaly same
-  comparedf(hisPlot, myplot)
-}
 ```
 
 
