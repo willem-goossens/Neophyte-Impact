@@ -12,13 +12,9 @@ rm(list=ls())
 
 
 ```{r}
-library(readr)
-library(rtry)
-library(dplyr)
+library(tidyverse)
 library(lmerTest)
 library(lme4)
-library(sjPlot)
-library(BHPMF)
 library(plantlist)
 library(ggpubr)
 library(vegdata)
@@ -29,7 +25,7 @@ library(vegdata)
 ## 2.1 Load
 ```{r}
 # Load data
-mean <- read_csv("trait_normalized.csv",show_col_types = FALSE)
+mean <- read_csv("../Results/trait_normalized.csv",show_col_types = FALSE)
 trait <- read_csv("traits_diaz.csv",show_col_types = FALSE)
 
 

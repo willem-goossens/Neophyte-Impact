@@ -1,0 +1,233 @@
+---
+title: "9.3 Phylo"
+author: "Willem"
+date: "2025-04-22"
+output: html_document
+---
+
+
+Diaz and TPL
+```{r}
+eva_names<- as.data.frame(unique(eva$`Matched concept`))
+colnames(eva_names) <- "Matched concept"
+eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$diaz <- eva$Diaz[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+
+# create name vector
+eva_names$taxa <- gsub(" aggr\\.", "", eva_names$name)
+
+# get info from Diaz
+eva_names$genus <- Diaz$Genus[match(eva_names$diaz, Diaz$`Species name standardized against TPL`)]
+eva_names$family <- Diaz$Family[match(eva_names$diaz, Diaz$`Species name standardized against TPL`)]
+
+# remove all "plant" species from eva
+eva_names <- eva_names[!eva_names$name=="Plant",]
+sum(is.na(eva_names$diaz))
+
+
+
+
+# test TPL
+TPL <- TPL(eva_names$taxa)
+
+# assign TPL
+eva_names$TPL_genus <- TPL$POSSIBLE_GENUS[match(eva_names$taxa, TPL$YOUR_SEARCH)]
+eva_names$TPL_family <- TPL$FAMILY[match(eva_names$taxa, TPL$YOUR_SEARCH)]
+
+# check difference
+setdiff(eva_names$genus[!is.na(eva_names$diaz)], eva_names$TPL_genus[!is.na(eva_names$diaz)])
+setdiff(eva_names$family[!is.na(eva_names$diaz)], eva_names$TPL_family[!is.na(eva_names$diaz)])
+
+# change fabaceae and asteraceae
+eva_names$family <- gsub("Leguminosae","Fabaceae", eva_names$family)
+eva_names$family <- gsub("Compositae","Asteraceae", eva_names$family)
+eva_names$family <- gsub("Clusiaceae","Hypericaceae", eva_names$family)
+```
+
+
+
+POWO family
+```{r}
+# previously made data
+accepted <- read.csv("family.csv")
+# assign to family data
+eva_names$family[is.na(eva_names$family)] <- accepted$family[match(eva_names$name[is.na(eva_names$family)], accepted$old_name)]
+
+# create dataframe to check
+check <- eva_names[is.na(eva_names$family),]
+check <- check[!check$name %in% accepted$old_name,]
+kewr=T
+if(!kewr){
+# now do it with powo
+library(kewr)
+# search powo and store results in list if we find a direct match
+  mybiglist <- list()
+  for(i in 1: length(check$species)){
+    # powo
+    r<- search_powo(vegdata::taxname.abbr(check$taxa[i]))
+    # only if there is a match store result in data, otherwise put NA
+    if(length(r$results)>0){
+      # make dataframe
+      tmp <- tidy(r)
+      # add to list
+      mybiglist[[i]] <- tmp
+    } else {
+      mybiglist[[i]] <- NA
+    }
+} 
+  
+  
+# empty dataframe
+accepted <- data.frame(new_name = character(), old_name = character(), number= numeric(), taxon= character(), family= character(), acc = numeric())
+
+# give the accepted name to the old species name
+for(i in 1: length(check$species)){
+  # first check if there is an accepted name
+  if(!all(is.na(mybiglist[[i]]))){
+    # check whether there are accepted names
+    if(sum(mybiglist[[i]]$accepted==T)){
+      if(sum(mybiglist[[i]]$accepted==T)<2){
+          accepted <- add_row(accepted, new_name= mybiglist[[i]]$name[mybiglist[[i]]$accepted==T],
+                              old_name =check$species[i], number= i, taxon= eva_names$taxon[i],
+                              family=mybiglist[[i]]$family[mybiglist[[i]]$accepted==T], acc= 1)
+      } else {
+          accepted <- add_row(accepted, new_name= mybiglist[[i]]$name[mybiglist[[i]]$accepted==T],
+                              old_name =check$species[i],number= i, taxon= eva_names$taxon[i],
+                              family=mybiglist[[i]]$family[mybiglist[[i]]$accepted==T],  acc= 2) 
+          }
+    } else {
+      accepted <- add_row(accepted, new_name= NA, old_name =check$species[i] ,  number= i,
+                          taxon=eva_names$taxon[i], family=NA, acc= 0)
+    }
+  } else {
+      accepted <- add_row(accepted, new_name= NA,old_name = check$species[i],  number= i, 
+                          taxon= eva_names$taxon[i],family=NA, acc=0 )
+  } 
+}
+}
+
+#accepted2 <- read.csv("family.csv")
+#accepted3 <- rbind(accepted, accepted2)
+#write_csv(accepted3,"family.csv")
+
+# assign to family data
+eva_names$family[is.na(eva_names$family)] <- accepted$family[match(eva_names$name[is.na(eva_names$family)], accepted$old_name)]
+
+# check remaining unknowns
+sum(is.na(eva_names$family[!duplicated(eva_names$taxa)]))
+
+# check families in our dataset that differ
+setdiff(eva_names$family[!is.na(eva_names$family)], eva_names$TPL_family[!is.na(eva_names$family)])
+# here powo is correct
+change <- data.frame(old= c("Adoxaceae"),
+                     new=c("Viburnaceae"))
+eva_names$family[eva_names$family %in% change$old] <- change$new[match(eva_names$family[eva_names$family %in% change$old], change$old)]
+```
+
+
+Genera
+```{r}
+# check genera
+# check difference
+setdiff(eva_names$genus[!is.na(eva_names$diaz)], eva_names$TPL_genus[!is.na(eva_names$diaz)])
+setdiff(eva_names$TPL_genus[!is.na(eva_names$diaz)], eva_names$genus[!is.na(eva_names$diaz)])
+
+
+# calculated vegdist
+eva_names$veg_genus <- vegdata::parse.taxa(eva_names$taxa)$genus
+
+# check
+setdiff(eva_names$TPL_genus[!is.na(eva_names$diaz)], eva_names$veg_genus[!is.na(eva_names$diaz)])
+setdiff(eva_names$veg_genus[!is.na(eva_names$diaz)], eva_names$TPL_genus[!is.na(eva_names$diaz)])
+setdiff(eva_names$veg_genus[!is.na(eva_names$diaz)], eva_names$genus[!is.na(eva_names$diaz)])
+
+# this function gives the best view
+change_genus <- setdiff(eva_names$genus[!is.na(eva_names$diaz)], eva_names$veg_genus[!is.na(eva_names$diaz)])
+eva_names$genus[eva_names$genus %in% change_genus] <- eva_names$veg_genus[eva_names$genus %in% change_genus]
+
+
+# assign all other genera from this function
+eva_names$genus[is.na(eva_names$genus)] <- eva_names$veg_genus[is.na(eva_names$genus)]
+```
+
+
+Family
+```{r}
+# first check duplicates (are there errors in previous data)
+dup <- unique(eva_names[, c(6,7)])
+test <- dup[duplicated(dup$genus) | duplicated(dup$genus, fromLast=T),]
+test <- test[!is.na(test$family),]
+test <- test[duplicated(test$genus) | duplicated(test$genus, fromLast=T),]
+
+change <- data.frame(genus = c("Arum", "Ammophila","Aphanes","Asphodeline","Athyrium","Corrigiola", "Dryopteris","Melampyrum",
+                               "Polystichum", "Angallis", "Asphodelus", "Anagallis","Anisantha",
+                               "Arisarum","Asteriscus","Blechnum","Celtis","Consolida","Cystopteris","Dictamnus",
+                               "Digitalis","Dorycnium","Geranium","Glaux","Gymnocarpium","Hemerocallis",
+                               "Lens","Myosurus","Onoclea","Phegopteris"),
+                     family= c("Araceae", "Poaceae", "Rosaceae","Asphodelaceae","Aspleniaceae","Caryophyllaceae","Polypodiaceae",
+                               "Orobanchaceae","Polypodiaceae","Primulaceae", "Xanthorrhoeaceae","Primulaceae","Poaceae",
+                               "Araceae","Asteraceae","Aspleniaceae","Cannabaceae","Boraginaceae","Aspleniaceae","Lamiaceae",
+                               "Plantaginaceae","Fabaceae","Geraniaceae","Primulaceae","Cystopteridaceae","Asphodelaceae",
+                               "Fabaceae","Ranunculaceae","Onocleaceae","Thelypteridaceae"))
+
+# change 
+eva_names$family[eva_names$genus %in% change$genus] <- change$family[match(eva_names$genus[eva_names$genus %in% change$genus], change$genus)]
+# no more duplicates?
+
+# just give these the name from TPL
+eva_names$family[eva_names$genus %in% test$genus] <- eva_names$TPL_family[eva_names$genus %in% test$genus]
+
+# assign names to those species
+# create dataframe with duplicates, is easiest for now
+dup <- unique(eva_names[, c(6,7)])
+dup_known <- dup[!is.na(dup$family),]
+
+# dup unknown assigned
+eva_names$family[eva_names$genus %in% dup_known$genus] <- dup_known$family[match(eva_names$genus[eva_names$genus %in% dup_known$genus],
+                                                                                 dup_known$genus)]
+
+# create dataframe empty
+check <- eva_names[is.na(eva_names$family),]
+
+change <- data.frame(genus = c("Calammophila","Bellidiastrum","Sabulina","X_triticosecale","Thinoelymus","Liliopsida","Thinoelymus",
+                               "X_sorbaronia", "Erophaca","Gaudiniopsis","Arthrocaulon","X_schedolium","Vahlodea","Sclerocaryopsis",
+                               "Petrocoptis","Pachyphragma","Amblyopyrum","Anchusella", "Mycelis","Agropogon","Acuston",
+                               "Jancaea","Solidaster","Xatartia","Arthropteris","Malosorbus","Eminium","Chrysophthalmum",
+                               "Trichodesma","Eminium","Oreomecon","Triticale","Avenochloa","Cenataurea","Elaeagnos"),
+                     family= c("Poaceae","Asteraceae","Caryophyllaceae","Poaceae", "Poaceae","Liliaceae", "Poaceae",
+                               "Rosaceae","Fabaceae", "Poaceae","Amaranthaceae","Poaceae","Poaceae", "Boraginaceae",
+                               "Caryophyllaceae","Brassicaceae", "Poaceae","Boraginaceae","Asteraceae","Poaceae","Brassicaceae",
+                               "Gesneriaceae","Asteraceae","Apiaceae","Polypodiaceae","Rosaceae","Araceae","Asteraceae",
+                               "Boraginaceae","Araceae","Papaveraceae","Poaceae","Poaceae","Asteraceae","Elaeagnaceae"))
+
+# assign
+eva_names$family[is.na(eva_names$family)] <- change$family[match(eva_names$genus[is.na(eva_names$family)], change$genus)]
+
+# check whether all are assigned
+any(is.na(eva_names$genus))
+any(is.na(eva_names$family))
+
+# check the ones not yet assigned
+check <- eva_names[is.na(eva_names$family),]
+
+# remove rest
+eva_names <- eva_names[!eva_names$name %in% check$name,]
+
+#write_csv(eva_names , "phylo.csv")
+```
+
+Assign
+```{r}
+eva$genus <- eva_names$genus[match(eva$name, eva_names$name)]
+eva$family <- eva_names$family[match(eva$name, eva_names$name)]
+
+impact$Genus <- eva_names$genus[match(impact$taxa, eva_names$name)]
+impact$Family <- eva_names$family[match(impact$taxa, eva_names$name)]
+
+impact <- cbind(impact, eva[match(impact$taxa, eva$name), c(11:15, 22:28)]) 
+
+# currenly still for crops
+impact$Genus[is.na(impact$Genus)]<- eva_names$genus[match(impact$taxa[is.na(impact$Genus)], eva_names$species)]
+impact$Family[is.na(impact$Family)]<- eva_names$family[match(impact$taxa[is.na(impact$Family)], eva_names$species)]
+```

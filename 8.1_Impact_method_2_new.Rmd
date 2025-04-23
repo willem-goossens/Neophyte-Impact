@@ -16,21 +16,14 @@ gc()
 
 Load packages
 ```{r, warnings=F, message=F}
-library(readr)
-library(dplyr)
+library(tidyverse)
 library(mgcv)
-library(modEvA)
-library(ggplot2)
 library(doParallel)
-library(foreach)
-#library(tidyverse)
 library(geometry)
 library(factoextra)
 library(ggpubr)
-#library(rstatix)
-#library(rcompanion)
-library(ggeffects)
 library(emmeans)
+library(lme4)
 library(lmerTest)
 
 ```
@@ -45,8 +38,8 @@ correctArea<- F
 ## 1.2 Data
 Load eva and plot data
 ```{r, warnings=F, message=F}
-eva <- read_csv("fullPlotEva_ESy_1980.csv")
-fullPlotData <- read_csv("fullPlotData_EUNIS_1980.csv")
+eva <- read_csv("../EVA data/fullPlotEva_ESy_1980.csv")
+fullPlotData <- read_csv("../EVA data/fullPlotData_EUNIS_1980.csv")
 
 # habitat choice
 habitats <- unique(fullPlotData$habitat)
@@ -62,18 +55,10 @@ if(chose_eunis){
 Downsample by a factor of 100 if fast is selected
 ```{r}
 fast <- T
-fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
-fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.999,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
-
-
-# data for co-authors (make sure same dataset)
-#eva<- read.csv("downsampledEva.csv", header=T)
-#colnames(eva)[8]<- "Cover %"
-#fullPlotData<- read.csv("downsampledPlotData.csv")
 ```
 
 
@@ -83,9 +68,9 @@ Load the neophyte definitions:
 # Data on which species are neophytes
 native_intra_analysis=F
 if(native_intra_analysis){
-  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("../EVA data/country_species_ESy_1980.csv", show_col_types = FALSE)
 } else{
-  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("../EVA data/country_species_ESy_1980.csv", show_col_types = FALSE)
   species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
 }
 
@@ -118,7 +103,6 @@ table(eva$Neophyte)
 Reduce EVA to a smaller dataset to accelerate computations.    
 Count the number of plots in which the species in the dataset exist.  
 ```{r, message=F}
-fast=T
 if(fast) {
   # downsize dataset
   reducedEva <- eva |> select(PlotObservationID, name, `Cover %`, 
@@ -182,9 +166,9 @@ if(fast) {
   #write.csv(plotsPerSpecies, "speciesDominance.csv")
 } else {
   if(native_intra_analysis){
-  plotsPerSpecies <- read.csv("speciesDominance_native_intra.csv")
+  plotsPerSpecies <- read.csv("../Results/speciesDominance_1980_native_intra.csv")
   }else{
-  plotsPerSpecies<- read.csv("speciesDominance.csv")
+  plotsPerSpecies<- read.csv("../Results/speciesDominance_1980.csv")
   }
 }
 ```
@@ -464,7 +448,6 @@ end<-Sys.time()
 round(end-begin, 2)
 
 parallel::stopCluster(cl = my.cluster)
-#write_csv(x, 'Impact2_new70%_ENS0_reldiff_PCA.csv')
 }
 
 
@@ -491,14 +474,15 @@ round(end-begin)
 x<- allPlantsImpact
 
 #write.csv(x, 'Impact2_ENS0.csv')
-x <- read_csv('I:/Impact_1980.csv')
+x <- read_csv('I:/Impact_1980_new.csv')
+y <- read_csv('I:/Impact_1980.csv')
+all.equal(x, y)
 }
 ```
 
 Remove genus level observations
 ```{r}
 # remove genus data
-library(vegdata)
 check <-vegdata::parse.taxa(unique(x$taxa))
 genus <- check[is.na(check$epi1),]
 x <- x[!x$taxa %in% genus$original,]
@@ -543,7 +527,7 @@ TukeyHSD(ranked)
 
 ```{r}
 # load phylogenetic data
-phylo <- read_csv("phylo.csv")
+phylo <- read_csv("../Extra data/Species names/phylo.csv")
 x[, c(14,15)] <- phylo[match(x$taxa, phylo$name), 6:7]
 colnames(x)[14:15]<- c("genus","family")
 
@@ -609,7 +593,7 @@ successful_runs <- successful_runs +1
 aggregated_result <- aggregate(. ~ contrast, data = result, FUN = function(x) c(mean = mean(x), sd = sd(x)))
 
 # assess number of significant
-result$significant <- result$p.value < 0.001
+result$significant <- result$p.value < 0.05
 table(result$significant)
 
 result |> group_by(contrast)|> summarise(n_t = sum(significant)/length(significant))
@@ -635,10 +619,10 @@ cover_class <- unique(x$class)
 cover_class
 
 # if not for loop, choose i value
-i=6
+i=5
 
 # can be done with for loop, but than it is hard to change some parameters so better not to
-#for(i in 1:6){
+for(i in 1:6){
   
 # create a vector for the title
 index <- case_when(
@@ -730,19 +714,40 @@ aggregated_result <- aggregate(. ~ contrast, data = result, FUN = function(x) c(
 result$significant <- result$p.value < 0.05
 table(result$significant)
 
-result <- `Result_ Dominant_cover`
 
 test <- result |> group_by(contrast, significant) |> summarise(n=n(), diff= mean(estimate), sd= sd(estimate), se= sd/sqrt(n))
 test
 
-assign(paste("Result_",gsub(" ","_",index)), result)
+
+assign(paste("Result",gsub(" ","_",index), sep = ""), result)
+
+}
+
+ResultVery_low_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
+ResultLow_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
+ResultMedium_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
+ResultHigh_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
+ResultVery_high_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
+ResultDominant_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
+ 
+model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="0%-1%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
+model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="1%-10%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
+model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="10%-30%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
+model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="30%-50%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
+model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="50%-70%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
+model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="70%-100%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
 ```
 
 
 ```{r}
-
 # if not for loop, choose i value
-i= 1
+i= 5
 
 # can be done with for loop, but than it is hard to change some parameters so better not to
 #for(i in 1:6){
@@ -780,12 +785,9 @@ p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
     scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
     theme(legend.position = "none")+
     theme(legend.text= element_text(size=12),legend.title =element_text(size=14))+
-    annotate("text", x = 1, y = max5 + max5/10, 
-             label = "c", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
-    annotate("text", x = 2, y = max5 + max5/10, 
-             label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
-    annotate("text", x = 3, y = max5 + max5/10, 
-             label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+#    annotate("text", x = 1, y = max5 + max5/10,label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
+ #   annotate("text", x = 2, y = max5 + max5/10, label = "ab", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+  #  annotate("text", x = 3, y = max5 + max5/10, label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
     annotate("text", x=1, y=max5 + max5/5, 
              label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="extra"])), 
              vjust = 0, hjust = 0.5, size=4)+
@@ -805,24 +807,25 @@ p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
     scale_y_continuous(limits=c(min6, max5+max5/5))
   assign(gsub(" ","_",index), p)
   p
+```
 
 
-  
+```{r}
 # arrange all plots and save
 plot <- ggarrange(Very_low_cover, Low_cover, Medium_cover, High_cover,
                   Very_high_cover, Dominant_cover, nrow=3, ncol=2, labels= c("a","b", "c","d","e","f"),
                   font.label = list(size = 12), align="hv")
 
 plot
-ggsave("Impact.svg", plot= plot, width = 10, height = 10)
+ggsave("../Images/Impact.svg", plot= plot, width = 10, height = 10)
 
 # save individually
-ggsave("Very_low.png", plot= Very_low_cover, width = 5, height = 3)
-ggsave("Low.jpg", plot= Low_cover, width = 5, height = 3)
-ggsave("Medium.jpg", plot= Medium_cover, width = 5, height = 3)
-ggsave("High.jpg", plot= High_cover, width = 5, height = 3)
-ggsave("Very_high.jpg", plot= Very_high_cover, width = 5, height = 3)
-ggsave("Dominant.jpg", plot= Dominant_cover, width = 5, height = 3)
+#ggsave("../Images/Very_low.png", plot= Very_low_cover, width = 5, height = 3)
+#ggsave("../Images/Low.jpg", plot= Low_cover, width = 5, height = 3)
+#ggsave("../Images/Medium.jpg", plot= Medium_cover, width = 5, height = 3)
+#ggsave("../Images/High.jpg", plot= High_cover, width = 5, height = 3)
+#ggsave("../Images/Very_high.jpg", plot= Very_high_cover, width = 5, height = 3)
+#ggsave("../Images/Dominant.jpg", plot= Dominant_cover, width = 5, height = 3)
 
 ```
 
