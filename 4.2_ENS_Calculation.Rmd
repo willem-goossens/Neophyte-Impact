@@ -14,30 +14,22 @@ rm(list=ls())
 
 Subsequently we load the required packages.
 ```{r, warnings=F, message=F}
-library(readr)
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(hillR)
-library(arsenal)
+library(tidyverse)
 library(doParallel)
-library(FSA)
 library(vegan)
-library(stringr)
-library(janitor)
 ```
 
 ## 1.2 Data loaded
 Then, we load data of EVA
 ```{r, warnings=F, message=F}
 # Eva data for which plots are available and after correcting for incorrect or weird plot observations
-eva <- read_csv("fullPlotEva_ESy_1980.csv")
+eva <- read_csv("../EVA data/fullPlotEva_new.csv")
 ```
 
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it.
 ```{r, warnings=F, message=F}
 # header like data, filtered and appended with EIVE and DIV
-fullPlotData <- read_csv("fullPlotData_ESy_1980.csv")
+fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv")
 
 fast <- F
 if(fast) {
@@ -52,9 +44,9 @@ Load the neophyte definitions:
 # Data on which species are neophytes
 native_intra_analysis=F
 if(native_intra_analysis){
-  species_country_status<- read_csv("country_species_ESy_1980.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
 } else{
-  species_country_status<- read_csv("country_species_ESy_1980.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
   species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
 }
 
@@ -194,21 +186,17 @@ setdiff(y$PlotObservationID[y$n>1], test$PlotObservationID)
 # plot
 apply(x[, 2:4], MARGIN=2, FUN = hist)
 
-# check against previous definition
-all.equal(fullPlotData$ENS0, x$ENS0)
-all.equal(fullPlotData$ENS1, x$ENS1)
-all.equal(fullPlotData$ENS1, x$ENS1)
 ```
 
 
 
 ## 2.4 Save
 ```{r}
-save=F
+save=T
 if(save){
   fullPlotData<- left_join(fullPlotData, x)
   head(fullPlotData)
-  write_csv(fullPlotData, "fullPlotData_ESy_1980.csv")
+  write_csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
 }
 ```
 
