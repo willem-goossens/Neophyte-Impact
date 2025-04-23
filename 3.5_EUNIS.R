@@ -2,8 +2,9 @@
 library(readr)
 
 # read data
-eva <- read_csv("fullPlotEva_ESy_1980.csv")
-fullPlotData <- read_csv("fullPlotData_EUNIS_1980.csv")
+eva <- read_csv("../EVA data/fullPlotEva_new.csv")
+fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv")
+old <- read.csv("../EVA data/fullPlotData_EUNIS_1980.csv")
 
 fullPlotData <- fullPlotData[!duplicated(fullPlotData$PlotObservationID),]
 
@@ -14,24 +15,27 @@ if(fast){
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 
+remaining <- fullPlotData[!fullPlotData$PlotObservationID %in% old$PlotObservationID,]
+eva <- eva[eva$PlotObservationID %in% remaining$PlotObservationID,]
+
 # now a last check with ESy again
 obs <- eva[, c(1,6,9)]
 colnames(obs) <- c("RELEVE_NR","TaxonName","Cover_Perc")
 any(is.na(obs$TaxonName))
 
-colnames(fullPlotData)
-anyNA(fullPlotData$Region)
+colnames(remaining)
+anyNA(remaining$Region)
 
-print(unique(fullPlotData[, c("Country","Region")]), n= 200)
+print(unique(remaining[, c("Country","Region")]), n= 200)
 
-which(duplicated(fullPlotData$PlotObservationID))
+which(duplicated(remaining$PlotObservationID))
 
 
-fullPlotData[is.na(fullPlotData$Country),]
+remaining[is.na(remaining$Country),]
 # now make header
-header <- fullPlotData[, c(1, 53, 4,3,5, 59, 58,55, 6)]
+header <- remaining[, c(1, 40, 4,3,5, 44, 43,41, 6)]
 header$DUNE[is.na(header$DUNE)]<- "N_DUNES"
-
+colnames(remaining)
 str(header)
 
 change <- data.frame(old= c("East.Aegean.Islands","Crete","Republic.of.Ireland", "Baleares","Bosnia.Herzegovina","Corsica",
@@ -108,7 +112,8 @@ plots$type <- convert$long[match(plots$shorter, convert$short)]
 plots$habitat <- convert$long[match(plots$shortest, convert$short)]
 
 
-fullPlotData$habitat <- plots$habitat[match(fullPlotData$PlotObservationID, plots$ID)]
+remaining$habitat <- plots$habitat[match(remaining$PlotObservationID, plots$ID)]
 
-setdiff(fullPlotData$habitat[fullPlotData$PlotObservationID %in% full$PlotObservationID], full$habitat[full$PlotObservationID %in% fullPlotData$PlotObservationID])
-#write_csv(fullPlotData, "fullPlotData_EUNIS_1980.csv")
+fullPlotData$habitat[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- remaining$habitat
+
+#write_csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
