@@ -1,72 +1,49 @@
 rm(list=ls())
 
 ##### 1 LOAD ####
-library(tmap)   
-library(leaflet) 
-library(readr)
-library(ggplot2)
-library(sf)
-library(sp)
-library(units)
-library(tibble)
 library(tidyverse)
-library(sp)
-library(units)
-library(lwgeom)
-library(terra)
-library(diffdf)
-library(doParallel)
-library(arsenal)
 library(readxl)
-
-
-
-
 
 
 
 ##### 2 DATA ####
 ###### 2.1 neophytes ######
 # new file created with all alien species in europe (extra+ intra)
-# old one from irena
-neophyte<- readxl::read_excel("../Neophyte-Impact/country_species-2024-01-30-IA-VK.xlsx", sheet="country_speciesWillem")
-# my own one, only species also present in our plots --> all known
-neophyte <- read_csv("neophyte_euro.csv", show_col_types = FALSE)
 # newest version
-neophyte <- read_csv("neophyte_ESy_1980.csv", show_col_types = FALSE)
+#neophyte <- read_csv("neophyte_ESy_1980.csv", show_col_types = FALSE)
 
 
 # compare with Veronika
-veronika_aliens <- read_xlsx("willem-alien-data-checked-2024-10-10.xlsx", sheet= "aliens")
+veronika_aliens <- read_xlsx("../Extra data/Species names/Veronika_name_correction.xlsx", sheet= "aliens")
 veronika_aliens <- veronika_aliens[veronika_aliens$Status != veronika_aliens$Status.checked.VK,]
 veronika_aliens <- veronika_aliens[!is.na(veronika_aliens$Rationale),]
 
 
 # glonaf
-veronika_glonaf <- read_xlsx("willem-alien-data-checked-2024-10-10.xlsx", sheet= "species-not-GloNAF")
-veronika_med <- read_xlsx("willem-alien-data-checked-2024-10-10.xlsx", sheet= "species-not-MED")
-veronika_med <- veronika_med[!veronika_med$reasoning=="POWO,Euro+Med = native AND/OR checklist = archaeophyte, uncertain",]
+#veronika_glonaf <- read_xlsx("willem-alien-data-checked-2024-10-10.xlsx", sheet= "species-not-GloNAF")
+#veronika_med <- read_xlsx("willem-alien-data-checked-2024-10-10.xlsx", sheet= "species-not-MED")
+#veronika_med <- veronika_med[!veronika_med$reasoning=="POWO,Euro+Med = native AND/OR checklist = archaeophyte, uncertain",]
 
 # how many species in the newest version
-test <- veronika_aliens[veronika_aliens$`Aggregated name` %in% veronika_med$notMed,]
+#test <- veronika_aliens[veronika_aliens$`Aggregated name` %in% veronika_med$notMed,]
 
 
 # problems
-veronika_problems <- read_xlsx("willem-alien-data-checked-2024-10-10.xlsx", sheet= "merging-problems-status")
+veronika_problems <- read_xlsx("../Extra data/Species names/Veronika_name_correction.xlsx", sheet= "merging-problems-status")
 veronika_problems <- veronika_problems[!veronika_problems$Conflict=="no",]
 
 ###### 2.2 Eva and Header #####
 # Load and make smaller to conocate
-fullPlotEva <- read_csv("fullPlotEva_ESy_1980.csv", show_col_types = FALSE)
+fullPlotEva <- read_csv("../EVA data/fullPlotEva_new.csv", show_col_types = FALSE)
 eva2<- fullPlotEva[,c("PlotObservationID","species", "irena","Matched concept", "name")]
-fullPlotData<- read_csv("fullPlotData_ESy_1980.csv", show_col_types = FALSE)
+fullPlotData<- read_csv("../EVA data/fullPlotData_new.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
 
 # Load summarized data
 # these is the full region-species database
 # these include unknown classifications
-species_country <- read_csv("country_species_ESy_1980.csv", show_col_types = FALSE)
+species_country <- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
 
 # Join eva and header (species per plot and plot info respectively)
 eva_country<- left_join(eva2, fullPlot2)
@@ -96,9 +73,9 @@ neophyteNamesEU<- unique(neophyteDefEU$species)
 
 # Check whether joining worked fine
 Poland <- unique(sort(neophyteDefEU$name[neophyteDefEU$Region=="Poland"]))
-Poland2 <-(unique(neophyte$name[neophyte$Region== "Poland"& neophyte$statusNew!="native"]))
-setdiff(Poland, Poland2)
-setdiff(Poland2, Poland)
+#Poland2 <-(unique(neophyte$name[neophyte$Region== "Poland"& neophyte$statusNew!="native"]))
+#setdiff(Poland, Poland2)
+#setdiff(Poland2, Poland)
 
 
 colnames(species_country)[9] <- "Neophyte"
@@ -112,9 +89,6 @@ i=1
 for(i in 1: nrow(veronika_problems)){
   species_country$Neophyte[species_country$Region==veronika_problems$Region[i] & species_country$name==veronika_problems$name[i]] <- veronika_problems$`Aggregated.status.VK (with respect to a given region)`[i]
 }
-
-
-#write_csv(species_country, "country_species_ESy.csv")
 
 
 intra_analysis=T
@@ -146,7 +120,7 @@ if(intra_analysis){
   eva2[is.na(eva2$Neophyte) & eva2$name != "Plant",]
   species_country$Neophyte[species_country$Neophyte=="native" & species_country$species %in% native_intra]<-
     "native_intra"
-  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  #species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
 }
 
 ###### 2.3 Crops ######
@@ -168,9 +142,9 @@ dup <- species_country[duplicated(species_country[,c(1:5)]) |duplicated(species_
 dup <- species_country[duplicated(species_country[,c(1,5)]) |duplicated(species_country[,c(1,5)], fromLast=T), ]
 
 species_country <- species_country[!duplicated(species_country[,c(1,5)]),]
-
-#write_csv(species_country, "country_species_ESy_1980.csv")
-
+test <- read.csv("../EVA data/country_species_ESy_1980.csv")
+setdiff(species_country$name, test$name)
+#write_csv(species_country, "../EVA data/country_species_new.csv")
 
 # the remainder is not necessary anymore, we have delineated all species
 further= F
