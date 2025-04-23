@@ -2,46 +2,53 @@
 rm(list=ls())
 # load packages
 library(terra)
-library(tidyterra)
 library(sf)
-library(geodata)
 library(sp)
-library(readr)
-library(ggplot2)
+library(tidyverse)
 library(doParallel)
 library(foreach)
-library(parallel)
-library(graphics)
-library(lubridate)
-library(climenv)
 library(units)
+library(tidyterra)
+library(geodata)
+#library(graphics)
+#library(lubridate)
+#library(climenv)
+
+###### 1.1 Link existing ##### 
+fullPlotData <- read.csv("../EVA data/fullPlotData_new.csv")
+old <- read.csv("../EVA data/fullPlotData_EUNIS_1980.csv")
+
+#write.csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
+
+remaining <- fullPlotData[!fullPlotData$PlotObservationID %in% old$PlotObservationID,]
 
 ##### 2 LOAD ####
 ###### 2.1 HFP #####
 # load Human Foot Print data and check crs
-hfp2009<- rast("../Disturbance Data/HFP2009.tif")
-hfp1993<- rast("../Disturbance Data/HFP1993.tif")
+hfp2009<- rast("../Extra data/DIV/HFP2009.tif")
+hfp1993<- rast("../Extra data/DIV/HFP1993.tif")
 cat(crs(hfp2009))
 
 ###### 2.2 MED regions #####
 # load medregions data and check crs
-medRegions <- read_sf("../Europe-regions-shapefiles-2023", "Emed_regions")
+medRegions <- read_sf("../Extra data/EURO+MED/Regions", "Emed_regions")
 medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
 cat(crs(medRegions))
 
 ###### 2.3 Plots #####
 # load full plot data
-fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
-fullPlotData<- fullPlotData[,c(1:5)]
+#fullPlotData <- read_csv("../EVA data/fullPlotData_ESY_1980.csv", show_col_types = FALSE)
+#fullPlotData<- fullPlotData[,c(1:5)]
 
 # reduce size
-fast <- F
-if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.8,]
-}
+#fast <- F
+#if(fast) {
+#  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.8,]
+#}
 
 # Get plot locations and give geometry
-plotLocations <- st_as_sf(fullPlotData, coords = c("Longitude","Latitude"), remove = FALSE)
+remaining <- remaining[,c(1:5)]
+plotLocations <- st_as_sf(remaining, coords = c("Longitude","Latitude"), remove = FALSE)
 st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 
 
@@ -57,6 +64,7 @@ hfp1993<- crop(hfp1993, europe_polygon)
 # change projection to that of medRegion
 hfp2009<- terra::project(hfp2009, "+proj=longlat +datum=WGS84")
 cat(crs(hfp2009))
+# change projection
 hfp1993<- terra::project(hfp1993, "+proj=longlat +datum=WGS84")
 
 # crop medregions from human footprint map
@@ -72,10 +80,11 @@ plot(hfp1993)
 
 ###### 3.2 HFP 2009 #####
 # Extract the values for HFP 2009
-test<- terra::extract(hfp2009, plotLocations[,c(2:4)])
+test<- terra::extract(hfp2009, plotLocations[,c(2:3)])
 test<- test[,2]
 # Combine 
 plotLocations<- cbind(plotLocations, test)
+sum(is.na(plotLocations$test))
 
 # Show
 plotting=F
@@ -89,7 +98,7 @@ ggplot() +
 # We are not able to extract the value for all sites so we assign the nearest value (TO BE DISCUSSED)  
 
 
-x<- read_csv("remainingPlotsHFP2009.csv")
+x<- read_csv("../Extra data/DIV/Intermediate/remainingPlotsHFP2009.csv")
 plotLocations$test[is.na(plotLocations$test)] <- x$test[match(plotLocations$PlotObservationID[is.na(plotLocations$test)], x$PlotObservationID)]
 
 remainingPlots<- plotLocations[is.na(plotLocations$test),]
@@ -119,10 +128,9 @@ for(i in 1:nrow(remainingPlots)){
 
 # assign the new values to the previous NAs  
 plotLocations[is.na(plotLocations$test),] <- remainingPlots
-#write_csv(plotLocations, "remainingPlotsHFP2009.csv")
 
 # Make dataset with all plots that are still not assigned --> probably due to the raster nature --> maybe make the distance larger
-remainingPlots<- plotLocations[is.na(plotLocations$hfp2009),]
+remainingPlots<- plotLocations[is.na(plotLocations$test),]
 # Plot these remaining not extracted plots --> all close to the coast
 if(plotting){
 ggplot() +   
@@ -136,24 +144,24 @@ saving= T
 if(saving){
   st_geometry(plotLocations) <- NULL
   colnames(plotLocations)[6]<- "hfp2009"
-  fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
-  fullPlotData<- left_join(fullPlotData, plotLocations)
-  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
+  #fullPlotData <- read_csv("fullPlotData_new.csv", show_col_types = FALSE)
+  fullPlotData$hfp2009[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- plotLocations$hfp2009
+  #write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
 }
 
 ###### 3.3 HFP 1993 #####
 # Get plot locations and give geometry
-if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
-}
+#if(fast) {
+#  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
+#}
 
 
-plotLocations <- st_as_sf(fullPlotData, coords = c("Longitude","Latitude"), remove = FALSE)
+plotLocations <- st_as_sf(remaining, coords = c("Longitude","Latitude"), remove = FALSE)
 plotLocations <- plotLocations[, c(1:5)]
 st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 
 # Extract the values for HFP 1993
-test<- terra::extract(hfp1993, plotLocations[,c(2:4)])
+test<- terra::extract(hfp1993, plotLocations[,c(2:3)])
 test<- test[,2]
 # Combine 
 plotLocations<- cbind(plotLocations, test)
@@ -167,7 +175,7 @@ if(plotting){
     coord_sf()
 }
 
-x <- read_csv("remainingPlotsHFP1993.csv")
+x <- read_csv("../Extra data/DIV/Intermediate/remainingPlotsHFP1993.csv")
 plotLocations$test[is.na(plotLocations$test)] <- x$test[match(plotLocations$PlotObservationID[is.na(plotLocations$test)], x$PlotObservationID)]
 
 # We are not able to extract the value for all sites so we assign the nearest value (TO BE DISCUSSED)  
@@ -215,14 +223,13 @@ if(plotting){
 
 
 # prepare for saving
-saving= T
 if(saving){
   st_geometry(plotLocations) <- NULL
-  fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
+  #fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
   colnames(plotLocations)[6]<- "hfp1993"
-  fullPlotData<- left_join(fullPlotData, plotLocations)
-  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
-  #write_csv(fullPlotData, "fullPlotData_euro.csv")
+  #fullPlotData<- left_join(fullPlotData, plotLocations)
+  #write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
+  fullPlotData$hfp1993[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- plotLocations$hfp1993
 }
 # Note that the lengths are not of the same length --> strange?
 # for safety reasons also did it in _euro
@@ -231,31 +238,33 @@ if(saving){
 
 ###### 3.4 Time #####
 # Load dataset again if not wanting to do all previous work
-# fullPlotData<- read_csv("fullPlotData_euro.csv", show_col_types = FALSE)
-
+#fullPlotData<- read_csv("../EVA data/fullPlotData_ESY_1980.csv", show_col_types = FALSE)
+remaining <- fullPlotData[!fullPlotData$PlotObservationID %in% old$PlotObservationID,]
+  
 # Check if there are any NAs --> not here but yes later --> are dates 00.00.0000 --> remove later!
-anyNA(fullPlotData$Date)
+anyNA(remaining$Date)
 # Make dates
 fullPlotData$Date<- as.Date(fullPlotData$Date, format = "%d.%m.%Y")
 
 # Assign extracted data to correct plot
-fullPlotData$hfp<- ifelse(fullPlotData$Date > dmy("01012001"), fullPlotData$hfp2009, fullPlotData$hfp1993)
+
+remaining$hfp<- ifelse(remaining$Date > dmy("01012001"), remaining$hfp2009, remaining$hfp1993)
+fullPlotData$hfp[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- remaining$hfp
 nrow(fullPlotData[(is.na(fullPlotData$hfp)),])
 
-saving= T
-if(saving){
-  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
-}
+fullPlotData <- fullPlotData[!is.na(fullPlotData$hfp),]
 
-# TO DO: think about too old plots (is 1870s still represented by the level of human pressure 100 years later)
+if(saving){
+  write_csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
+}
 
 
 ##### 4 CLIMATE ####
 ###### 4.1 Prepare ####
 # Load data
-chelsaT<- rast("../EIVE Data/bio1.tif")
-chelsaP<- rast("../EIVE Data/bio12.tif")
-elev<- rast("../EIVE Data/Elev.tif")
+chelsaT<- rast("../Extra data/ENV/bio1.tif")
+chelsaP<- rast("../Extra data/ENV/bio12.tif")
+elev<- rast("../Extra data/ENV/Elev.tif")
 
 # create box around Europe
 europe_bbox <- st_bbox(c(xmin = -30, xmax = 80, ymin = 25, ymax = 90))
@@ -285,12 +294,13 @@ plot(elev)
 
 ###### 4.2 T mean #####
 # Get plot locations and give geometry
-plotLocations <- st_as_sf(fullPlotData, coords = c("Longitude","Latitude"), remove = FALSE)
+remaining <- fullPlotData[!fullPlotData$PlotObservationID %in% old$PlotObservationID,1:5]
+plotLocations <- st_as_sf(remaining, coords = c("Longitude","Latitude"), remove = FALSE)
 plotLocations <- plotLocations[, c(1:5)]
 st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 
 # Extract the values for chelsa T
-test<- terra::extract(chelsaT, plotLocations[,c(2:4)])
+test<- terra::extract(chelsaT, plotLocations[,c(2:3)])
 test<- test[,2]
 # Combine 
 plotLocations<- cbind(plotLocations, test)
@@ -310,61 +320,21 @@ if(plotting){
 remainingPlots<- plotLocations[is.na(plotLocations$test),]
 
 
-# I was not able to do this with foreach
-for(i in 1:nrow(remainingPlots)){
-  # Buffer point locations by desired distance
-  ptBuff <- st_buffer(remainingPlots[i,], dist = 10000)
-  # Crop raster to buffered point
-  inbuff <- crop(chelsaT, vect(ptBuff))
-  # Convert to points
-  dat <- as.points(inbuff)
-  dat <- st_as_sf(dat)
-  # If all values are NA the dataframe will be empty, move to next
-  if(nrow(dat) == 0){
-    next
-  }
-  ptdist <- st_distance(remainingPlots[i,], dat)
-  dat$pdistance <- as.numeric(ptdist)
-  m <- as.numeric(min(ptdist))
-  val <- dat %>% 
-    dplyr::filter(pdistance == m) %>% 
-    select(bio1) %>% 
-    st_drop_geometry()
-  val <- as.numeric(val)
-  remainingPlots[i,]$test <- val
-}
-
-# assign the new values to the previous NAs  
-plotLocations[is.na(plotLocations$test),] <- remainingPlots
-#write_csv(plotLocations, "remainingPlots_T.csv")
-
-
-# Make dataset with all plots that are still not assigned --> probably due to the raster nature --> maybe make the distance larger
-remainingPlots<- plotLocations[is.na(plotLocations$test),]
-# Plot these remaining not extracted plots --> all close to the coast
-if(plotting){
-  ggplot() +   
-    geom_spatraster(data = chelsaT) + 
-    geom_sf(data = remainingPlots, color = "black", size = 1) + 
-    coord_sf()+theme_minimal()
-}
-
-
 # prepare for saving
-saving= T
 if(saving){
   st_geometry(plotLocations) <- NULL
-  fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
+  #fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
   colnames(plotLocations)[6]<- "chelsaT"
-  fullPlotData<- left_join(fullPlotData, plotLocations)
-  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
+  #fullPlotData<- left_join(fullPlotData, plotLocations)
+  #write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
+  fullPlotData$chelsaT[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- plotLocations$chelsaT
 }
 
 
 
 ###### 4.3 P mean #####
 # Get plot locations and give geometry
-plotLocations <- st_as_sf(fullPlotData, coords = c("Longitude","Latitude"), remove = FALSE)
+plotLocations <- st_as_sf(remaining, coords = c("Longitude","Latitude"), remove = FALSE)
 plotLocations <- plotLocations[, c(1:5)]
 st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 
@@ -372,7 +342,7 @@ st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 plotLocations <- st_as_sf(plotLocations, coords = c("Longitude","Latitude"), remove = FALSE)
 st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 
-test<- terra::extract(chelsaP, plotLocations[,c(2:4)])
+test<- terra::extract(chelsaP, plotLocations[,c(2:3)])
 test<- test[,2]
 # Combine 
 plotLocations<- cbind(plotLocations, test)
@@ -391,59 +361,20 @@ if(plotting){
 # We are not able to extract the value for all sites so we assign the nearest value (TO BE DISCUSSED)  
 remainingPlots<- plotLocations[is.na(plotLocations$test),]
 
-
-# I was not able to do this with foreach so takes about 1 hour to calculate
-for(i in 1:nrow(remainingPlots)){
-  # Buffer point locations by desired distance
-  ptBuff <- st_buffer(remainingPlots[i,], dist = 10000)
-  # Crop raster to buffered point
-  inbuff <- crop(chelsaP, vect(ptBuff))
-  # Convert to points
-  dat <- as.points(inbuff)
-  dat <- st_as_sf(dat)
-  # If all values are NA the dataframe will be empty, move to next
-  if(nrow(dat) == 0){
-    next
-  }
-  ptdist <- st_distance(remainingPlots[i,], dat)
-  dat$pdistance <- as.numeric(ptdist)
-  m <- as.numeric(min(ptdist))
-  val <- dat %>% 
-    dplyr::filter(pdistance == m) %>% 
-    select(bio12) %>% 
-    st_drop_geometry()
-  val <- as.numeric(val)
-  remainingPlots[i,]$test <- val
-}
-
-# assign the new values to the previous NAs  
-plotLocations[is.na(plotLocations$test),] <- remainingPlots
-#write_csv(plotLocations, "remainingPlots_P.csv")
-
-# Make dataset with all plots that are still not assigned --> probably due to the raster nature --> maybe make the distance larger
-remainingPlots<- plotLocations[is.na(plotLocations$test),]
-# Plot these remaining not extracted plots --> all close to the coast
-if(plotting){
-  ggplot() +   
-    geom_spatraster(data = chelsaP) + 
-    geom_sf(data = remainingPlots, color = "black", size = 1) + 
-    coord_sf()+theme_minimal()
-}
-
 # prepare for saving
-saving= T
 if(saving){
   st_geometry(plotLocations) <- NULL
   colnames(plotLocations)[6]<- "chelsaP"
-  fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
-  fullPlotData<- left_join(fullPlotData, plotLocations)
-  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
+  #fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
+  #fullPlotData<- left_join(fullPlotData, plotLocations)
+  #write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
+  fullPlotData$chelsaP[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- plotLocations$chelsaP
 }
 
 
 ###### 4.3 Elev mean #####
 # Get plot locations and give geometry
-plotLocations <- st_as_sf(fullPlotData, coords = c("Longitude","Latitude"), remove = FALSE)
+plotLocations <- st_as_sf(remaining, coords = c("Longitude","Latitude"), remove = FALSE)
 plotLocations <- plotLocations[, c(1:5)]
 st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 
@@ -451,7 +382,7 @@ st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 plotLocations <- st_as_sf(plotLocations, coords = c("Longitude","Latitude"), remove = FALSE)
 st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 
-test<- terra::extract(elev, plotLocations[,c(2:4)])
+test<- terra::extract(elev, plotLocations[,c(2:3)])
 test<- test[,2]
 # Combine 
 plotLocations<- cbind(plotLocations, test)
@@ -469,9 +400,7 @@ if(plotting){
 
 # We are not able to extract the value for all sites so we assign the nearest value (TO BE DISCUSSED)  
 
-
-
-x <- read_csv("remainingPlots_elev.csv")
+x <- read_csv("../Extra data/DIV/Intermediate/remainingPlots_elev.csv")
 plotLocations$test[is.na(plotLocations$test)] <- x$test[match(plotLocations$PlotObservationID[is.na(plotLocations$test)], x$PlotObservationID)]
 
 remainingPlots<- plotLocations[is.na(plotLocations$test),]
@@ -519,28 +448,26 @@ if(plotting){
 }
 
 # prepare for saving
-saving= T
 if(saving){
   st_geometry(plotLocations) <- NULL
   colnames(plotLocations)[6]<- "elev"
-  fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
-  fullPlotData<- left_join(fullPlotData, plotLocations)
-  fullPlotData$elev <- as.numeric(fullPlotData$elev)
-  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
+  #fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
+  #fullPlotData<- left_join(fullPlotData, plotLocations)
+  #fullPlotData$elev <- as.numeric(fullPlotData$elev)
+  #write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
+  fullPlotData$elev[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- plotLocations$elev
 }
  
 
 ###### 4.4 Remove data ###### 
-eva <- read_csv("fullPlotEva_ESy_1980.csv")
-eva <- eva[!eva$PlotObservationID %in% fullPlotData$PlotObservationID[is.na(fullPlotData$hfp)],]
+eva <- read_csv("../EVA data/fullPlotEva_new.csv")
+eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 fullPlotData <- fullPlotData[!is.na(fullPlotData$hfp),]
 
 # Save
-saving= T
 if(saving){
-  write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
-  write_csv(eva, "fullPlotEva_ESy_1980.csv")
-  
+  write_csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
+  write_csv(eva, "../EVA data/fullPlotEva_new.csv")
 }
 
 #------------------------------------------------------------------------------#
@@ -551,7 +478,7 @@ if(saving){
 ###### 5.1 Prepare #####
 #------------------------------------------------------------------------------#
 # read in ecoregion data
-eco<- st_read("../EIVE Data/Ecoregions/Ecoregions2017.shp")
+eco<- st_read("../Extra data/EURO+MED/Ecoregions/Ecoregions2017.shp")
 # transform CSR
 eco <- st_transform(eco, CRS("+proj=longlat +datum=WGS84"))
 
@@ -563,7 +490,7 @@ unique(eco$REALM)
 eco <- eco[eco$REALM =="Palearctic",]
 
 # get euro-med regions
-medRegions <- read_sf("../Europe-regions-shapefiles-2023", "Emed_regions")
+medRegions <- read_sf("../Extra data/EURO+MED/Regions", "Emed_regions")
 medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
 
 # create box around Europe
@@ -584,11 +511,12 @@ ggplot() +
   theme_minimal()
 
 # read in fullPlotData
-fullPlotData <- read_csv("fullPlotData_ESY_1980.csv")
+fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv")
 fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID))>0,]
 
+remaining <- fullPlotData[!fullPlotData$PlotObservationID %in%  old$PlotObservationID,]
 # make spatial object
-plotLocations <- st_as_sf(fullPlotData, coords = c("Longitude","Latitude"), remove = FALSE)
+plotLocations <- st_as_sf(remaining, coords = c("Longitude","Latitude"), remove = FALSE)
 plotLocations <- plotLocations[, c(1:5)]
 st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
 
@@ -602,7 +530,7 @@ joinedData <- joinedData[, c("PlotObservationID","Country","Longitude","Latitude
 #------------------------------------------------------------------------------#
 ###### 5.2 Bohn #####
 #------------------------------------------------------------------------------#
-bohn <- st_read("../EIVE Data/ESy-master/data/DUNES_BOHN/Dunes_BohnMap_buffer500m.shp")
+bohn <- st_read("../Extra data/EURO+MED/ESy-master/data/DUNES_BOHN/Dunes_BohnMap_buffer500m.shp")
 
 # transform CSR
 bohn <- st_transform(bohn, CRS("+proj=longlat +datum=WGS84"))
@@ -629,9 +557,8 @@ joinedData <- st_join(joinedData, bohn, join = st_within)
 joinedData <- joinedData[, c(1:8, 16,25)]
 
 ###### 5.3 Coast #####
-coast <- st_read("../EIVE Data/Coast/Europe_coastline.shp")
+coast <- st_read("../Extra data/EURO+MED/Coast/Europe_coastline.shp")
 coast <- st_transform(coast, CRS("+proj=longlat +datum=WGS84"))
-head(coast)
 
 # buffer 10 km
 coast <- st_buffer(coast, dist= 10000)
@@ -661,20 +588,22 @@ joinedData <- joinedData |> mutate(COAST_TYPE = case_when(
   is.na(CODE) ~ "N_COAST",  # NA values -> N_COAST
   TRUE ~ "N_COAST"  # In case there are any unexpected values
 ))
+colnames(fullPlotData)
+fullPlotData[,41] <- NA
+colnames(fullPlotData)[41] <- "ECO_ID"
+fullPlotData$ECO_ID <- as.numeric(fullPlotData$ECO_ID)
+fullPlotData[fullPlotData$PlotObservationID %in% old$PlotObservationID, 41] <- old$ECO_ID[old$PlotObservationID %in% fullPlotData$PlotObservationID]
 
 st_geometry(plotLocations) <- NULL
 st_geometry(joinedData) <- NULL
-fullPlotData<- left_join(fullPlotData, joinedData)
+fullPlotData$ECO_ID[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- joinedData$ECO_ID
+fullPlotData$CODE[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- joinedData$CODE
+fullPlotData$DUNE[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- joinedData$DUNE
+fullPlotData$COAST_TYPE[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- joinedData$COAST_TYPE
 
-nrow(fullPlotData[(duplicated(fullPlotData$PlotObservationID)),])
-checking <- fullPlotData[fullPlotData$PlotObservationID=="144939",]
-
-fullPlotData <- fullPlotData[!duplicated(fullPlotData$PlotObservationID),]
-
-#write_csv(fullPlotData, "fullPlotData_EUNIS_1980.csv")
+#write_csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
 
 #### 6 SAC ####
-library(devtools)
 library(moranfast)
 fullPlotData <- read_csv("fullPlotData_ESY_1980.csv", show_col_types = FALSE)
 moranfast(fullPlotData$ENS0, fullPlotData$Longitude, fullPlotData$Latitude)
