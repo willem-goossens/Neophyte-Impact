@@ -16,21 +16,16 @@ gc()
 
 We load the required packages
 ```{r, echo=F, message=F, warning=F}
-library(readr)
-library(dplyr)
+library(tidyverse)
 library(mgcv)
-library(modEvA)
-library(ggplot2)
-library(tidyr)
-library(foreach)
 library(doParallel)
-library(rstatix)
-library(DescTools)
-library(asbio)
-library(lme4)
-library(glmmTMB)
-#library(gam.hp)
+library(DHARMa)
+library(mgcViz)
 library(ggeffects)
+library(sp)
+library(terra)
+library(sf)
+library(visreg)
 ```
 
 
@@ -40,25 +35,21 @@ For complete data, load "I:/imporance.RData"
 ## 1.1 Eva + header
 We load the eva data with the species per plot
 ```{r}
-eva <- read_csv("fullPlotEva_ESy_1980.csv",show_col_types = FALSE)
+eva <- read_csv("../EVA data/fullPlotEva_new.csv",show_col_types = FALSE)
 ```
 
 
 Load filtered Data containing the richness and indicator values for each plot. In case we want to save computing time: down sample it:
 ```{r}
-fullPlotData <- read_csv("fullPlotData_ESy_1980.csv",show_col_types = FALSE)
+fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv",show_col_types = FALSE)
 fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
 fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
 
-fast <- T
+fast <- F
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
-
-#eva<- read.csv("downsampledEva.csv", header=T)
-#colnames(eva)[8]<- "Cover %"
-#fullPlotData<- read.csv("downsampledPlotData.csv")
 ```
 
 
@@ -68,9 +59,9 @@ Load the neophyte definitions:
 # Data on which species are neophytes
 native_intra_analysis=F
 if(native_intra_analysis){
-  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
 } else{
-  species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
   species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
 # or if we want to do it with intra seperately
 }
@@ -110,7 +101,7 @@ Since Christians code is rather long, I try to simplify it by cutting it into mo
 ## 2.1 Prepare
 First, we make a list of the number of plots per species in our smaller dataset (if we do the analysis for all plots we can just make the file created earlier).
 ```{r, message=F}
-
+colnames(eva_country_neophyte)[9] <- "Cover %"
 # create smaller dataset
 reducedEva <- eva_country_neophyte |> dplyr::select(PlotObservationID, Region,name,
                                              Neophyte,Layer,`Cover %`)
@@ -162,14 +153,12 @@ if(fast) {
   round(end-begin)
   
   parallel::stopCluster(cl = my.cluster)
-  #write.csv(plotsPerSpecies,"plotsPerSpeciesInEurope.csv", row.names = F )
 } else {
   if(!native_intra_analysis){
-  plotsPerSpecies <- read_csv("speciesDominance_1980.csv", show_col_types = FALSE)
-  plotsPerSpecies <- plotsPerSpecies[,c(-1)]
-  colnames(plotsPerSpecies) <- c("names","numberOfPlots","neophyte")
+  plotsPerSpecies <- read_csv("../Results/speciesDominance_1980.csv", show_col_types = FALSE)
+  plotsPerSpecies <- plotsPerSpecies[,c(1,5:6)]
   } else {
-  plotsPerSpecies <- read_csv("speciesDominance_native_intra.csv", show_col_types = FALSE)
+  plotsPerSpecies <- read_csv("../Results/speciesDominance_1980_native_intra.csv", show_col_types = FALSE)
   plotsPerSpecies <- plotsPerSpecies[,c(1,5:6)]
   colnames(plotsPerSpecies) <- c("names","numberOfPlots","neophyte")
   }
@@ -224,7 +213,7 @@ fullPlotData <- left_join(fullPlotData, test)
 
 
 ## 2.2 Base model
-Downsize dataset
+Downsize dataset and make NAs zero
 ```{r}
 rel_extra <- sum(!is.na(fullPlotData$cover_rel_extra))/ length(fullPlotData$PlotObservationID)
 rel_intra <- sum(!is.na(fullPlotData$cover_rel_intra))/ length(fullPlotData$PlotObservationID) 
@@ -252,8 +241,7 @@ fullPlotData$Dataset <- as.factor(fullPlotData$Dataset)
 ```
 
 
-
-Here we try the glmm approach
+Scaling or not?
 ```{r}
 # scale or not
 scaled=F
@@ -305,8 +293,6 @@ sum
 
 
 ```{r}
-library(DHARMa)
-
 # create simulation data
 simulationOutput <- simulateResiduals(fittedModel = mod, plot = F)
 # look at simulation 
@@ -321,10 +307,10 @@ plotResiduals(simulationOutput)
 
 
 ```{r}
-source("C:/Users/u0166342/Documents/Boeren/Extra/Gam.hp/gam.hp/R/gam.hp.R")
-source("C:/Users/u0166342/Documents/Boeren/Extra/Gam.hp/gam.hp/R/creatbin.R")
-source("C:/Users/u0166342/Documents/Boeren/Extra/Gam.hp/gam.hp/R/genList.R")
-source("C:/Users/u0166342/Documents/Boeren/Extra/Gam.hp/gam.hp/R/plot.gamhp.R")
+source("../Extra data/GAM.HP/gam.hp.R")
+source("../Extra data/GAM.HP/creatbin.R")
+source("../Extra data/GAM.HP/genList.R")
+source("../Extra data/GAM.HP/plot.gamhp.R")
 
 
 z <- gam.hp(mod, type="dev")
@@ -405,7 +391,6 @@ plotResiduals(simulationOutput)
 
 
 ```{r}
-library(visreg)
 visreg(mod2, xvar = "EIVEresN", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
 visreg(mod2, xvar = "DistSeverity.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
 visreg(mod2, xvar = "Soil.Disturbance.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
@@ -497,53 +482,37 @@ plot(z_intra)
 
 # 3 PLOT
 ```{r}
-
 library(rlist)
-library(ggplot2)
-library("ggsci")
+library(ggsci)
 
-setwd("I:/")
-load(file = "importance.rdata") 
-plot(x)
+# load data
+load(file = "I:/importance.Rdata") 
+# plot data
+plot(z)
 
-y <- x$hierarchical.partitioning
-sum(y[, 4])
+# get values
+plot_data = data.frame(variable = rownames(z[[2]]),
+                       value = as.numeric(z[[2]][, "I.perc(%)"]))
 
-data <- data.frame(variable = character(), variance = numeric())
-add <- data.frame(variable= "Extra", variance =sum(y[c(15),4]))
-data <- add_row(data, add)
+# change names
+plot_data$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil",
+                         "DIV grazing","DIV mowing","HFP","MAP","Elevation","Intra","Extra")
 
-
-data <- data[order(data$variance, decreasing=T),]
-
-ggplot(data, aes(x= reorder(variable, -variance), y= variance))+
-  geom_bar(stat = "identity")+
-  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
-  NULL+
-  theme_bw()+
-  xlab("Variable type")+
-  ylab("Explained variance (%)")
-
-rownames(y) <- c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil","DIV grazing","DIV mowing","HFP","MAP","Elevation","Intra","Extra")
-
-y <- as.data.frame(y)
-y$name <- c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil","DIV grazing","DIV mowing","HFP","MAP","Elevation","Intra","Extra")
-
-data <- y
-data$type <- c(1,2,2,2,2,2,3,3,3,3,3,2,2,4,5)
-data$type <- as.factor(data$type)
-colnames(data)[4] <- c("variance")
-
-
-data <- data %>% mutate(type = factor(type, 
-                          levels = c("1", "2","3","4","5"),
+# classify in types
+plot_data$type <- c(1,2,2,2,2,2,3,3,3,3,3,2,2,4,5)
+plot_data$type <- as.factor(plot_data$type)
+colnames(plot_data)[3] <- c("type")
+plot_data <- plot_data %>% mutate(type = factor(type, 
+                          levels = c("1", "2","3","5","4"),
                           labels = c("Plot", 
                                      "Environment", 
                                      "Disturbance",
-                                     "Intra-European alien",
-                                     "Extra-European alien")))
+                                     "Extra-European alien",
+                                     "Intra-European alien"
+                                     )))
 
-plot <- ggplot(data, aes(x= reorder(name, -variance), y= variance, fill=type))+
+# plot data
+plot <- ggplot(plot_data, aes(x= reorder(variable, -value), y= value, fill=type))+
   geom_bar(stat = "identity")+
   scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
   NULL+
@@ -555,9 +524,7 @@ plot <- ggplot(data, aes(x= reorder(name, -variance), y= variance, fill=type))+
           legend.box = "vertical")
 plot
 
-setwd("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Neophyte-Impact")
 #ggsave("variance.png", width=7.5, height=5)
-
 ```
 
 
@@ -566,22 +533,22 @@ setwd("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Neophyte-Impact")
 # get regions back to FullPlotData
 fullPlotData$Region <- fullPlot2$Region[match(fullPlotData$PlotObservationID, fullPlot2$PlotObservationID)]
 colnames(fullPlotData)
-map <- fullPlotData[, c(1,38,13,14, 2, 23, 24, 25)]
+map <- fullPlotData[, c(1,38,13,14, 2,20:22, 23, 24, 25)]
 colnames(map)
 #map[is.na(map)] <- 0
 
-map$alien <- map$n_extra+map$n_intra
+map$DI_alien <- ((map$cover_extra+map$cover_intra)/(map$cover_extra+map$cover_intra+ map$cover_native) +
+                 (map$n_extra+map$n_intra)/(map$n_extra+map$n_intra+map$n_native))/2
 
-density <- map |> group_by(Region) |> summarise(rel_invaded = sum(!is.na(n_extra) | !is.na(n_intra))/length(PlotObservationID))
+map$alien <- map$n_intra+ map$n_extra
+
+density <- map |> group_by(Region) |> summarise(rel_invaded = sum(!is.na(n_extra)|!is.na(n_intra))/length(PlotObservationID))
 ```
 
 
 ```{r}
-library(sf)
-library(sp)
-library(terra)
 # We load the Med regions and give correct CRS
-medRegions <- read_sf("../Europe-regions-shapefiles-2023", "Emed_regions")
+medRegions <- read_sf("../Extra data/EURO+MED/Regions", "Emed_regions")
 medRegions <- st_transform(medRegions, CRS("+proj=longlat +datum=WGS84"))
 density <- left_join(medRegions, density, by= c("Region"="Region"))
 
@@ -597,39 +564,133 @@ rel_invaded<- ggplot()+
 
 
 ```{r}
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggspatial)
+library(marmap) 
+library(ggnewscale)
 
-# make geometry with long and lat
-plotLocations <- st_as_sf(map, coords = c("Longitude","Latitude"), remove = FALSE)
-st_crs(plotLocations) <- CRS("+proj=longlat +datum=WGS84")
+# Step 0: Load world map and bathymetry data
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Define Europe bounding box
+map_bbox <- c(-20, 65, 34, 72)  
+
+# Download bathymetry data
+bathy_data <- getNOAA.bathy(
+  lon1 = map_bbox[1], lon2 = map_bbox[2],
+  lat1 = map_bbox[3], lat2 = map_bbox[4],
+  resolution = 5
+)
+
+# Convert bathymetry to raster
+bathy_raster <- marmap::as.raster(bathy_data)
+bathy_df <- as.data.frame(as(bathy_raster, "SpatialPixelsDataFrame"))
+colnames(bathy_df) <- c("elevation", "x", "y")
 
 
-# make a fishnet grid over the countries
-grd <- st_make_grid(medRegions, n = 100)
-# visualize the grid
-plot(grd)
+# 1. Read and transform Europe shapefile
+medRegions <- read_sf("../Extra data/EURO+MED/Regions", "Emed_regions")  %>%
+  st_transform(4326)  # EPSG:3035 (Projected CRS for Europe)
+
+# 2. Read and transform observation points
+plotLocations <- st_as_sf(map, coords = c("Longitude", "Latitude"), remove = FALSE) %>%
+  st_set_crs(4326) %>%
+  st_transform(4326)
+
+# 3. Create a grid over Europe
+grid <- st_make_grid(medRegions, cellsize = 0.5, square = TRUE) %>% 
+  st_sf() 
+
 
 sf_use_s2(F)
-# find which grid points intersect `polygons` (countries) 
-# and create an index to subset from
-index <- which(lengths(st_intersects(grd, medRegions)) > 0)
-sf_use_s2(T)
-
-# subset the grid to make a fishnet
-fishnet <- grd[index]
-
-# visualize the fishnet
-plot(fishnet)
-
-fishnet |>  
-  st_as_sf() |> # cast to sf
+grid <- grid |> st_as_sf() |> # cast to sf
   mutate(grid_id = row_number()) |> # create unique ID
   st_join(plotLocations) |> # join the species dataset
-  group_by(grid_id) |> # group by the grid id
-  summarise(n = sum(alien>0)/length(ENS0)) |> # count the number of rows
-  # fill the plot by the number of points in the grid
-  ggplot(aes(fill = n)) + 
-  # make kinda pretty 
-  geom_sf(lwd = 0.0001 , color="white")
+  group_by(grid_id)  |> # group by the grid id
+  summarise(mean = mean(DI_alien, na.rm=T)) 
+sf_use_s2(T)
 
+
+sf_use_s2(F)
+# 4. Count observations per grid cell
+grid$invaded_cells <-  lengths(st_intersects(grid, plotLocations[plotLocations$alien >0,]))/ lengths(st_intersects(grid, plotLocations)) 
+sf_use_s2(T)
+
+
+# 5. Convert grid to a dataframe for plotting
+grid_df <- as.data.frame(st_coordinates(st_centroid(grid))) %>%
+  mutate(count = grid$invaded_cells, mean = grid$mean)
+
+grid_df$count <- grid_df$count * 100
+grid_df$mean <- grid_df$mean * 100
+
+# hfp
+hfp2009<- rast("../Extra data/DIV/HFP2009.tif")
+mollweide_crs <- "+proj=moll +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs"
+europe_bbox <- st_bbox(c(xmin = -3000000, xmax = 6000000, ymin = 3500000, ymax = 10000000), crs = mollweide_crs)
+europe_polygon <- st_as_sfc(europe_bbox)
+hfp2009<- crop(hfp2009, europe_polygon)
+# change projection to that of medRegion
+hfp2009<- terra::project(hfp2009, "+proj=longlat +datum=WGS84")
+cat(crs(hfp2009))
+# crop medregions from human footprint map
+hfp2009<- mask(hfp2009, medRegions)
+hfp2009<- crop(hfp2009, medRegions)
+
+hfp_df <- as.data.frame(hfp2009, xy = TRUE)
+colnames(hfp_df)[3] <- "hfp"  # Rename value column
+hfp_df <- na.omit(hfp_df) 
+
+
+# Step 5: Plot Density Map
+EU <-ggplot() +
+ geom_tile(data = bathy_df, aes(x = x, y = y, fill = elevation)) +
+  scale_fill_gradientn(
+    colors = c("lightblue3", "lightblue2", "lightblue1", "aliceblue"),
+    name = "Depth (m)",       # Legend title (hidden in theme below)
+    limits = c(-6000, 0),     # Adjust limits for ocean depths
+    na.value = "aliceblue",   # Color for land areas
+    guide = "none"            # Remove the legend for ocean depth
+  ) +
+  new_scale_fill() +
+  geom_raster(data = hfp_df, aes(x = x, y = y, fill = hfp)) +
+  scale_fill_gradient(low = "white", high = "darkred",
+    name = "Human Footprint",
+    na.value = NA) +
+  new_scale_fill() + 
+  geom_sf(data = world, fill = NA, color = "black", size = 0.2, alpha=0.2) +
+  # Add country borders
+  geom_sf(data = medRegions, fill = NA, color = "black", size = 0.2, alpha= 0.5) +
+  new_scale_fill() +
+
+  # Plot occurrences
+  geom_raster(data = grid_df, aes(X, Y, fill = mean), alpha= 0.8) +
+  scale_fill_viridis_c(option = "magma", trans= "log",na.value = "NA",
+                       breaks = c(0,0.01, 0.1 ,1,10,100),
+                       labels = c("0","0.01","0.1", "1", "10", "100"))+
+  # Define the map extent using the bounding box
+  coord_sf(xlim = c(map_bbox[1], map_bbox[2]), 
+           ylim = c(map_bbox[3], map_bbox[4]), 
+           expand = FALSE) +
+  # Customize the theme
+  theme(
+    panel.grid.major = element_line(color = gray(0.5), linetype = "dashed", size = 0.5),
+    panel.background = element_rect(fill = "white", color = NA), # Keep a neutral background
+    axis.title = element_blank(),  # Remove axis titles
+    axis.text = element_text(size = 24, color = "black"),
+    axis.ticks = element_line(color = "black"),
+    plot.title = element_blank(),  # Remove map title
+    legend.position = "right",
+    plot.margin = margin(5, 5, 5, 5)# Remove the legend
+  )+
+  # Theme customization
+  theme_minimal() +
+  labs(fill = "Mean degree \nof invasion [%]",
+       x = "Longitude",
+       y = "Latitude")
+EU
+
+#ggsave(EU, file= "../Images/Degree_invasion_EU.jpg", width=10, height=7)
 ```
 

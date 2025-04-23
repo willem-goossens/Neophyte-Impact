@@ -1,11 +1,10 @@
 
 rm(list=ls())
-library(readr)
-library(dplyr)
+library(tidyverse)
 
 # Load eva and plot data
-eva <- read_csv("fullPlotEva_ESy_1980.csv", show_col_types = FALSE)
-fullPlotData <- read_csv("fullPlotData_ESy_1980.csv", show_col_types = FALSE)
+eva <- read_csv("../EVA data/fullPlotEva_new.csv", show_col_types = FALSE)
+fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv", show_col_types = FALSE)
 
 # Downsample by a factor of 100 if fast is selected
 fast <- F
@@ -16,16 +15,6 @@ if(fast) {
 
 
 #### 1 Cultivated ####
-# species list to check ecocrop
-uniqueSpecies<- unique(eva$name)
-
-uniqueSpecies<- as.data.frame(uniqueSpecies)
-
-ecocrop<-readxl::read_excel("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Core authors/ECOCROPP.xlsx")
-ecocrop<- ecocrop[!is.na(ecocrop$Category),]
-
-ecospecies<- (ecocrop$species)
-
 # this has to be changed if further
 eva$name[eva$name=="Medicago sativa"] <- "Medicago sativa aggr."
 
@@ -68,7 +57,7 @@ fullPlotData<- fullPlotData[!fullPlotData$PlotObservationID %in% plots_cultivate
 eva <- eva[!eva$PlotObservationID %in% plots_cultivated,]
 
 # check status species
-species_country_status<- read_csv("country_species_ESy_1980.csv", show_col_types = FALSE)
+species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
 species_vector <- as.data.frame(species_vector)
 colnames(species_vector)<- "species"
 species_vector$status <- species_country_status$Neophyte[match(species_vector$species, species_country_status$name)]
@@ -82,20 +71,19 @@ which(eva$name %in% remove)
 eva <- eva[!eva$name %in% remove,]
 
 
-#write_csv(eva, "fullPlotEva_ESy_1980.csv")
-#write_csv(fullPlotData, "fullPlotData_ESy_1980.csv")
-#write_csv(y, "removed_cultivated.csv")
+#write_csv(eva, "../EVA data/fullPlotEva_new.csv")
+#write_csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
+#write_csv(y, "../Extra data/Intermediate/removed_cultivated.csv")
 
 
 #### 3 Time ####
 # here again check time
 hist(fullPlotData$Date, breaks= 20)
 summary(fullPlotData$Date)
-
 sum(fullPlotData$Date < as.Date("1970-01-01"))/ nrow(fullPlotData)
 
 #### 4 Invasives ####
-gisd <- read.csv("../EIVE Data/GISD.csv")
+gisd <- read.csv("../Extra Data/Intermediate/GISD.csv")
 gisd_species <- as.data.frame(gisd$Species)
 colnames(gisd_species) <- "gisd"
 
@@ -129,11 +117,11 @@ gisd$impact[is.na(gisd$impact)]<- general_native$impact[match(gisd$eva[is.na(gis
 gisd$Neophyte[is.na(gisd$Neophyte)]<- general_native$Neophyte[match(gisd$eva[is.na(gisd$Neophyte)], general_native$taxa)]
 
 # here we can try whether our species are among the most impactful
-Daisy <- read.csv("../GloNAF_Shapefile/Daisy_list.csv", sep=";")
+Daisy <- read.csv("../Extra data/Intermediate/Daisy_list.csv", sep=";")
 Daisy$taxa <- paste(Daisy$genus, Daisy$specificEpithet)
 
 impact<- read.csv("I:/Impact_1980.csv")
-phylo <- read.csv("phylo.csv")
+phylo <- read.csv("../Extra data/Species names/phylo.csv")
 impact[,14:15] <- phylo[match(impact$taxa, phylo$name), 6:7]
 
 check <-vegdata::parse.taxa(unique(impact$taxa))
@@ -182,7 +170,7 @@ Daisy$impact_dom <- impact$RelDiff[match(Daisy$name, impact$taxa[impact$class=="
 
 Daisy[!duplicated(Daisy$name),] |> group_by(Neophyte) |> summarise(n=n(), rel= mean(impact), n_high = sum(!is.na(impact_dom)) ,rel_high= mean(impact_dom, na.rm=T))
 
-write_csv(Daisy, "Daisy_impact.csv")
+#write_csv(Daisy, "../Extra data/Results/Daisy_impact.csv")
 #### 3 Summary ####
 # data should be complete from now on, we calculate the number of species in our dataset with eive and div values
 colnames(eva)
