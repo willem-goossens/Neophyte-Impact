@@ -1,6 +1,6 @@
 
 
-setwd('C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/EIVE Data/ESy-master')
+setwd('C:/Users/u0166342/Documents/Doctoraat/Impact/Extra data/EURO+MED/ESy-master')
 source('code/prep.R') #### Loading packages
 
 ### define expert file:
@@ -47,5 +47,5 @@ class(obs) <- "data.table"
 source('code/step3and5_extract-and-solve-membership-conditions.R')
 
 
-setwd("C:/Users/u0166342/Documents/Boeren/Impact/eva_neophytes/Neophyte-Impact")
+setwd("C:/Users/u0166342/Documents/Doctoraat/Impact/Neophyte-Impact")
 stopCluster(cl)
