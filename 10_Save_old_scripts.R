@@ -1230,3 +1230,932 @@ p
   ```
   
   
+  
+##### EIVE AND DIV #####  
+  ## 2.1 Eive
+  Reading in the EIVE data and explore data by boxplotting the moisture (M), nitrogen (N), pH (R), light (L) and temperature (T) variables.
+  ```{r, message=F, fig.show = "hide"}
+  # 08 contains the indicator values for position and width
+  eive <- read_delim("../Extra data/ENV/EIVE_Paper_1.0_SM_08.csv", ",")
+  # data contains n --> number of sources, nw--> niche width and ''--> value
+  
+  par(mfrow = c(1,1))
+  boxplot(eive$`EIVEres-M`, xlab="M") # outliers above
+  boxplot(eive$`EIVEres-N`, xlab="N") # little outliers
+  boxplot(eive$`EIVEres-R`, xlab="R") # outliers below
+  boxplot(eive$`EIVEres-L`, xlab="L") # outliers below
+  boxplot(eive$`EIVEres-T`, xlab="T") # little outliers
+  par(mfrow=c(1,1))
+  # The EIVE values are OK balanced with some outliers. No extreme skewness to be expected for the average indicator values at the plot level.
+  ```
+  
+  
+  Extend eva with columns from EIVE.
+  ```{r, fig.show = "hide"}
+  # match gives position of species in eva in eive
+  
+  # First we match our own 'species column', which has the Euro Med data added with powo and some data from Irena
+  # Later 'the matched concept' was added
+  
+  eva$eive_name <- eive$TaxonConcept[match(eva$name, eive$TaxonConcept)]
+  length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+  eva$eive_name[is.na(eva$eive_name)] <- eive$TaxonConcept[match(gsub(" aggr\\.", "", eva$name[is.na(eva$eive_name)]),
+                                                                 eive$TaxonConcept)]
+  length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+  eva$eive_name[is.na(eva$eive_name)] <- eive$TaxonConcept[match(eva$species[is.na(eva$eive_name)] , eive$TaxonConcept)]
+  length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+  eva$eive_name[is.na(eva$eive_name)] <- eive$TaxonConcept[match(eva$irena[is.na(eva$eive_name)] , eive$TaxonConcept)]
+  length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+  eva$eive_name[is.na(eva$eive_name)] <- eive$TaxonConcept[match(eva$`Matched concept`[is.na(eva$eive_name)],
+                                                                 eive$TaxonConcept)]
+  length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+  eva$eive_name[is.na(eva$eive_name)] <- eive$TaxonConcept[match(eva$`Turboveg2 concept`[is.na(eva$eive_name)],
+                                                                 eive$TaxonConcept)]
+  length(unique(eva$eive_name[!is.na(eva$eive_name)]))
+  
+  # positions
+  eva$EIVEresM <- eive$`EIVEres-M`[match(eva$eive_name, eive$TaxonConcept)]
+  eva$EIVEresN <- eive$`EIVEres-N`[match(eva$eive_name, eive$TaxonConcept)]
+  eva$EIVEresR <- eive$`EIVEres-R`[match(eva$eive_name, eive$TaxonConcept)]
+  eva$EIVEresL <- eive$`EIVEres-L`[match(eva$eive_name, eive$TaxonConcept)]
+  eva$EIVEresT <- eive$`EIVEres-T`[match(eva$eive_name, eive$TaxonConcept)]
+  
+  # niche widths
+  eva$EIVEnwM <- eive$`EIVEres-M.nw3`[match(eva$eive_name, eive$TaxonConcept)]
+  eva$EIVEnwN <- eive$`EIVEres-N.nw3`[match(eva$eive_name, eive$TaxonConcept)]
+  eva$EIVEnwR <- eive$`EIVEres-R.nw3`[match(eva$eive_name, eive$TaxonConcept)]
+  eva$EIVEnwL <- eive$`EIVEres-L.nw3`[match(eva$eive_name, eive$TaxonConcept)]
+  eva$EIVEnwT <- eive$`EIVEres-T.nw3`[match(eva$eive_name, eive$TaxonConcept)]
+  ```
+  
+  
+  
+  ```{r, fig.show = "hide"}
+  # look at total number of species in eive
+  length(unique(eive$TaxonConcept[match(gsub(" aggr\\.", "", eva$name), eive$TaxonConcept)]))
+  length(unique(eive$TaxonConcept[match(eva$species, eive$TaxonConcept)]))
+  length(unique(eive$TaxonConcept[match(eva$irena, eive$TaxonConcept)]))
+  length(unique(eive$TaxonConcept[match(eva$`Matched concept`,eive$TaxonConcept)]))
+  length(unique(eive$TaxonConcept[match(eva$`Turboveg2 concept`,eive$TaxonConcept)]))
+  
+  
+  # check total amount of observations
+  sum(!is.na(eva$species[match(gsub(" aggr\\.", "", eva$name), eive$TaxonConcept)]))
+  sum(!is.na(eva$species[match(eva$species, eive$TaxonConcept)]))
+  sum(!is.na(eva$species[match(eva$irena, eive$TaxonConcept)]))
+  sum(!is.na(eva$species[match(eva$`Matched concept`, eive$TaxonConcept)]))
+  sum(!is.na(eva$species[match(eva$`Turboveg2 concept`, eive$TaxonConcept)]))
+  
+  # no names
+  no_eive <-  eva[is.na(eva$eive_name),]
+  no_eive <- unique(no_eive[, 2:6])
+  
+  # check against the length of eva names
+  eva_names <- unique(eva[,2:6])
+  
+  percentOfSpeciesEvaInEive <- length(unique(eva$name[!is.na(eva$eive_name)]))/ length(unique(eva$name))
+  
+  
+  # Look at number of observations not in EIVE
+  numberOfPlantsInEvaFoundInEive <- sum(!(is.na(eva$EIVEresM) | 
+                                            is.na(eva$EIVEresN) | 
+                                            is.na(eva$EIVEresR) | 
+                                            is.na(eva$EIVEresL) | 
+                                            is.na(eva$EIVEresT)))
+  percentEvaInEive<- numberOfPlantsInEvaFoundInEive/length(eva$PlotObservationID)
+  percentEvaInEive
+  percentOfSpeciesEvaInEive
+  ```
+  
+  
+  
+  
+  
+  `r numberOfPlantsInEvaFoundInEive` of the `r length(eva$PlotObservationID)` plant observations in Eva have indicator values in EIVE.
+  
+  
+  Look at unique species to see whether neophytes are not with less relative representatives
+  This has to be performed with old data, since new data from Irena (January 2024) is only on the full plot data (which is made later in this file, after removing some plots etc)
+  ```{r}
+  # Load file
+  taxonNameCorrections <- read_csv("../Extra data/Species names/Irena_taxa_check_Christian.csv", show_col_types = FALSE)
+  
+  # downsize to ease calculations
+  test<- eva[, c("species", "irena","EIVEresM","EIVEresN","EIVEresR","EIVEresL","EIVEresT")]
+  # remove duplicates species
+  test<- test[!duplicated(test$species),]
+  # join with taxonNameCorrections
+  test<- left_join(test, taxonNameCorrections, by=c("irena"="species"))
+  
+  test$statusEurope<- as.character(test$statusEurope)
+  # percent of natives without data
+  length(test$species[(test$statusEurope=="native") & (is.na(test$EIVEresL)|                                                is.na(test$EIVEresM)|is.na(test$EIVEresN)|is.na(test$EIVEresR)|is.na(test$EIVEresT))])/length(test$species[test$statusEurope=="native"])
+  
+  # percent of neophytes without data
+  length(test$species[(test$statusEurope=="neo") & (is.na(test$EIVEresL)| is.na(test$EIVEresM)|is.na(test$EIVEresN)|is.na(test$EIVEresR)|is.na(test$EIVEresT))])/length(test$species[test$statusEurope=="neo"])
+  
+  # percent of archeotypes without data
+  length(test$species[(test$statusEurope=="arch") & (is.na(test$EIVEresL)| is.na(test$EIVEresM)|is.na(test$EIVEresN)|is.na(test$EIVEresR)|is.na(test$EIVEresT))])/length(test$species[test$statusEurope=="arch"])
+  ```
+  
+  
+  
+  
+  
+  
+  ## 2.2 Div
+  Reading in the disturbance indicator values en plotting severity and frequency.
+  ```{r, messagge=F, warning=F, message=F, fig.show = "hide"}
+  div <- read_delim("../Extra data/DIV/disturbance_indicator_values.csv", ",")
+  
+  par(mfrow = c(1,1))
+  # Relatively balanced
+  boxplot(div$Disturbance.Severity, xlab="Severity")
+  boxplot(div$Disturbance.Frequency, xlab="Frequency")
+  
+  # more skewed (check with hist)
+  boxplot(div$Mowing.Frequency, xlab="Mowing fr")
+  hist(div$Mowing.Frequency, xlab="Mowing fr")
+  
+  # check others
+  boxplot(div$Grazing.Pressure, xlab="Grazing Pr")
+  boxplot(div$Soil.Disturbance, xlab="Soil dist")
+  
+  # oke balanced still
+  hist(div$Grazing.Pressure, xlab="Grazing Pr")
+  ```
+  
+  
+  Extend eva with columns from disturbance indicator values:
+    ```{r}
+  # merge names
+  eva$div_name <- div$species[match(eva$name, div$species)]
+  length(unique(eva$div_name[!is.na(eva$div_name)]))
+  eva$div_name[is.na(eva$div_name)] <- div$species[match(gsub(" aggr\\.", "",eva$name[is.na(eva$div_name)]), div$species)]
+  length(unique(eva$div_name[!is.na(eva$div_name)]))
+  eva$div_name[is.na(eva$div_name)] <- div$species[match(eva$species[is.na(eva$div_name)], div$species)]
+  length(unique(eva$div_name[!is.na(eva$div_name)]))
+  eva$div_name[is.na(eva$div_name)] <- div$species[match(eva$irena[is.na(eva$div_name)], div$species)]
+  length(unique(eva$div_name[!is.na(eva$div_name)]))
+  eva$div_name[is.na(eva$div_name)] <- div$species[match(eva$`Matched concept`[is.na(eva$div_name)], div$species)]
+  length(unique(eva$div_name[!is.na(eva$div_name)]))
+  eva$div_name[is.na(eva$div_name)] <- div$species[match(eva$`Turboveg2 concept`[is.na(eva$div_name)], div$species)]
+  length(unique(eva$div_name[!is.na(eva$div_name)]))
+  
+  # expand first with our species classification
+  eva$Disturbance.Severity <- div$Disturbance.Severity[match(eva$div_name, div$species)]
+  eva$Disturbance.Severity.herblayer <- div$Disturbance.Severity.herblayer[match(eva$div_name, div$species)]
+  eva$Disturbance.Frequency <- div$Disturbance.Frequency[match(eva$div_name, div$species)]
+  eva$Disturbance.Frequency.herblayer <- div$Disturbance.Frequency.herblayer[match(eva$div_name, div$species)]
+  eva$Grazing.Pressure <- div$Grazing.Pressure[match(eva$div_name, div$species)]
+  eva$Mowing.Frequency <- div$Mowing.Frequency[match(eva$div_name, div$species)]
+  eva$Soil.Disturbance <- div$Soil.Disturbance[match(eva$div_name, div$species)]
+  ```
+  
+  
+  ```{r}
+  # look at total number of species in eive
+  length(unique(div$species[match(eva$name, div$species)]))
+  length(unique(div$species[match(eva$species, div$species)]))
+  length(unique(div$species[match(eva$irena, div$species)]))
+  length(unique(div$species[match(eva$`Matched concept`,div$species)]))
+  length(unique(div$species[match(eva$`Turboveg2 concept`,div$species)]))
+  
+  # check total amount of observations
+  sum(!is.na(eva$species[match(eva$name, div$species)]))
+  sum(!is.na(eva$species[match(eva$species, div$species)]))
+  sum(!is.na(eva$species[match(eva$irena, div$species)]))
+  sum(!is.na(eva$species[match(eva$`Matched concept`,div$species)]))
+  sum(!is.na(eva$species[match(eva$`Turboveg2 concept`,div$species)]))
+  
+  # no names
+  no_div <-  eva[is.na(eva$div_name),]
+  no_div <- unique(no_div[, 2:4])
+  
+  # check against the length of eva names
+  percentOfSpeciesEvaInDiv <- length(unique(eva$name[!is.na(eva$div_name)]))/ length(unique(eva$name))
+  
+  # and amount of observations
+  numberOfPlantsInEvaFoundInDiv <- sum(!is.na(eva$Disturbance.Severity))
+  percentEvaInDiv<- numberOfPlantsInEvaFoundInDiv/length(eva$Disturbance.Severity)
+  percentEvaInDiv
+  percentOfSpeciesEvaInEive
+  ```
+  
+  `r numberOfPlantsInEvaFoundInDiv` of the `r length(eva$PlotObservationID)` plant observations in Eva have disturbance indicator value.
+  
+  Look at unique species to see whether neophytes are not with less relative representatives
+  ```{r}
+  # reduce eva
+  test<- eva[, c("species","irena", "Disturbance.Severity")]
+  # only unique species
+  test<- test[!duplicated(test$species),]
+  test<- left_join(test, taxonNameCorrections, by=c("irena"="species"))
+  
+  # make status a character
+  test$statusEurope<- as.character(test$statusEurope)
+  # percent of natives without data
+  length(test$species[(test$statusEurope=="native") & (is.na(test$Disturbance.Severity))])/length(test$species[test$statusEurope=="native"])
+  
+  # percent of neophytes without data
+  length(test$species[(test$statusEurope=="neo") & (is.na(test$Disturbance.Severity))])/length(test$species[test$statusEurope=="neo"])
+  
+  # percent of archeotypes without data
+  length(test$species[(test$statusEurope=="arch") & (is.na(test$Disturbance.Severity))])/length(test$species[test$statusEurope=="arch"])
+  ```
+  
+  
+  
+  ## 2.3 All
+  ```{r}
+  # create eva_names file again
+  # vector with eva names
+  eva_names<- as.data.frame(unique(eva$`Matched concept`))
+  colnames(eva_names) <- "Matched concept"
+  eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+  eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+  eva_names$eive <- eva$eive_name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+  eva_names$div <- eva$div_name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+  
+  dup <- eva_names[duplicated(eva_names$name) | duplicated(eva_names$name, fromLast = T),]
+  dup_known_eive <- dup[!is.na(dup$eive),]
+  dup_known_div <- dup[!is.na(dup$div),]
+  
+  dup_unknown_eive <- dup[is.na(dup$eive),]
+  dup_unknown_div <- dup[is.na(dup$div),]
+  
+  dup_unknown_eive <- dup_unknown_eive[dup_unknown_eive$name %in% dup_known_eive$name, ]
+  dup_known_eive <- dup_known_eive[dup_known_eive$name %in% dup_unknown_eive$name,]
+  
+  dup_unknown_eive <- left_join(dup_unknown_eive[, -c(4)], dup_known_eive[, c(2,4)], by= c("name"="name"))
+  ```
+  
+  
+  
+  EIVEresM.nw = NWwmean(EIVEresM, EIVEnwM), 
+  EIVEresN.nw = NWwmean(EIVEresN, EIVEnwN), 
+  EIVEresR.nw = NWwmean(EIVEresR, EIVEnwR), 
+  EIVEresL.nw = NWwmean(EIVEresL, EIVEnwL),
+  EIVEresT.nw = NWwmean(EIVEresT, EIVEnwT), 
+  
+  EIVEresM.cnw = cNWwmean(EIVEresM, `Cover %`, EIVEnwM), 
+  EIVEresN.cnw = cNWwmean(EIVEresN, `Cover %`, EIVEnwN), 
+  EIVEresR.cnw = cNWwmean(EIVEresR, `Cover %`, EIVEnwR), 
+  EIVEresL.cnw = cNWwmean(EIVEresL, `Cover %`, EIVEnwL),
+  EIVEresT.cnw = cNWwmean(EIVEresT, `Cover %`, EIVEnwT), 
+  
+  
+  
+  # 4 PLOT
+  ## 4.1 SR
+  ```{r}
+  plot=F
+  if(plot){
+    par(mfrow=c(1,1))
+    boxplot(fullPlotData$numberOfVascularPlantSpecies)
+    hist(fullPlotData$numberOfVascularPlantSpecies)
+    # As expected the count data on species richness looks quite skewed. Hence, we will need to use a poisson glm/ gam
+  }
+  ```
+  
+  
+  ## 4.2 IVs
+  ```{r}
+  plot=F
+  if(plot){
+    # Square root
+    boxplot(fullPlotData$DistSeverity.sqrt)
+    boxplot(fullPlotData$DistFrequency.sqrt)
+    boxplot(fullPlotData$Grazing.Pressure.sqrt)
+    boxplot(fullPlotData$Mowing.Frequency.sqrt)
+    boxplot(fullPlotData$Soil.Disturbance.sqrt)
+    
+    hist(fullPlotData$DistSeverity.sqrt)
+    hist(fullPlotData$DistFrequency.sqrt)
+    hist(fullPlotData$Grazing.Pressure.sqrt)
+    hist(fullPlotData$Mowing.Frequency.sqrt)
+    hist(fullPlotData$Soil.Disturbance.sqrt)
+    
+    boxplot(fullPlotData$EIVEresM.sqrt)
+    boxplot(fullPlotData$EIVEresN.sqrt)
+    boxplot(fullPlotData$EIVEresR.sqrt)
+    boxplot(fullPlotData$EIVEresL.sqrt)
+    boxplot(fullPlotData$EIVEresT.sqrt)
+    
+    # mean
+    boxplot(fullPlotData$Grazing.Pressure)
+    boxplot(fullPlotData$Mowing.Frequency)
+    boxplot(fullPlotData$Soil.Disturbance)
+    boxplot(fullPlotData$DistSeverity)
+    boxplot(fullPlotData$DistFrequency)
+    
+    hist(fullPlotData$Grazing.Pressure)
+    hist(fullPlotData$Mowing.Frequency)
+    hist(fullPlotData$Soil.Disturbance)
+    hist(fullPlotData$DistSeverity)
+    hist(fullPlotData$DistFrequency)
+    
+    
+    boxplot(fullPlotData$EIVEresM) # Looks good
+    boxplot(fullPlotData$EIVEresN) # Looks good
+    boxplot(fullPlotData$EIVEresR) # Looks good
+    boxplot(fullPlotData$EIVEresL) # Looks good
+    boxplot(fullPlotData$EIVEresT) # Looks good
+    
+    #Log mean
+    boxplot(fullPlotData$logMowingFrequency)
+    boxplot(fullPlotData$logGrazing.Pressure)
+    boxplot(fullPlotData$logSoil.Disturbance)
+    boxplot(fullPlotData$logDistSeverity)
+    boxplot(fullPlotData$logDistFrequency)
+    
+    hist(fullPlotData$logMowingFrequency)
+    hist(fullPlotData$logGrazing.Pressure)
+    hist(fullPlotData$logSoil.Disturbance)
+    hist(fullPlotData$logDistSeverity)
+    hist(fullPlotData$logDistFrequency)
+  }
+  ```
+  
+  The distribution of the EIVE predictors look symmetrical. However, the disturbance indicators are heavily skewed. Hence, they need to be transformed. Because there are zeros in the data we choose a root transoformation. Trying different powers we found that the 4th root worked best:
+    
+    ## 4.3 Transform
+    ```{r}
+  plot=F
+  if(plot){
+    # originally 1/4
+    fullPlotData$transformedDisturbanceSeverity.sqrt <- fullPlotData$DistSeverity.sqrt^(1/2)
+    fullPlotData$transformedDisturbanceFrequency.sqrt <- fullPlotData$DistFrequency.sqrt^(1/2)
+    fullPlotData$transformedDisturbanceSeverity <- fullPlotData$DistSeverity^(1/2)
+    fullPlotData$transformedDisturbanceFrequency <- fullPlotData$DistFrequency^(1/2)
+    
+    hist(fullPlotData$transformedDisturbanceSeverity.sqrt)
+    hist(fullPlotData$DistSeverity.sqrt) # imo even better distributed...
+    hist(fullPlotData$transformedDisturbanceFrequency.sqrt)
+    hist(fullPlotData$DistFrequency.sqrt)
+    
+    hist(fullPlotData$transformedDisturbanceSeverity)
+    hist(fullPlotData$DistSeverity) # imo even better distributed...
+    hist(fullPlotData$transformedDisturbanceFrequency)
+    hist(fullPlotData$DistFrequency)
+  }
+  ```
+  
+  
+  # 5 BASE MODEL
+  Note that this is not the final Base Model, rather we will use this to check the assumptions made.
+  ```{r}
+  model=F
+  if(model){
+    glm0 <- glm(numberOfVascularPlantSpecies ~ 
+                  log(Area) + 
+                  EIVEresM + I(EIVEresM^2) + 
+                  EIVEresN + I(EIVEresN^2) + 
+                  EIVEresR + I(EIVEresR^2) + 
+                  EIVEresL + I(EIVEresL^2) + 
+                  EIVEresT + I(EIVEresT^2) +
+                  DistSeverity + I(DistSeverity^2) +
+                  DistFrequency + I(DistFrequency^2)
+                , family=poisson, fullPlotData)
+    
+    summary(glm0)
+    plot(glm0)
+  }
+  ```
+  
+  We can see that the residuals of this model are in a reasonable range and hence the model fits reasonably well to the data.
+  ```{r}
+  model=F
+  if(model){
+    dataFromGermany <- fullPlotData[fullPlotData$Region == "Germany",]
+    dataFromGermany$Dataset <- as.factor(as.character(dataFromGermany$Dataset))
+    par(mfrow = c(1,1))
+    boxplot(numberOfVascularPlantSpecies ~ Dataset, data = dataFromGermany)
+    boxplot(log(fullPlotData$Area))
+  }
+  ```
+  
+  Looking at different datasets from a similar region exhibits quite large differences in terms of species richness. It will most likely make sense to include Dataset as a random factor. The log transformed size of the plots is very symmetrical. This looks good.
+  
+  
+  ##### Traits #####
+  
+  test <- hier[hier$Genus %in% duplicates$Genus,]
+  
+  test <- test |> group_by(Genus, Family) |> summarise(n=n())
+  test <- test[order(test$n, decreasing=T),]
+  test <- test[!duplicated(test$Genus),]
+  
+  
+  ##### Traits 2 #####
+  
+  ## 4.5 Effect individual
+  ```{r}
+  # Make Neophyte a factor for in the models
+  general$Neophyte <- as.factor(general$Neophyte)
+  general$Neophyte <- relevel(general$Neophyte, ref="native")
+  
+  general[, c(3:8)] <- log(general[,c(3:8)])
+  general[, c(3:8)] <- scale(general[, c(3:8)])
+  
+  # Model per FT individually, as limited species (+- 880) have values for all functional traits
+  MDL_H<- lmer(impact ~ -1+Neophyte + H : Neophyte + (1|Family/Genus), general)
+  summary(MDL_H)
+  MDL_LMA<- lmer(impact ~ -1+Neophyte +LMA : Neophyte + (1|Family/Genus) , general)
+  summary(MDL_LMA)
+  MDL_SM<- lmer(impact ~ -1+Neophyte +SM : Neophyte + (1|Family/Genus), general)
+  summary(MDL_SM)
+  MDL_SSD<- lmer(impact ~-1+Neophyte + SSD : Neophyte + (1|Family/Genus), general)
+  summary(MDL_SSD)
+  MDL_N<- lmer(impact ~-1+Neophyte + N : Neophyte + (1|Family/Genus), general)
+  summary(MDL_N)
+  MDL_LA<- lmer(impact ~ -1+Neophyte +LA : Neophyte + (1|Family/Genus), general)
+  summary(MDL_LA)
+  
+  
+  # Plot
+  visreg::visreg(MDL_SSD,"SSD", by="Neophyte")
+  visreg::visreg(MDL_LMA,"LMA", by="Neophyte")
+  visreg::visreg(MDL_LA,"LA", by="Neophyte")
+  visreg::visreg(MDL_H,"H", by="Neophyte")
+  visreg::visreg(MDL_N,"N", by="Neophyte")
+  visreg::visreg(MDL_SM,"SM", by="Neophyte")
+  ```
+  
+  
+  
+  And EIVE
+  ```{r}
+  # Make Neophyte a factor for in the models
+  general$Neophyte <- as.factor(general$Neophyte)
+  general$Neophyte <- relevel(general$Neophyte, ref="native")
+  
+  # scale EIVE?
+  #general[, c(11:15)] <- scale(general[,c(11:15)])
+  
+  # Model per FT individually, as limited species (+- 880) have values for all functional traits
+  MDL_T<- lmer(impact ~ -1+Neophyte + EIVEresT : Neophyte + (1|Family/Genus), general)
+  summary(MDL_H)
+  MDL_R<- lmer(impact ~ -1+Neophyte +EIVEresR : Neophyte + (1|Family/Genus), general)
+  summary(MDL_LMA)
+  MDL_N<- lmer(impact ~ -1+Neophyte +EIVEresN : Neophyte + (1|Family/Genus), general)
+  summary(MDL_SM)
+  MDL_L<- lmer(impact ~-1+Neophyte + EIVEresL : Neophyte + (1|Family/Genus), general)
+  summary(MDL_SSD)
+  MDL_M<- lmer(impact ~-1+Neophyte + EIVEresM : Neophyte + (1|Family/Genus), general)
+  summary(MDL_N)
+  
+  
+  
+  # Plot
+  visreg::visreg(MDL_M,"EIVEresM", by="Neophyte")
+  visreg::visreg(MDL_L,"EIVEresL", by="Neophyte")
+  visreg::visreg(MDL_N,"EIVEresN", by="Neophyte")
+  visreg::visreg(MDL_R,"EIVEresR", by="Neophyte")
+  visreg::visreg(MDL_T,"EIVEresT", by="Neophyte")
+  ```
+  
+  
+  And DIV
+  ```{r}
+  # Make Neophyte a factor for in the models
+  general$Neophyte <- as.factor(general$Neophyte)
+  general$Neophyte <- relevel(general$Neophyte, ref="native")
+  general$woody <- as.factor(general$woody)
+  general$woody <- relevel(general$woody,ref="woody")
+  
+  # scale EIVE?
+  #general[, c(11:15)] <- scale(general[,c(11:15)])
+  
+  # Model per FT individually, as limited species (+- 880) have values for all functional traits
+  MDL_sev<- lmer(impact ~ -1+Neophyte + Sev : Neophyte + (1|Family/Genus), general)
+  summary(MDL_H)
+  MDL_sev_herb<- lmer(impact ~ -1+Neophyte +Sev_herb : Neophyte + (1|Family/Genus), general)
+  summary(MDL_LMA)
+  MDL_freq<- lmer(impact ~ -1+Neophyte +Freq : Neophyte + (1|Family/Genus), general)
+  summary(MDL_SM)
+  MDL_freq_herb<- lmer(impact ~-1+Neophyte + Freq_herb : Neophyte + (1|Family/Genus), general)
+  summary(MDL_SSD)
+  MDL_soil<- lmer(impact ~-1+Neophyte + Soil : Neophyte + (1|Family/Genus), general)
+  summary(MDL_N)
+  MDL_mow<- lmer(impact ~-1+Neophyte + Mow : Neophyte + (1|Family/Genus), general)
+  summary(MDL_N)
+  MDL_gras<- lmer(impact ~-1+Neophyte + Gras : Neophyte + (1|Family/Genus), general)
+  summary(MDL_N)
+  
+  
+  
+  # Plot
+  visreg::visreg(MDL_sev,"Sev", by="Neophyte")
+  visreg::visreg(MDL_sev_herb,"Sev_herb", by="Neophyte")
+  visreg::visreg(MDL_freq,"Freq", by="Neophyte")
+  visreg::visreg(MDL_freq_herb,"Freq_herb", by="Neophyte")
+  visreg::visreg(MDL_soil,"Soil", by="Neophyte")
+  visreg::visreg(MDL_mow,"Mow", by="Neophyte")
+  visreg::visreg(MDL_gras,"Gras", by="Neophyte")
+  ```
+  
+  
+  
+  ## 4.6 Effect all
+  ```{r}
+  # split analysis between woody and non-woody species?
+  nw <- subset(general, woody != "woody",drop=T)
+  w <- subset(general, woody == "woody", drop=T)
+  alien <- subset(general, Neophyte != "native", drop=T)
+  
+  # scale predictors
+  # Model for all traits together
+  MDL<- lmer(impact ~-1+ SSD: Neophyte+ LMA: Neophyte+ H: Neophyte+ LA: Neophyte+ 
+               SM: Neophyte+ N: Neophyte+ Neophyte+ woody +(1|Family/Genus), 
+             general)
+  summary(MDL)
+  
+  # Model for all traits together
+  MDL<- lmer(impact ~-1+SM+SSD+LMA+H+LA+N+woody+Neophyte+(1|Family/Genus), 
+             general)
+  summary(MDL)
+  
+  impact[, c(20:25)] <- log(impact[, c(20:25)])
+  impact[, c(20:25)] <- scale(impact[, c(20:25)])
+  
+  MDL<- lmer(RelDiff ~-1+SM+SSD+LMA+H+LA+N+woody+Neophyte+(1|Family/Genus), 
+             impact[impact$class=="70%-100%",])
+  summary(MDL)
+  
+  sum(!is.na(general$LA))
+  sum(!is.na(general$LMA))
+  sum(!is.na(general$N))
+  sum(!is.na(general$SM))
+  sum(!is.na(general$SSD))
+  sum(!is.na(general$H))
+  
+  plot(DHARMa::simulateResiduals(MDL))
+  
+  # plot
+  test_plot <- plot_model(MDL, type = "re", facet.grid=FALSE) 
+  plot <- ggarrange(test_plot[[1]], test_plot[[2]], nrow=1, ncol=2, labels= c("a","b"),
+                    font.label = list(size = 12))
+  plot
+  #ggsave("Random_effects.jpg", plot= plot, width = 10, height = 30)
+  
+  # check DHARMa
+  simulation <- DHARMa::simulateResiduals(MDL)
+  plot(simulation)
+  ```
+  
+  
+  
+  ```{r}
+  # Example interaction data
+  # Define a sequence of SSD values over its range
+  ssd_seq <- seq(min(general$SSD, na.rm = TRUE), max(general$SSD, na.rm = TRUE), length.out = 100)
+  
+  # Create a new dataset for predictions
+  new_data <- expand.grid(
+    SSD = ssd_seq,
+    Neophyte = unique(general$Neophyte),
+    LMA= mean(general$LMA, na.rm = TRUE),
+    SM= mean(general$SM, na.rm = TRUE),
+    H= mean(general$H, na.rm = TRUE),
+    N= mean(general$N, na.rm = TRUE),
+    LA= mean(general$LA, na.rm = TRUE), 
+    Genus = DescTools::Mode(general$Genus, na.rm=T),
+    Family =  unique((general$Family[general$Genus == DescTools::Mode(general$Genus, na.rm=T) & !is.na(general$Family)]))
+  )
+  
+  # Add predictions to the dataset
+  new_data$predicted <- predict(MDL, newdata = new_data, re.form = NA)  # Exclude random effects
+  
+  library(lme4)
+  class(MDL)
+  pred<- predict(MDL, newdata = new_data)
+  ?predict
+  new_data$lower <- pred[, "lwr"]
+  new_data$upper <- pred[, "upr"]
+  
+  # Plot with confidence intervals
+  ggplot(new_data, aes(x = SSD, y = predicted, color = Neophyte, group = Neophyte)) +
+    geom_line(size = 1) + 
+    geom_ribbon(aes(ymin = lower, ymax = upper, fill = Neophyte), alpha = 0.2, color = NA) +
+    labs(
+      x = "SSD (Continuous)",
+      y = "Predicted Impact",
+      color = "Neophyte",
+      fill = "Neophyte",
+      title = "Interaction Effect: SSD x Neophyte with Confidence Intervals"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(legend.position = "top")
+  ```
+  
+  
+  ```{r}
+  install.packages("marginaleffects")
+  library(marginaleffects)
+  newdata <- datagrid(newdata= general, by= (SSD = rep(seq(min(general$SSD, na.rm=T), 
+                                                           max(general$SSD, na.rm=T), length=10), 3),
+                                             Neophyte = c(rep("intra",10), rep("extra",10), rep("native",10))))
+  colnames(general)
+  predictions(MDL, newdata)
+  predi
+  
+  
+  library(effects)
+  plot(effects::Effect(c("SSD","Neophyte"), MDL, se=T, confint=T, confidence.level= 0.05), multiline=F)
+  ```
+  
+  
+  ```{r}
+  #
+  library(ggeffects)
+  plot(ggpredict(MDL,terms= c("LA", "Neophyte") ))
+  
+  get_model_data(MDL, type = "pred", terms= c("SSD", "Neophyte"), pred.type="re")
+  
+  plot_model(MDL, type = "pred", facet.grid=T, terms= c("SSD", "Neophyte"), pred.type="re", ci.lvl=0.95, show.data=T, alpha=0.1) 
+  plot_model(MDL, type = "pred", facet.grid=T, terms= c("LMA", "Neophyte"), pred.type="re", ci_level=NA, show.data=T) 
+  plot_model(MDL, type = "pred", facet.grid=T, terms= c("LA", "Neophyte"), pred.type="re", ci_level=NA, show.data=T) 
+  plot_model(MDL, type = "pred", facet.grid=T, terms= c("N", "Neophyte"), pred.type="re", ci_level=NA, show.data=T) 
+  plot_model(MDL, type = "pred", facet.grid=T, terms= c("H", "Neophyte"), pred.type="re", ci_level=NA, show.data=T) 
+  plot_model(MDL, type = "pred", facet.grid=T, terms= c("SM", "Neophyte"), pred.type="re", ci_level=NA, show.data=T) 
+  
+  visreg::visreg(MDL, "Neophyte")
+  ```
+  
+  
+  ## 4.7 PCA
+  ```{r}
+  # look at number of traits available per species
+  eva_names$traits <- Diaz$`Number of traits with values`[match(eva_names$name, Diaz$name)]
+  eva_names$traits[is.na(eva_names$traits)] <- 0
+  
+  # look at available data
+  hist(eva_names$traits[eva_names$name %in% general$taxa])
+  
+  # generate dataset all data available
+  complete <- general[general$number=="6" & !is.na(general$number),]
+  
+  complete_nw <- subset(complete, woody != "woody", drop=T)
+  complete_w <- subset(complete, woody== "woody", drop=T)
+  
+  MDL<- lmer(impact ~-1+ SSD: Neophyte+ LMA: Neophyte+ H: Neophyte+ LA: Neophyte+ SM: Neophyte+ 
+               N: Neophyte+ Neophyte +(1|Family/Genus), complete_nw)
+  summary(MDL)
+  
+  # test differences PCA alien native
+  complete_nw_intra <- subset(complete_nw, Neophyte == "intra", drop=T)
+  complete_nw_native <- subset(complete_nw, Neophyte == "native", drop=T)
+  complete_nw_extra <- subset(complete_nw, Neophyte == "extra", drop=T)
+  
+  # test PCA
+  PCA <- prcomp(complete_nw[,c(3:8)], scale=F)
+  eig.val <- get_eigenvalue(PCA)
+  eig.val
+  biplot(PCA)
+  PCA
+  
+  # plot PCA
+  library(ggfortify)
+  autoplot(PCA, data = complete_nw,
+           loadings = TRUE, loadings.label = TRUE, loadings.label.size = 3)+
+    geom_point(aes(size=Neophyte, colour= Neophyte))
+  
+  # test location alien species 
+  test <- cbind(complete_nw[,2], as.data.frame(PCA$x[, 1:2]))
+  test$Neophyte <- as.factor(test$Neophyte)
+  result<-welch_anova_test(test, PC1 ~ Neophyte)
+  result
+  games_howell_test(data= test, PC1 ~ Neophyte)  
+  ```
+  
+  
+  # 5 Comparison
+  ## 5.1 Status
+  ```{r}
+  # Data on which species are neophytes
+  native_intra_analysis=F
+  if(native_intra_analysis){
+    species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+  } else{
+    species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+    species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
+  }
+  
+  # make list unique species and bind with traits
+  species <- unique(species_country_status[,c(5,9)])
+  species <- cbind(species, eva[match(species$name, eva$name), c(33:40)])
+  
+  # look at mean values
+  traits <- species |> group_by(Neophyte) |> 
+    summarise(n=n(), 
+              LMA = mean(`LMA (g/m2)`, na.rm=T),
+              SSD = mean(`SSD combined (mg/mm3)`, na.rm=T),
+              LA= mean(`Leaf area (mm2)`, na.rm=T),
+              N = mean(`Nmass (mg/g)`, na.rm=T),
+              SM= mean(`Diaspore mass (mg)`, na.rm=T),
+              H= mean(`Plant height (m)`, na.rm=T),
+              rel = sum(`Growth Form`=="tree", na.rm=T)/n)
+  
+  # scale data
+  species[, c(5:10)] <- scale(log(species[, c(5:10)]))
+  
+  # change levels
+  species <- species %>% mutate(Neophyte = factor(Neophyte, 
+                                                  levels = c("native", "intra","extra"),
+                                                  labels = c("native in the country", 
+                                                             "intra-European neophyte", 
+                                                             "extra-European neophyte")))
+  
+  not_tree <- species[!species$`Growth Form`=="tree" & !is.na(species$`Growth Form`),]
+  
+  traits_not_tree <- not_tree |> group_by(Neophyte) |> 
+    summarise(n=n(), 
+              LMA = mean(`LMA (g/m2)`, na.rm=T),
+              SSD = mean(`SSD combined (mg/mm3)`, na.rm=T),
+              LA= mean(`Leaf area (mm2)`, na.rm=T),
+              N = mean(`Nmass (mg/g)`, na.rm=T),
+              SM= mean(`Diaspore mass (mg)`, na.rm=T),
+              H= mean(`Plant height (m)`, na.rm=T),
+              rel = sum(`Growth Form`=="tree", na.rm=T)/n)
+  
+  ggplot(not_tree,
+         aes(x= Neophyte, y=`LMA (g/m2)`, fill=Neophyte, 
+             color= Neophyte))+
+    geom_violin(alpha=0.5, scale="width")+
+    geom_boxplot(width= 0.25, alpha=0.8, fill="white")+
+    theme_pubr()+
+    stat_summary(fun= "mean",
+                 geom = "point", aes(group= Neophyte), size=3)+
+    scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+    scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
+    theme(legend.position = "none")
+  
+  # test differences and significance
+  result<-welch_anova_test(not_tree, `LMA (g/m2)` ~ Neophyte )
+  result
+  games_howell_test(data= not_tree, `LMA (g/m2)` ~ Neophyte)
+  
+  result<-welch_anova_test(not_tree, `Nmass (mg/g)` ~ Neophyte )
+  result
+  
+  result<-welch_anova_test(species, `Diaspore mass (mg)` ~ Neophyte )
+  result
+  games_howell_test(data= species, `Diaspore mass (mg)`~ Neophyte)
+  
+  result<-welch_anova_test(species, `Leaf area (mm2)` ~ Neophyte )
+  result
+  games_howell_test(data= species, `Leaf area (mm2)`~ Neophyte)
+  
+  
+  result<-welch_anova_test(species[!species$`Growth Form`=="tree",], `Plant height (m)` ~ Neophyte )
+  result
+  games_howell_test(data= species[!species$`Growth Form`=="tree",], `Plant height (m)` ~ Neophyte)
+  ```
+  
+  
+  
+  # 6 TREE
+  ```{r}
+  library(V.PhyloMaker2)
+  phylo <- data.frame(name= general$taxa, genus= general$impact, family= general$Family)
+  tree <- phylo.maker(sp.list= phylo, tree= GBOTB.extended.TPL, nodes= nodes.info.1.TPL, scenarios = "S3")
+  #write.tree(tree$scenario.3, "sample.tre")
+  ```
+  
+  
+  Plot
+  ```{r}
+  library(phylogram)
+  library(ggtree)
+  
+  ggtree(tree2$scenario.1, layout="circular", ladderize = FALSE)+
+    geom_nodepoint() + geom_tiplab(hjust = -.1)
+  ```
+  
+  ###### GAM PLOTS ####
+  
+  ```{r}
+  # Load required libraries
+  library(mgcv)
+  library(gratia)
+  library(ggplot2)
+  
+  # Choose the term you want to plot
+  term_to_plot <- "s(EIVEresT)"  # change as needed
+  
+  draw(MDL, residuals = TRUE, select= "s(EIVEresT)")
+  
+  # Create partial residual plot on the RESPONSE scale
+  partial_plot <- draw(
+    mod,
+    select = term_to_plot,
+    residuals = TRUE,
+    transform = exp  # for negative binomial to response scale
+  )
+  
+  # Show the plot
+  print(partial_plot)
+  
+  sm <- smooth_estimates(MDL) |>
+    add_confint()
+  sm
+  
+  # add partial residuals to data
+  eg1 <- fullPlotData |>
+    add_partial_residuals(MDL)
+  names(eg1)
+  eg1 <- as.data.frame(eg1)
+  dim(eg1)
+  p_sx2 <- sm |> filter(.smooth == paste("s(", term_to_plot,")",sep="") |> ggplot() + 
+                          geom_rug(aes(x = term_to_plot), data = eg1, length = grid::unit(0.02, "npc"))+
+                          geom_ribbon(aes(ymin = .lower_ci, ymax = .upper_ci, x = x2), alpha = 0.2))
+  
+  geom_point(aes(x = x2, y = `s(x2)`),
+             data = eg1, cex = 1.5, colour = "steelblue3"
+  ) +
+    geom_line(aes(x = x2, y = .estimate), lwd = 1.2) +
+    labs(y = "Partial effect", title = exp())
+  p_sx2
+  
+  plot(MDL, trans=  exp)
+  
+  max(MDL$family$linkinv(preds$fit))
+  
+  
+  names(coef(MDL))
+  install.packages("gratia")
+  library(gratia)
+  
+  # Example for a single variable `var_name`
+  var_name <- "EIVEresT"  # change this in a loop
+  label <- "EIVE T"
+  col <- "#1E88E5"
+  
+  # Get partial residuals
+  partial_resids <- partial_residuals(MDL, select = var_name, partial_match=T)
+  
+  # Create grid for predictions
+  newdata <- with(fullPlotData, data.frame(!!var_name <- seq(min(get(var_name)), max(get(var_name)), length.out = 100)))
+  # Fill in other required covariates with their means or representative values
+  other_vars <- setdiff(names(coef(MDL)), var_name)
+  for (v in other_vars) {
+    if (!v %in% names(newdata)) newdata[[v]] <- mean(all[[v]], na.rm = TRUE)
+  }
+  
+  
+  
+  # Get model predictions (on link scale)
+  newdata$fit <- predict(MDL, newdata = newdata, type = "link", se.fit = TRUE)$fit
+  newdata$se <- predict(MDL, newdata = newdata, type = "link", se.fit = TRUE)$se.fit
+  newdata$lower <- newdata$fit - 1.96 * newdata$se
+  newdata$upper <- newdata$fit + 1.96 * newdata$se
+  
+  # Plot
+  ggplot() +
+    geom_point(data = partial_resids, aes_string(x = var_name, y = ".partial.resid"), alpha = 0.4) +
+    geom_line(data = newdata, aes_string(x = var_name, y = "fit"), color = col, linewidth = 1.2) +
+    geom_ribbon(data = newdata, aes_string(x = var_name, ymin = "lower", ymax = "upper"), alpha = 0.2, fill = col) +
+    labs(x = label, y = "Partial effect (link scale)") +
+    theme_pubr()
+  
+  new_data <- as.data.frame(matrix(NA,nrow=1000, ncol= 17))
+  colnames(new_data) <- c("Area","EIVEresT","EIVEresN","EIVEresM","EIVEresR","EIVEresL","DistSeverity.sqrt",        
+                          "Soil.Disturbance.sqrt","Grazing.Pressure.sqrt","Mowing.Frequency.sqrt","hfp","elev","chelsaP","DI_extra", 
+                          "DI_intra", "Latitude","Longitude")
+  new_data[, colnames(new_data)==var[i,1]] <- seq(min(fullPlotData[, colnames(fullPlotData)== var[i,1]]), 
+                                                  max(fullPlotData[, colnames(fullPlotData)== var[i,1]]), length.out = 1000)
+  others <- strsplit(as.character(MDL$pred.formula)[2],"[/+]")[[1]]
+  others <- gsub(" ","",others)
+  others <- others[!others %in% var[i,1]]
+  
+  for(v in 1:16){
+    index <- others[v]
+    new_data[, colnames(new_data)==index] <- rep(mean(fullPlotData[[index]], na.rm=T),times = 1000)
+  }
+  
+  
+  preds <- predict(MDL, type="terms", newdata= new_data, se.fit=T)
+  
+  
+  plot_data <- as.data.frame(matrix(NA, nrow=1000, ncol=1))
+  plot_data[,1] <- new_data[, colnames(new_data)==var[i,1]]
+  plot_data$pred <- preds$fit[, colnames(preds$fit)== paste("s(",var[i,1], ")", sep="")]
+  plot_data$up <- plot_data$pred +1.96*preds$se.fit[, colnames(preds$se.fit)== paste("s(",var[i,1], ")", sep="")]
+  plot_data$down <- plot_data$pred -1.96*preds$se.fit[, colnames(preds$se.fit)== paste("s(",var[i,1], ")", sep="")]   
+  
+  plot_end <- ggplot(plot_data, aes(V1, y= pred, color=col, fill= col))+
+    geom_line()+
+    geom_ribbon(aes(ymin= down, ymax=up), alpha=0.2)
+  plot_end
+  
+  plot(plot_data$V1, plot_data$pred)
+  
+  plot(plot_pred, show_residuals=T)
+  
+  test <- residualize_over_grid(plot_pred, MDL, protect_names = T)
+  
+  
+  ```
+  
+  

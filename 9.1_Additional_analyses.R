@@ -135,7 +135,7 @@ eva_names$div <- eva$div_name[match(eva_names$name, eva$name)]
 eva_names$eive <- eva$eive_name[match(eva_names$name, eva$name)]
 
 sum(!is.na(eva_names$div))/ nrow(eva_names)
-sum(!is.na(eva_names$eive)/ nrow(eva_names)
+sum(!is.na(eva_names$eive))/ nrow(eva_names)
 
 sum(!is.na(eva$eive_name)) / nrow(eva)
 sum(!is.na(eva$div_name)) / nrow(eva)
@@ -156,6 +156,10 @@ eva2 <- eva |> group_by(name, Neophyte,eive_name, div_name, EIVEresM, EIVEresN, 
 eva2[duplicated(eva2[,1:2]) | duplicated(eva2[,1:2], fromLast=T) ,]
 table(eva2$Neophyte)
 
+sum(!is.na(eva2$eive_name))/length(eva2$name)
+sum(!is.na(eva$eive_name))/length(eva$PlotObservationID)
+sum(!is.na(eva2$div_name))/length(eva2$name)
+sum(!is.na(eva$div_name))/length(eva$PlotObservationID)
 
 names <- c("EIVE-M","EIVE-N","EIVE-L", "EIVE-R","EIVE-T","Disturbance Severity","Disturbance Frequency","Grazing Pressure", "Mowing Frequency","Soil Disturbance")
 phylo <- read_csv("../Extra data/Species names/phylo.csv", show_col_types = F)
@@ -261,6 +265,8 @@ phylo <- read.csv("../Extra data/Species names/phylo.csv")
 eva_names[, c(14,13)] <- phylo[match(eva_names$name, phylo$name), 6:7]
 names <- c("Leaf area [mm²]", "LMA [g/m²]","SSD [mg/mm³]","Seed mass [mg]","Leaf N [mg/g]","Height [m]")
 
+
+
 i=4
 for(i in 4: 9){
   
@@ -302,9 +308,9 @@ for(i in 4: 9){
           axis.text.y=element_text(size=10)) +
     scale_y_continuous(limits=c(0, y_let+y_let/10))+
     ylab(names[i-3])+
-    annotate("text", x=1, y=y_n, label=paste("n=", length(eva3$name[eva3$Neophyte=="extra"])), size=4, hjust=0.5)+
-    annotate("text", x=2, y=y_n, label=paste("n=", length(eva3$name[eva3$Neophyte=="intra"])), size=4, hjust=0.5) +
-    annotate("text", x=3, y=y_n, label=paste("n=", length(eva3$name[eva3$Neophyte=="native"])), size=4, hjust=0.5) +
+    annotate("text", x=1, y=y_n, label=paste("n=", length(eva3$taxa[eva3$Neophyte=="extra"])), size=4, hjust=0.5)+
+    annotate("text", x=2, y=y_n, label=paste("n=", length(eva3$taxa[eva3$Neophyte=="intra"])), size=4, hjust=0.5) +
+    annotate("text", x=3, y=y_n, label=paste("n=", length(eva3$taxa[eva3$Neophyte=="native"])), size=4, hjust=0.5) +
     annotate("text", x = 1, y = y_let, label = cld_results$.group[cld_results$Neophyte=="extra"], size = 4,vjust = -0.5, hjust = 0.5, alpha=1) +
     annotate("text", x = 2, y = y_let, label = cld_results$.group[cld_results$Neophyte=="intra"], size = 4,vjust = -0.5, hjust = 0.5, alpha=1) +
     annotate("text", x = 3, y = y_let, label = cld_results$.group[cld_results$Neophyte=="native"], size = 4,vjust = -0.5, hjust = 0.5, alpha=1) 
@@ -320,3 +326,32 @@ plot
 
 #ggsave("../Images/Species_traits.svg", plot= plot, width = 10, height = 6)
 
+
+##### 7 Impact #####
+
+x <- read_csv('I:/Impact_1980_new.csv')
+speciesDominance<- read.csv("../Results/speciesDominance_1980.csv")
+
+# remove genus data
+check <-vegdata::parse.taxa(unique(x$taxa))
+genus <- check[is.na(check$epi1),]
+x <- x[!x$taxa %in% genus$original,]
+
+phylo <- read_csv("../Extra data/Species names/phylo.csv", show_col_types = F)
+speciesDominance[, c(7:8)] <- phylo[match(speciesDominance$names, phylo$name), 6:7]
+
+names <- speciesDominance$names
+check <-vegdata::parse.taxa(names)
+genus <- check[is.na(check$epi1),]
+speciesDominance <- speciesDominance[!speciesDominance$names %in% genus$original,]
+
+general <- x |> 
+  group_by(taxa, Neophyte) |> 
+  summarise(impact= sum((RelDiff*n)/numberOfPlots))
+
+
+general$number <- speciesDominance$numberOfPlot[match(general$taxa, speciesDominance$names)]
+general$cover <- speciesDominance$coverMean[match(general$taxa, speciesDominance$names)]
+
+cor.test(general$impact, general$number)
+cor.test(general$impact, general$cover)

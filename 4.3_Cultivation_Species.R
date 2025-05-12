@@ -83,6 +83,7 @@ summary(fullPlotData$Date)
 sum(fullPlotData$Date < as.Date("1970-01-01"))/ nrow(fullPlotData)
 
 #### 4 Invasives ####
+##### 4.1 GISD #####
 gisd <- read.csv("../Extra Data/Intermediate/GISD.csv")
 gisd_species <- as.data.frame(gisd$Species)
 colnames(gisd_species) <- "gisd"
@@ -92,7 +93,7 @@ names <- unique(eva[, c(2:6)])
 
 # convert species to our name classification
 # name
-gisd_species$eva <- names$name[match(vegdata::taxname.abbr(gisd_species$gisd),vegdata::taxname.abbr(gsub(" aggr\\.", "", names$name)))]
+gisd_species$eva <- names$name[match((gisd_species$gisd),vegdata::taxname.abbr(gsub(" aggr\\.", "", names$name)))]
 sum(is.na(gisd_species$eva))
 gisd_species$eva[is.na(gisd_species$eva)] <- names$name[match(vegdata::taxname.simplify(gisd_species$gisd[is.na(gisd_species$eva)]),vegdata::taxname.simplify(gsub(" aggr\\.", "", names$name)))]
 sum(is.na(gisd_species$eva))
@@ -102,7 +103,13 @@ sum(is.na(gisd_species$eva))
 gisd$eva <- gisd_species$eva
 #write_csv(gisd,"../EIVE Data/GISD.csv")
 
+# load impact data
 impact<- read.csv("I:/Impact_1980.csv")
+
+check <-vegdata::parse.taxa(unique(impact$taxa))
+genus <- check[is.na(check$epi1),]
+impact <- impact[!impact$taxa %in% genus$original,]
+
 general <- impact |> 
   group_by(taxa, Neophyte) |> 
   summarise(impact= sum((RelDiff*n)/numberOfPlots))
@@ -116,59 +123,95 @@ gisd$Neophyte <- general$Neophyte[match(gisd$eva, general$taxa)]
 gisd$impact[is.na(gisd$impact)]<- general_native$impact[match(gisd$eva[is.na(gisd$impact)], general_native$taxa)]
 gisd$Neophyte[is.na(gisd$Neophyte)]<- general_native$Neophyte[match(gisd$eva[is.na(gisd$Neophyte)], general_native$taxa)]
 
+
+##### 4.2 DAISY ####
 # here we can try whether our species are among the most impactful
 Daisy <- read.csv("../Extra data/Intermediate/Daisy_list.csv", sep=";")
 Daisy$taxa <- paste(Daisy$genus, Daisy$specificEpithet)
 
-impact<- read.csv("I:/Impact_1980.csv")
+# load impact and phylogenetic data
+impact<- read.csv("I:/Impact_1980_new.csv")
 phylo <- read.csv("../Extra data/Species names/phylo.csv")
 impact[,14:15] <- phylo[match(impact$taxa, phylo$name), 6:7]
 
+# remove only genus level
 check <-vegdata::parse.taxa(unique(impact$taxa))
 genus <- check[is.na(check$epi1),]
 impact <- impact[!impact$taxa %in% genus$original,]
 
+# our names
+names <- unique(eva[, c(2:6)])
 
-
+# check names
 Daisy$name <- names$name[match(Daisy$taxa, names$name)]
 sum(!is.na(Daisy$name))
-Daisy$name[is.na(Daisy$name)] <- names$name[match(Daisy$taxa[is.na(Daisy$name)], names$`Matched concept`)]
+Daisy$name[is.na(Daisy$name)] <- names$name[match(Daisy$taxa[is.na(Daisy$name)], gsub(" aggr\\.", "", names$name))]
+sum(!is.na(Daisy$name))
+Daisy$name[is.na(Daisy$name)] <- names$name[match(Daisy$taxa[is.na(Daisy$name)], vegdata::taxname.abbr((names$name)))]
+sum(!is.na(Daisy$name))
+Daisy$name[is.na(Daisy$name)] <- names$name[match(Daisy$taxa[is.na(Daisy$name)], vegdata::taxname.simplify((names$name)))]
+sum(!is.na(Daisy$name))
+Daisy$name[is.na(Daisy$name)] <- names$name[match(Daisy$taxa[is.na(Daisy$name)], names$Matched.concept)]
 sum(!is.na(Daisy$name))
 Daisy$name[is.na(Daisy$name)] <- names$name[match(Daisy$taxa[is.na(Daisy$name)], names$irena)]
 sum(!is.na(Daisy$name))
 
+# calculate weighted impact
 general <- impact |> 
   group_by(taxa, Neophyte, genus, family) |> 
   summarise(impact= sum((RelDiff*n)/numberOfPlots))
 
+# get native and alien species seperately
 general_native <- general[general$Neophyte=="native",]
 general <- general[!general$Neophyte=="native",]
 
+# only assign impact values to alien species in DAISY database
 Daisy$impact <- general$impact[match(Daisy$name, general$taxa)]
 
+# assign alien status
 Daisy$Neophyte <- general$Neophyte[match(Daisy$name, general$taxa)]
 
+# if there are some native species for which no alien species were observed these can also be added
 Daisy$impact[is.na(Daisy$impact)] <- general_native$impact[match(Daisy$name[is.na(Daisy$impact)], general_native$taxa)]
 Daisy$Neophyte[!is.na(Daisy$impact) & is.na(Daisy$Neophyte)] <- "native"
 
-Daisy$impact[is.na(Daisy$impact)] <- general$impact[match(Daisy$taxa[is.na(Daisy$impact)], general$taxa)]
-Daisy$Neophyte[is.na(Daisy$impact)] <- general$Neophyte[match(Daisy$taxa[is.na(Daisy$impact)], general$taxa)]
-
-Daisy$impact[is.na(Daisy$impact)] <- general_native$impact[match(Daisy$taxa[is.na(Daisy$impact)], general_native$taxa)]
-Daisy$Neophyte[!is.na(Daisy$impact) & is.na(Daisy$Neophyte)] <- "native"
-
+# assess relative values
 Daisy |> group_by(Neophyte) |> summarise(n=n(), rel= mean(impact))
 
+# sometimes names were duplicated so remove
 Daisy[!duplicated(Daisy$name),] |> group_by(Neophyte) |> summarise(n=n(), rel= mean(impact))
 
+
+# remove non-found species
 Daisy <- Daisy[!is.na(Daisy$impact),]
 Daisy$GISD <- ifelse(Daisy$name %in% gisd$eva, T, F)
 colnames(Daisy)
-Daisy <- Daisy[, c(20, 21,22,23,17, 9,10)]
+Daisy <- Daisy[, c(20, 21,22,23,17, 8,9)]
 
+# assign largest value
 Daisy$impact_dom <- impact$RelDiff[match(Daisy$name, impact$taxa[impact$class=="70%-100%"])]
 
+# check
 Daisy[!duplicated(Daisy$name),] |> group_by(Neophyte) |> summarise(n=n(), rel= mean(impact), n_high = sum(!is.na(impact_dom)) ,rel_high= mean(impact_dom, na.rm=T))
+
+# database
+Daisy_plot <- Daisy[!duplicated(Daisy$name),]
+Daisy_plot <- Daisy[!Daisy$Neophyte=="native",]
+
+mu <- plyr::ddply(Daisy_plot, "Neophyte", summarise, grp.mean=median(impact))
+
+ggplot(Daisy_plot, aes(x= impact, fill= Neophyte))+
+  geom_histogram(alpha= 0.75)+
+  geom_vline(data= mu, aes(xintercept=grp.mean, color= Neophyte),linetype="dashed", size=2)+
+  ggpubr::theme_pubr()+
+  xlab("Overall species impact")+
+  ylab("Number of species")+
+  scale_colour_manual(values=c( "#004D40", "#1E88E5"))+
+  scale_fill_manual(values = c( "#004D40", "#1E88E5"))+
+  scale_y_continuous(limits=c(0,50))+
+  theme(legend.position= c(0.9, 0.90))
+  
+  
 
 #write_csv(Daisy, "../Extra data/Results/Daisy_impact.csv")
 #### 3 Summary ####

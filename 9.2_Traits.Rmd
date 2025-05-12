@@ -19,6 +19,7 @@ library(lmerTest)
 library(lme4)
 library(plantlist)
 library(ggpubr)
+library(emmeans)
 library(ggeffects)
 ```
 
@@ -309,6 +310,9 @@ general2$PC2 <- scores[,2]
 
 
 ```{r}
+dev_1<- round(apply(scores[1], 2,var)/sum(PCA$sdev^2)*100, 1)
+dev_1
+dev_2 <- round(apply(scores[2], 2,var)/sum(PCA$sdev^2)*100, 1)
 # Plot
 PCA_plot <-ggplot(data = scores, aes(x = PC1, y = PC2, color = Neophyte)) +
   geom_point(aes(alpha= ifelse(Neophyte=="Native", 0.1, 0.5)), size = 2) +
@@ -317,8 +321,8 @@ PCA_plot <-ggplot(data = scores, aes(x = PC1, y = PC2, color = Neophyte)) +
   geom_text(data = loadings, aes(x = PC1*5, y = PC2*5, label = rownames(loadings)),
             color = "black", vjust = -0.5, size=5) +
   theme_pubr() +
-  xlab(paste("PC1 (", round(apply(scores[1], 2,var)/sum(PCA$sdev^2)*100, 1), "%)", sep = "")) +
-  ylab(paste("PC2 (", round(apply(scores[2], 2,var)/sum(PCA$sdev^2)*100, 1), "%)",sep = "")) +
+  xlab((expression(PC[size]*" ("* 37.2* "%)"))) +
+  ylab((expression(PC[economics]* " ("* 30.4* "%)"))) +
   scale_colour_manual(values=c( "#004D40", "#FFC107","#1E88E5"))+
   scale_fill_manual(values = c( "#004D40", "#FFC107","#1E88E5"))+ 
   scale_alpha_identity() + 
@@ -326,24 +330,136 @@ PCA_plot <-ggplot(data = scores, aes(x = PC1, y = PC2, color = Neophyte)) +
   labs(fill = "Origin", colour= "Origin")
 PCA_plot
 
-ggsave("../Images/PCA.svg", PCA_plot, width=4, height=4)
+#ggsave("../Images/PCA.svg", PCA_plot, width=4, height=4)
 ```
+
+
+
 ## 5.2 GLMM
 ```{r}
 general2 <- general2 %>% mutate(Neophyte = factor(Neophyte, 
-                          levels = c("native", "intra","extra"))) 
+                          levels = c("native","intra", "extra"))) 
 
 # run model with PC1 (size) and PC2 (econ), also include the growth form
-MDL<- lmer(impact ~ PC1+ PC1: Neophyte+ PC2+PC2: Neophyte + Neophyte+ growth+ (1|family/genus), general2)
+MDL<- lmer(impact ~ -1 +Neophyte +PC1* Neophyte + PC2* Neophyte   + woody+ (1|family/genus), general2)
+anova(MDL)
 
 # summarise and look at the differences
 summary(MDL)
 
 # compare
 emmeans::emmeans(MDL, pairwise ~Neophyte)
+emmeans::emmeans(MDL, pairwise ~Neophyte*PC1)
+
+summary(emmeans::emtrends(MDL,  pairwise~ "Neophyte", var = "PC1"))
+summary(emmeans::emtrends(MDL,  pairwise~ "Neophyte", var = "PC2"))
+
+test(emtrends(MDL, ~ Neophyte, var="PC1"))
+test(emtrends(MDL, ~ Neophyte, var="PC2"))
+
 #emmeans(MDL, pairwise ~woody)
-emmeans::emmeans(MDL, pairwise ~growth)
+emmeans::emmeans(MDL, pairwise ~woody)
+
+(anova(MDL))
 ```
+
+
+```{r}
+# glmm
+model <- lmer(impact ~ Neophyte +PC1* Neophyte + PC2* Neophyte   + woody+ (1|family/genus)+ (1|family/genus), general2)
+summary(model)
+
+simulation <- DHARMa::simulateResiduals(model)
+plot(simulation)
+
+# check pairwise differences
+emmeans_results <- emmeans::emmeans(model, pairwise ~ Neophyte)
+summary(emmeans_results)
+
+table(general2$Neophyte)
+
+anova(model)
+
+# we will 'bootstrap' or results using 1000 replications
+result <- data.frame()
+
+result_PC1 <- data.frame()
+result_PC2 <- data.frame()
+result_woody <- data.frame()
+
+
+# Counter for successful runs
+successful_runs <- 0
+
+# Run until we get 1000 successful models
+while (successful_runs < 1000) {
+  # sample natives
+  natives <- general2[general2$Neophyte=="native",]
+  natives <- natives[sample(nrow(natives),200, replace=F),]
+  # sample intras
+  intras <- general2[general2$Neophyte=="intra",]
+  intras <- intras[sample(nrow(intras),200, replace=T),]
+  # sample extras
+  extras <- general2[general2$Neophyte=="extra",]
+  extras <- extras[sample(nrow(extras),200, replace=T),]
+  all <- rbind(natives, intras, extras)
+  
+  # model again
+  model<- lmer(impact ~ -1 +Neophyte +PC1* Neophyte + PC2* Neophyte   + woody+ (1|family/genus), all)
+  summary(model)
+  
+  if(isSingular(model)) next
+  
+  sum <- test(emtrends(model, ~ Neophyte, var="PC1"))
+  sum <- summary(sum)
+
+  result_PC1 <- rbind(result_PC1, sum)
+  
+  sum <- test(emtrends(model, ~ Neophyte, var="PC2"))
+  sum <- summary(sum)
+
+  result_PC2 <- rbind(result_PC2, sum)
+  
+  sum <- emmeans(model, pairwise ~woody)  
+  sum <- summary(sum)$contrasts
+
+  result_woody <- rbind(result_woody, sum)
+  
+  # Check pairwise differences
+  sum <- anova(model)
+  sum$name <- rownames(sum)
+  sum$singular <- isSingular(model)
+
+  # Append to results dataframe
+  result <- rbind(result, sum)
+  
+  successful_runs <- successful_runs+1
+}
+
+# look at aggregated results (mean and sd)
+aggregated_result <- aggregate(. ~ name, data = result, FUN = function(x) c(mean = mean(x), sd = sd(x)))
+
+# assess number of significant
+result$significant <- result$`Pr(>F)` < 0.05
+table(result$significant)
+
+result_PC1$significant <- result_PC1$p.value < 0.05
+table(result_PC1$significant)
+
+result_PC2$significant <- result_PC2$p.value < 0.05
+table(result_PC2$significant)
+
+
+test <- result |> group_by(name, significant) |> summarise(n=n(), diff= mean(`Sum Sq`), sd= sd(`Sum Sq`), se= sd/sqrt(n))
+test
+
+testPC1 <- result_PC1 |> group_by(Neophyte, significant) |> summarise(n=n(), diff= mean(`PC1.trend`), sd= sd(`PC1.trend`), se= sd/sqrt(n))
+testPC1
+
+testPC2 <- result_PC2 |> group_by(Neophyte, significant) |> summarise(n=n(), diff= mean(`PC2.trend`), sd= sd(`PC2.trend`), se= sd/sqrt(n))
+testPC2
+```
+
 
 
 
@@ -384,7 +500,6 @@ test$group <- gsub("intra","Intra-European",test$group)
 test$group <- gsub("extra","Extra-European",test$group)
 
 
-
 PC2<- ggplot(test, aes(x, predicted, colour= group))+
   geom_point(data= general2, aes(x= PC2, y= impact, colour=Neophyte, alpha= ifelse(Neophyte=="Native", 0.1, 0.3)))+
   geom_line(aes(linetype= group),size=1.5)+
@@ -403,6 +518,8 @@ PC2<- ggplot(test, aes(x, predicted, colour= group))+
   scale_y_continuous(limits=c(-1,1))
 PC2
 
+growth = F
+if(growth){
 growth_neophyte=F
 if(growth_neophyte){
 
@@ -457,10 +574,38 @@ growth<- ggplot(test, aes(x= factor(x, level= c("herb","graminoid","tree","shrub
 
 growth
 }
+} else {
+  
+test <- ggpredict(MDL, terms= c("woody"))
+test <- test[!is.na(test$group),]  
+test$x <- as.factor(test$x)
+test$x
+growth<- ggplot(test, aes(x= factor(x, level= c("non-woody","semi-woody","woody")), predicted))+
+  geom_violin(data= general2[!is.na(general2$woody),], aes(x= factor(woody, level= c("non-woody","semi-woody","woody")), 
+                                                            y= impact, alpha= 0.8,
+                                                            fill= "#D81B60", color= "#D81B60"),
+              position = position_dodge(width=0.8))+
+  geom_point(size=2, position = position_dodge2(width = 0.8, preserve = "single")) +
+  geom_errorbar(aes(ymin= conf.low, ymax= conf.high), position = position_dodge(width = 0.5), width= 0.5)+
+  theme_pubr()+
+  xlab("Woodiness")+
+  ylab("Overall impact")+
+  geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
+  scale_alpha_identity() + 
+  theme(legend.position="none")+
+  theme(axis.title.x=element_blank())+
+  #scale_y_continuous(name= "Overall impact", limits= c(-1, max(general2$impact)+0.01))+
+  # Significance letters (lower position)
+  annotate("text", x=1, y=max(general2$impact), label="a", size=4, hjust=0.5, alpha=1, vjust= -0.3) +
+  annotate("text", x=2, y=max(general2$impact), label="ab", size=4, hjust=0.5, alpha=1, vjust= -0.3) +
+  annotate("text", x=3, y=max(general2$impact), label="b", size=4, hjust=0.5, alpha=1, vjust= -0.3)
+
+growth
+}
 
 test <- ggpredict(MDL, terms= c("Neophyte"))
 test$x <- as.factor(test$x)
-general2$Neophyte <- as.facter(general2$Neophyte)
+general2$Neophyte <- as.factor(general2$Neophyte)
 
 # plot
 p<-ggplot(general2, aes(x=Neophyte, y= impact, group = Neophyte,
@@ -490,14 +635,14 @@ plot <- ggarrange(PC1, PC2, growth, labels= c("a","b","c"), common.legend = TRUE
 
 plot
 
-ggsave("../Images/Traits.svg", plot, width=12, height=4)
+#ggsave("../Images/Traits.svg", plot, width=12, height=4)
 
 ```
 
 
 
 ```{r}
-plot <- ggarrange(PC1, PC2, PCA_plot, growth, labels= c("a","b","c","d"), common.legend = TRUE, legend="bottom", align="hv", nrow=2, ncol=2)
+plot <- ggarrange( PCA_plot, growth, PC1, PC2, labels= c("a","b","c","d"), common.legend = TRUE, legend="bottom", align="hv", nrow=2, ncol=2)
 
 plot
 

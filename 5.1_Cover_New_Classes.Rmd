@@ -11,7 +11,7 @@ This script analyses whether neophytes are more dominant and frequent than nativ
 ## 1.1 Preparation
 We first clean the environment.
 ```{r, echo=T}
-rm(list=ls())
+#rm(list=ls())
 ```
 
 Subsequently we load the required packages.
@@ -100,7 +100,7 @@ colnames(eva_country_neophyte)[9] <- "Cover %"
 # 2 COVER
 ## 2.1 Synthesis
 ```{r}
-fast=T
+fast=F
 if(fast){
   # For speed optimization we extract only the necessary information from EVA
   reducedEva <- eva_country_neophyte |> select(PlotObservationID, Region,name, Neophyte,
@@ -739,9 +739,20 @@ Frequency <- ggplot(speciesDominance, aes(x=neophyte, y=log10(numberOfPlots), gr
 }
 
 # Arrange both plots in one figure
-plot <- ggarrange(Dominance, Frequency, nrow=1, ncol=2, labels=c("a","b"), font.label=list(size=12), align="hv")
+plot <- ggarrange(Dominance, Frequency, nrow=2, ncol=1, align="hv")
 plot
-#ggsave("../Images/Dominance_frequency.svg", plot= plot, width = 8, height = 4)
+
+
+# plot together with files
+plot <- ggarrange(EU,ggarrange(Dominance, Frequency, nrow=2, labels=c("b","c")), ncol=2, labels=c("a"), 
+                  font.label=list(size=12), align="hv")
+plot
+
+ggsave("../Images/Dominance_frequency.png", plot= plot, width = 5, height = 7)
+
+ggsave("../Images/Dominance.png", plot= Dominance, width = 5, height = 3.5)
+ggsave("../Images/Frequency.png", plot= Frequency, width = 5, height = 3.5)
+
 ```
 
 

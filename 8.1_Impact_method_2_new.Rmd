@@ -535,8 +535,6 @@ colnames(x)[14:15]<- c("genus","family")
 model <- lmer((RelDiff) ~ -1+ Neophyte+class + (1|family/genus), data= x)
 summary(model)
 
-emmeans::emmeans(model, pairwise ~ Neophyte)
-
 # check assumptions
 simulation <- DHARMa::simulateResiduals(model)
 plot(simulation)
@@ -731,23 +729,23 @@ ResultVery_high_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.
 ResultDominant_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
  
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="0%-1%",])
-emmeans::emmeans(model, pairwise ~ Neophyte)
+plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="1%-10%",])
-emmeans::emmeans(model, pairwise ~ Neophyte)
+plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="10%-30%",])
-emmeans::emmeans(model, pairwise ~ Neophyte)
+plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="30%-50%",])
-emmeans::emmeans(model, pairwise ~ Neophyte)
+plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="50%-70%",])
-emmeans::emmeans(model, pairwise ~ Neophyte)
+plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="70%-100%",])
-emmeans::emmeans(model, pairwise ~ Neophyte)
+plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 ```
 
 
 ```{r}
 # if not for loop, choose i value
-i= 5
+i= 2
 
 # can be done with for loop, but than it is hard to change some parameters so better not to
 #for(i in 1:6){
@@ -760,12 +758,21 @@ index <- case_when(
   i == 4 ~ "High cover"  ,
   i == 5~ "Very high cover" ,
   i == 6~ "Dominant cover")
+
+index2 <- case_when(
+  i == 1  ~ "]0%-1%]",  
+  i == 2~ "]1%-10%]"  ,
+  i == 3 ~ "]10%-30%]"  ,
+  i == 4 ~ "]30%-50%]"  ,
+  i == 5~ "]50%-70%]" ,
+  i == 6~ "]70%-100%]")
+
   
 # downsize dataset 
 Dataset <- x[x$class==cover_class[i],]
   
 # create title
-title <- paste(index)
+title <- paste(index, index2)
 class <- paste("]",cover_class[i], "]", sep="")
 
 
@@ -785,9 +792,9 @@ p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
     scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
     theme(legend.position = "none")+
     theme(legend.text= element_text(size=12),legend.title =element_text(size=14))+
-#    annotate("text", x = 1, y = max5 + max5/10,label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
- #   annotate("text", x = 2, y = max5 + max5/10, label = "ab", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
-  #  annotate("text", x = 3, y = max5 + max5/10, label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+    annotate("text", x = 1, y = max5 + max5/10,label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
+    annotate("text", x = 2, y = max5 + max5/10, label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+    annotate("text", x = 3, y = max5 + max5/10, label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
     annotate("text", x=1, y=max5 + max5/5, 
              label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="extra"])), 
              vjust = 0, hjust = 0.5, size=4)+
@@ -804,9 +811,101 @@ p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
     geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
     theme(plot.title= element_text(hjust=0.01),
       plot.subtitle = element_text( hjust = 0.01))+
-    scale_y_continuous(limits=c(min6, max5+max5/5))
+    scale_y_continuous(limits=c(min6, max5+max5/5))+
+    scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native", "Native\nalien elsewhere"))
+
   assign(gsub(" ","_",index), p)
   p
+```
+
+
+
+
+
+```{r}
+# if not for loop, choose i value
+
+i=5
+# can be done with for loop, but than it is hard to change some parameters so better not to
+#for(i in 1:6){
+  
+# create a vector for the title
+index <- case_when(
+  i == 1  ~ "Very low cover",  
+  i == 2~ "Low cover"  ,
+  i == 3 ~ "Medium cover"  ,
+  i == 4 ~ "High cover"  ,
+  i == 5~ "Very high cover" ,
+  i == 6~ "Dominant cover")
+
+index2 <- case_when(
+  i == 1  ~ "]0%-1%]",  
+  i == 2~ "]1%-10%]"  ,
+  i == 3 ~ "]10%-30%]"  ,
+  i == 4 ~ "]30%-50%]"  ,
+  i == 5~ "]50%-70%]" ,
+  i == 6~ "]70%-100%]")
+
+  
+# downsize dataset 
+Dataset <- x[x$class==cover_class[i],]
+  
+# create title
+title <- paste(index, index2)
+class <- paste("]",cover_class[i], "]", sep="")
+
+if(i %%2 ==0){
+  min6 <- min(Dataset$RelDiff)
+}else{
+  max5 <- max(Dataset$RelDiff)
+}
+
+# plot
+p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
+               color = Species, fill = Species))+
+    geom_violin(alpha=0.5, scale="width")+
+    geom_boxplot(width= 0.25, alpha=0.8, fill="white")+
+    theme_pubr()+
+    stat_summary(fun= "mean",
+                 geom = "point", aes(group= Neophyte), size=3)+
+    scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+    scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
+    theme(legend.position = "none")+
+    theme(legend.text= element_text(size=12),legend.title =element_text(size=14))+
+    #annotate("text", x = 1, y = max5 + max5/10,label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
+    #annotate("text", x = 2, y = max5 + max5/10, label = "ab", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+    #annotate("text", x = 3, y = max5 + max5/10, label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+    annotate("text", x=1, y=max5 + max5/5, 
+             label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="extra"])), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=2, y=max5 + max5/5, 
+             label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="intra"])), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=3, y=max5 + max5/5, 
+             label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="native"])), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=1, y=min6 + min6/5, 
+             label= paste("mean=",format(round(mean(Dataset$RelDiff[Dataset$Neophyte=="extra"]), digits=2),  nsmall=2)), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=2,y=min6 +min6/5, 
+             label= paste("mean=",format(round(mean(Dataset$RelDiff[Dataset$Neophyte=="intra"]), digits=2),  nsmall=2)), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=3, y=min6 + min6/5, 
+             label= paste("mean=", format(round(mean(Dataset$RelDiff[Dataset$Neophyte=="native"]), digits= 2), nsmall=2)), 
+             vjust = 0, hjust = 0.5, size=4)+
+    #labs(subtitle = "Significance level: NS")+
+    ylab("Relative impact")+
+    ggtitle(title)+
+    xlab(NULL)+
+    geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
+    theme(plot.title= element_text(hjust=0.01),
+      plot.subtitle = element_text( hjust = 0.01))+
+    scale_y_continuous(limits=c(min6+ min6/5, max5+max5/5))+
+    scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native", "Native\nalien elsewhere"))
+
+  assign(gsub(" ","_",index), p)
+  p
+
 ```
 
 
@@ -817,7 +916,7 @@ plot <- ggarrange(Very_low_cover, Low_cover, Medium_cover, High_cover,
                   font.label = list(size = 12), align="hv")
 
 plot
-ggsave("../Images/Impact.svg", plot= plot, width = 10, height = 10)
+ggsave("../Images/Impact.png", plot= plot, width = 10, height = 10)
 
 # save individually
 #ggsave("../Images/Very_low.png", plot= Very_low_cover, width = 5, height = 3)
@@ -828,7 +927,3 @@ ggsave("../Images/Impact.svg", plot= plot, width = 10, height = 10)
 #ggsave("../Images/Dominant.jpg", plot= Dominant_cover, width = 5, height = 3)
 
 ```
-
-
-
-

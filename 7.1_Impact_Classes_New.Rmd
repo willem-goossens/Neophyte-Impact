@@ -26,6 +26,7 @@ library(sp)
 library(terra)
 library(sf)
 library(visreg)
+library(ggpubr)
 ```
 
 
@@ -45,7 +46,7 @@ fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv",show_col_types = FAL
 fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
 fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
 
-fast <- F
+fast <- T
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
@@ -281,11 +282,14 @@ model<-  n_native ~
               s(hfp, bs="tp")+
               s(chelsaP, bs="tp")+
               s(elev, bs='tp')+
-              s(DI_intra) + s(DI_extra)
+              s(DI_intra, bs="tp", k=5) + s(DI_extra, bs="tp", k=5)+
+              s(Latitude, Longitude, bs = 'tp')
 
 # run gamm
 mod <- bam(model, family = nb(), data = fullPlotData,  
                  method = 'fREML',  discrete=T, nthreads=4)
+
+gam.check(mod)
 
 sum <- summary(mod)
 sum
@@ -390,25 +394,83 @@ plotResiduals(simulationOutput)
 
 
 
-```{r}
-visreg(mod2, xvar = "EIVEresN", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response") 
-visreg(mod2, xvar = "DistSeverity.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
-visreg(mod2, xvar = "Soil.Disturbance.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
-visreg(mod2, xvar = "Mowing.Frequency.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
-visreg(mod2, xvar = "Grazing.Pressure.sqrt", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
-visreg(mod2, xvar = "hfp", ylab = "Richness" ,gg = TRUE, partial=FALSE, rug = FALSE,  scale="response")
-```
 
 
 ```{r}
 z_extra <- gam.hp(mod2, type="dev")
 z_extra
+
 change <- data.frame(old= test,
                      new = c("Area","EIVE M","EIVE N","EIVE R","EIVE L","EIVE T","DIV severity",
                              "DIV soil","DIV grazing","DIV mowing","HFP","MAP","Elevation"))
 rownames(z_extra$hierarchical.partitioning) <- change$new
 z_extra$variables <- change$new
 plot(z_extra)
+
+
+```
+```{r}
+# get values
+plot_data = data.frame(variable = rownames(z_extra[[2]]),
+                       value = as.numeric(z_extra[[2]][, "I.perc(%)"]))
+
+# change names
+plot_data$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil",
+                         "DIV grazing","DIV mowing","HFP","MAP","Elevation")
+
+# classify in types
+plot_data$type <- c(1,2,2,2,2,2,3,3,3,3,3,2,2)
+plot_data$type <- as.factor(plot_data$type)
+colnames(plot_data)[3] <- c("type")
+plot_data <- plot_data %>% mutate(type = factor(type, 
+                          levels = c("1", "2","3","5","4"),
+                          labels = c("Plot", 
+                                     "Environment", 
+                                     "Disturbance",
+                                     "Extra-European alien",
+                                     "Intra-European alien"
+                                     )))
+
+# Define soft pastel colours for each type
+pastel_colours <- c( "Plot" = "#999999",  "Environment" = "violetred2","Disturbance" = "lightblue", "Extra-European alien" = "deepskyblue2",  
+                     "Intra-European alien" = "steelblue"   )
+
+# plot data
+plot <- ggplot(plot_data, aes(x= reorder(variable, -value), y= value, fill=type))+
+  geom_bar(stat = "identity")+
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  scale_fill_manual(values= pastel_colours, name= "Variable type")+
+  NULL+
+  theme_bw()+
+  xlab("Variable type")+
+  ylab("Explained variance (%)")+
+  theme(legend.position = "bottom",
+          legend.box = "vertical")
+plot
+```
+
+```{r}
+var = c("EIVEresT","EIVEresN","EIVEresM","EIVEresR","EIVEresL","DistSeverity.sqrt",
+        "Soil.Disturbance.sqrt","Grazing.Pressure.sqrt","Mowing.Frequency.sqrt","hfp")
+i=c(1:10)
+plotList <- lapply(
+  i ,
+  FUN= function(i){
+    j <- var[i]
+    plot_pred <- ggeffects::predict_response(mod2, j)
+    plot_end <- ggplot(plot_pred, aes(x=x, y= predicted))+
+                      geom_line()+
+                      geom_ribbon(aes(ymin= conf.low, ymax=conf.high), alpha=0.2)+
+                      xlab(j)
+                      #geom_point(data= fullPlotData, 
+                                 #aes(x= as.vector(fullPlotData[, colnames(fullPlotData)==j]), y= n_native))
+    assign(paste("plot_", i,sep=""), plot_end)
+    plot_end
+    }
+)
+
+plot <- ggpubr::ggarrange(plotlist= plotList, ncol=3, nrow=4, labels= letters[1:12])
+plot
 ```
 
 
@@ -480,7 +542,9 @@ plot(z_intra)
 ```
 
 
+
 # 3 PLOT
+## 3.1 Variance
 ```{r}
 library(rlist)
 library(ggsci)
@@ -494,37 +558,288 @@ plot(z)
 plot_data = data.frame(variable = rownames(z[[2]]),
                        value = as.numeric(z[[2]][, "I.perc(%)"]))
 
+plot_data_intra = data.frame(variable = rownames(z_intra[[2]]),
+                       value = as.numeric(z_intra[[2]][, "I.perc(%)"]))
+
+plot_data_extra = data.frame(variable = rownames(z_extra[[2]]),
+                       value = as.numeric(z_extra[[2]][, "I.perc(%)"]))
+
 # change names
 plot_data$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil",
                          "DIV grazing","DIV mowing","HFP","MAP","Elevation","Intra","Extra")
 
+plot_data_intra$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil",
+                         "DIV grazing","DIV mowing","HFP","MAP","Elevation")
+
+plot_data_extra$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil",
+                         "DIV grazing","DIV mowing","HFP","MAP","Elevation")
+
+
 # classify in types
-plot_data$type <- c(1,2,2,2,2,2,3,3,3,3,3,2,2,4,5)
+plot_data$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,2, 5,6)
 plot_data$type <- as.factor(plot_data$type)
 colnames(plot_data)[3] <- c("type")
 plot_data <- plot_data %>% mutate(type = factor(type, 
-                          levels = c("1", "2","3","5","4"),
+                          levels = c("1", "2","3","4","6","5"),
                           labels = c("Plot", 
-                                     "Environment", 
+                                     "Environment",
+                                     "Soil nitrogen and reaction",
                                      "Disturbance",
                                      "Extra-European alien",
                                      "Intra-European alien"
                                      )))
+plot_data$Neophyte <- "native"
+
+# classify in types
+plot_data_intra$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,2)
+plot_data_intra$type <- as.factor(plot_data_intra$type)
+colnames(plot_data_intra)[3] <- c("type")
+plot_data_intra <- plot_data_intra %>% mutate(type = factor(type, 
+                          levels = c("1", "2","3","4","6","5"),
+                          labels = c("Plot", 
+                                     "Environment",
+                                     "Soil nitrogen and reaction",
+                                     "Disturbance",
+                                     "Extra-European alien",
+                                     "Intra-European alien"
+                                     )))
+plot_data_intra$Neophyte <- "intra"
+
+
+# classify in types
+plot_data_extra$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,2)
+plot_data_extra$type <- as.factor(plot_data_extra$type)
+colnames(plot_data_extra)[3] <- c("type")
+plot_data_extra <- plot_data_extra %>% mutate(type = factor(type, 
+                          levels = c("1", "2","3","4","6","5"),
+                          labels = c("Plot", 
+                                     "Environment",
+                                     "Soil nitrogen and reaction",
+                                     "Disturbance",
+                                     "Extra-European alien",
+                                     "Intra-European alien"
+                                     )))
+plot_data_extra$Neophyte <- "extra"
+
+my_palette <- c(
+  "#1b9e77",  # Blue-Green
+  "#d95f02",  # Golden Yellow
+  "#7570b3",  # Soft Purple
+  "#66c2a5",  # Sky Blue
+  "#004D40",  # Warm Pink
+   "#FFC107"   # Pale Yellow-Green
+)
+
+
+# combine
+plotting <- rbind(plot_data, plot_data_intra, plot_data_extra)
 
 # plot data
 plot <- ggplot(plot_data, aes(x= reorder(variable, -value), y= value, fill=type))+
-  geom_bar(stat = "identity")+
+  geom_bar(position= "stack",stat = "identity")+
   scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
   NULL+
   theme_bw()+
   xlab("Variable type")+
   ylab("Explained variance (%)")+
-  scale_fill_npg(name= "Variable type")+ 
+  scale_fill_manual(values= my_palette, name= "Variable type")+
   theme(legend.position = "bottom",
           legend.box = "vertical")
 plot
 
-#ggsave("variance.png", width=7.5, height=5)
+plot_sum <- plotting |> group_by(Neophyte, type) |> summarise(value= sum(value))
+plot_sum$name <- "native"
+
+
+# plot data
+plot_variance <- ggplot(plot_sum, aes(x=Neophyte, y= value, fill=type))+
+              geom_bar(position= "stack",stat = "identity")+
+              ggpubr::theme_pubr()+
+              theme(legend.position = "right")+
+              scale_fill_manual(values= my_palette, name= "Variable type") +
+              scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native", "Native\nalien elsewhere"))+
+              xlab(NULL)+
+              ylab("Variance\nexplained [%]")+
+              theme(axis.text.x=element_text(size=12), axis.title.y=element_text(size=12), axis.title.x=element_blank(), 
+                    axis.text.y=element_text(size=10))
+              
+plot_variance
+
+#ggsave("../Images/variance.png", width=7.5, height=5)
+```
+
+
+
+## 3.2 Plots
+```{r}
+# choose model for which you want to plot
+analysis <- "Native SR"
+if(analysis == "Native SR"){
+  MDL <- mod
+} else if(analysis == "Extra-\nEuropean SR"){
+  MDL <- mod2
+} else {
+  MDL <- mod3
+}
+
+# create vector for variables
+variables = data.frame(var = c("EIVEresT","EIVEresN","EIVEresM","EIVEresR","EIVEresL","DistSeverity.sqrt","Soil.Disturbance.sqrt",
+                               "Grazing.Pressure.sqrt","Mowing.Frequency.sqrt", "hfp","DI_extra", "DI_intra"),
+                 type= c(2,3,2,3,2,4,4,4,4,4,5,6), 
+                 name = c("EIVE T", "EIVE N", "EIVE M","EIVE R", "EIVE L", "DIV severity", "DIV soil", "DIV grazing","DIV mowing",
+                          "HFP","APP extra-European", "APP intra-European"))
+variables$color <-my_palette[variables$type]
+
+
+# function to create plot
+create_plot= function(name){
+    model_name <-  variables[variables$name == name,1]
+    col<- variables[variables$name == name,4]
+    
+    plot_pred <- ggeffects::predict_response(MDL, model_name)
+    mean(plot_pred$predicted)
+    
+    y_max <- max(plot_pred$predicted, na.rm = TRUE) * 1.25
+    y_min <-  min(plot_pred$predicted, na.rm = TRUE) * 0.75
+    
+    plot_end <- ggplot(plot_pred, aes(x=x, y= predicted, color=col, fill= col))+
+                      geom_line(linewidth=2)+
+                      scale_colour_manual(values=col)+
+                      scale_fill_manual(values = col)+
+                      geom_ribbon(aes(ymin= conf.low, ymax=conf.high), alpha=0.2, linetype=0)+
+                      xlab(name)+
+                      ggpubr::theme_pubr()+
+                      xlab(name)+
+                      ylab(analysis)+
+                      theme(legend.position = "none")
+    
+      if (analysis != "Native SR") {plot_end <- plot_end + coord_cartesian(ylim = c(y_min, y_max))} else {
+        plot_end <- plot_end
+      }
+}
+
+# get the relevant plots
+plot_EIVE_N <- create_plot("EIVE N")
+plot_EIVE_R <- create_plot("EIVE R")
+if(analysis == "Native SR"){
+  plot_intra <- create_plot("APP intra-European")
+  plot_extra <- create_plot("APP extra-European")
+}
+plot_hfp <- create_plot("HFP")
+plot_sev <- create_plot("DIV severity")
+
+# combine
+
+if(analysis == "Native SR"){
+  plot <- ggpubr::ggarrange(plot_EIVE_N, plot_EIVE_R, plot_hfp, plot_sev, plot_extra, plot_intra,  ncol=2, nrow=3, labels= letters[1:6], 
+                          common.legend = F)
+} else {
+  plot <- ggpubr::ggarrange(plot_EIVE_N, plot_EIVE_R, plot_hfp, plot_sev,  ncol=2, nrow=2, labels= letters[1:6], 
+                          common.legend = F)
+}
+plot
+
+```
+
+
+## 3.3 Together plots
+```{r}
+# choose model for which you want to plot
+
+# create vector for variables
+variables = data.frame(var = c("EIVEresT","EIVEresN","EIVEresM","EIVEresR","EIVEresL","DistSeverity.sqrt","Soil.Disturbance.sqrt",
+                               "Grazing.Pressure.sqrt","Mowing.Frequency.sqrt", "hfp","DI_extra", "DI_intra"),
+                 type= c(2,3,2,3,2,4,4,4,4,4,5,6), 
+                 name = c("EIVE T", "Soil nitrogen (EIVE)", "EIVE M","Soil reaction (EIVE)", "EIVE L", "Disturbance severity (DIV)", "DIV soil", 
+                          "DIV grazing","DIV mowing","Human Footprint","APP extra-European", "APP intra-European"))
+variables$color <-my_palette[variables$type]
+
+
+# function to create plot
+create_plot= function(name){
+    model_name <-  variables[variables$name == name,1]
+    col<- variables[variables$name == name,4]
+    
+    plot_pred_nat <- ggeffects::predict_response(mod, model_name)
+    plot_pred_extra <- ggeffects::predict_response(mod2, model_name)
+    plot_pred_intra <- ggeffects::predict_response(mod3, model_name)
+    
+    plot_pred_nat$Neophyte <- "Native"
+    plot_pred_extra$Neophyte <- "Extra-European"
+    plot_pred_intra$Neophyte <- "Intra-European"
+    
+    y_min <- min(c(plot_pred_extra$predicted, plot_pred_intra$predicted), na.rm = TRUE) *0.9
+    y_max <-  max(c(plot_pred_extra$predicted, plot_pred_intra$predicted), na.rm = TRUE) *1.1
+    scale_factor <- max(plot_pred_nat$predicted, na.rm = TRUE) / max(c(plot_pred_extra$predicted, plot_pred_intra$predicted), na.rm = TRUE)
+    
+    
+    # Base plot with Native on primary y-axis
+    plot_end <- ggplot() +
+      # Native (left axis)
+      geom_line(data = plot_pred_nat, aes(x = x, y = predicted, color = Neophyte), linewidth = 1.2) +
+      geom_ribbon(data = plot_pred_nat, aes(x = x, ymin = conf.low, ymax = conf.high, fill = Neophyte), alpha = 0.2) +
+      
+      # Extra-European (right axis, scaled)
+      geom_line(data = plot_pred_extra, aes(x = x, y = predicted * scale_factor, color = Neophyte), linewidth = 1.2) +
+      geom_ribbon(data = plot_pred_extra, aes(x = x, ymin = conf.low* scale_factor, ymax = conf.high* scale_factor, fill = Neophyte), alpha = 0.2) +
+      
+      # Intra-European (right axis, scaled)
+      geom_line(data = plot_pred_intra, aes(x = x, y = predicted* scale_factor, color = Neophyte), linewidth = 1.2) +
+      geom_ribbon(data = plot_pred_intra, aes(x = x, ymin = conf.low* scale_factor, ymax = conf.high* scale_factor, fill =Neophyte), alpha = 0.2) +
+      scale_colour_manual(values=c("Extra-European"= "#004D40","Intra-European" ="#FFC107","Native"="#1E88E5"))+
+      scale_fill_manual(values=c("Extra-European"= "#004D40","Intra-European" ="#FFC107","Native"="#1E88E5"))+ 
+      scale_y_continuous(
+        name = "Native SR",
+        sec.axis = sec_axis(~ . / scale_factor, name = "Alien SR")
+      ) +
+      coord_cartesian(ylim = c(y_min*scale_factor, y_max*scale_factor))+
+      xlab(name) +
+      ggpubr::theme_pubr() +
+      ylab(analysis) +
+      theme(legend.position = "bottom") +
+      theme(axis.title.y.right = element_text(angle = 90))
+}
+
+# function to create plot
+create_plot_alien= function(name){
+    model_name <-  variables[variables$name == name,1]
+    col<- variables[variables$name == name,4]
+    
+    plot_pred_nat <- ggeffects::predict_response(mod, model_name)
+    
+    plot_pred_nat$Neophyte <- ifelse(name=="APP intra-European", "Intra-European", "Extra-European")
+
+    # Base plot with Native on primary y-axis
+    plot_end <- ggplot() +
+      # Native (left axis)
+      geom_line(data = plot_pred_nat, aes(x = x, y = predicted, color = Neophyte), linewidth = 1.2) +
+      geom_ribbon(data = plot_pred_nat, aes(x = x, ymin = conf.low, ymax = conf.high, fill = Neophyte), alpha = 0.2) +
+      scale_colour_manual(values=c("Extra-European"= "#004D40","Intra-European" ="#FFC107","Native"="#1E88E5"))+
+      scale_fill_manual(values=c("Extra-European"= "#004D40","Intra-European" ="#FFC107","Native"="#1E88E5"))+ 
+      scale_y_continuous(
+        name = "Native SR" ) +
+      xlab(name) +
+      ggpubr::theme_pubr() +
+      ylab(analysis) +
+      theme(legend.position = "bottom") 
+}
+
+# get the relevant plots
+plot_EIVE_N <- create_plot("Soil nitrogen (EIVE)")
+plot_EIVE_R <- create_plot("Soil reaction (EIVE)")
+plot_hfp <- create_plot("Human Footprint")
+plot_sev <- create_plot("Disturbance severity (DIV)")
+plot_intra <- create_plot_alien("APP intra-European")
+plot_extra <- create_plot_alien("APP extra-European")
+
+# combine
+
+plot_all <-  ggarrange(plot_variance, 
+                       ggarrange(plot_EIVE_N, plot_EIVE_R, plot_hfp, plot_sev,  plot_intra, plot_extra, ncol=2, nrow=3, labels= letters[2:7], 
+                                 common.legend = T,legend="bottom", align="hv"), nrow=2, labels= letters[1], heights= c(1,2))
+plot_all
+
+ggsave("../Images/Variance.png", width=8, height=8)
 ```
 
 
@@ -557,6 +872,7 @@ rel_invaded<- ggplot()+
   scale_fill_viridis_c(option = "magma",begin = 0.1)+
   labs(title = "Relative number of invaded plots") +
   theme_bw()
+
 
 #ggsave(rel_invaded, file="rel_invaded.png", bg="white")
 ```
@@ -653,44 +969,48 @@ EU <-ggplot() +
     na.value = "aliceblue",   # Color for land areas
     guide = "none"            # Remove the legend for ocean depth
   ) +
-  new_scale_fill() +
-  geom_raster(data = hfp_df, aes(x = x, y = y, fill = hfp)) +
-  scale_fill_gradient(low = "white", high = "darkred",
-    name = "Human Footprint",
-    na.value = NA) +
   new_scale_fill() + 
   geom_sf(data = world, fill = NA, color = "black", size = 0.2, alpha=0.2) +
   # Add country borders
-  geom_sf(data = medRegions, fill = NA, color = "black", size = 0.2, alpha= 0.5) +
+  geom_sf(data = medRegions, fill = "antiquewhite", color = "black", size = 0.2, alpha= 0.5) +
   new_scale_fill() +
-
   # Plot occurrences
   geom_raster(data = grid_df, aes(X, Y, fill = mean), alpha= 0.8) +
   scale_fill_viridis_c(option = "magma", trans= "log",na.value = "NA",
                        breaks = c(0,0.01, 0.1 ,1,10,100),
                        labels = c("0","0.01","0.1", "1", "10", "100"))+
+  # Add country borders
+  geom_sf(data = medRegions, fill = NA, color = "black", size = 0.2, alpha= 0.5)+
   # Define the map extent using the bounding box
   coord_sf(xlim = c(map_bbox[1], map_bbox[2]), 
            ylim = c(map_bbox[3], map_bbox[4]), 
            expand = FALSE) +
+  theme_minimal()+
   # Customize the theme
   theme(
     panel.grid.major = element_line(color = gray(0.5), linetype = "dashed", size = 0.5),
     panel.background = element_rect(fill = "white", color = NA), # Keep a neutral background
     axis.title = element_blank(),  # Remove axis titles
-    axis.text = element_text(size = 24, color = "black"),
+    axis.text = element_text(size = 12, color = "black"),
     axis.ticks = element_line(color = "black"),
     plot.title = element_blank(),  # Remove map title
-    legend.position = "right",
-    plot.margin = margin(5, 5, 5, 5)# Remove the legend
+    plot.margin = margin(5, 5, 5, 5))+
+  theme(
+    legend.position = c(1, 0),  # Bottom-left corner
+    legend.justification = c(1, 0),  # Anchor the legend box at its bottom-left
+    legend.background = element_rect(fill = "aliceblue", color = "aliceblue"),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 10),
+    legend.key.height = unit(0.6, "cm"),
+    legend.key.width = unit(0.6, "cm")
   )+
   # Theme customization
-  theme_minimal() +
-  labs(fill = "Mean degree \nof invasion [%]",
+  labs(fill = expression(bold("Alien plant\nprevalence [%]")),
        x = "Longitude",
        y = "Latitude")
+
 EU
 
-#ggsave(EU, file= "../Images/Degree_invasion_EU.jpg", width=10, height=7)
+ggsave(EU, file= "../Images/Degree_invasion_EU.png", width=10, height=7)
 ```
 
