@@ -140,6 +140,7 @@ sum(!is.na(eva_names$eive))/ nrow(eva_names)
 sum(!is.na(eva$eive_name)) / nrow(eva)
 sum(!is.na(eva$div_name)) / nrow(eva)
 
+sum(eva_names$Neophyte=="extra")
 # read species dominance, which is more correct
 species_dominance <- read.csv("../Results/speciesDominance_1980.csv")
 

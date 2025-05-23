@@ -47,7 +47,6 @@ if(fast) {
 Diaz_names<- Diaz$`Species name standardized against TPL`
 Diaz_names<- as.data.frame(Diaz_names)
 # vector with eva names
-colnames(eva)
 eva_names<- as.data.frame(unique(eva$`Matched.concept`))
 colnames(eva_names) <- "Matched concept"
 eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched.concept`)]
@@ -86,7 +85,6 @@ Diaz$name[is.na(Diaz$name)] <- eva_names$name[match(Diaz$`Species name standardi
 sum(!is.na(Diaz$name))
 Diaz$name[is.na(Diaz$name)] <- eva_names$name[match(Diaz$`Species name standardized against TPL`[is.na(Diaz$name)], eva_names$`Turboveg2.concept`)]
 sum(!is.na(Diaz$name))
-colnames(Diaz)
 
 Diaz2 <- Diaz |> group_by(name) |> summarise(LA = mean(`Leaf area (mm2)`, na.rm=T), LMA = mean(`LMA (g/m2)`, na.rm=T), 
                                              SSD= mean(`SSD combined (mg/mm3)`, na.rm=T), SM = mean(`Diaspore mass (mg)`, na.rm=T), 
@@ -104,6 +102,8 @@ Diaz2$Genus <- Diaz$Genus[match(Diaz2$name, Diaz$name)]
 
 
 eva_names <- left_join(eva_names, Diaz2, by= c("name"="name"))
+
+sum(!is.na(eva_names$Diaz_name))/length(eva_names$Diaz_name)
 
 #write_csv(eva_names, "../Extra data/Traits/Eva_diaz.csv")
 ```
@@ -144,6 +144,8 @@ eva <- left_join(eva, eva_names[,c(1,7:13)], by= c("name"="name"))
 
 # check number of tree species in our database
 sum(eva_names$growth=="tree", na.rm=T)
+
+sum(!is.na(eva$Diaz_name))/length(is.na(eva$Diaz_name))
 ```
 
 
@@ -205,6 +207,11 @@ impact<- read.csv("I:/Impact_1980_new.csv")
 ```{r}
 # Merge 7.1 and traits data
 impact<- left_join(impact, eva_names[!duplicated(eva_names$name), c(1,7:12, 14:15)], by=c("taxa"="name"))
+
+
+# if relative add 13 in join
+#test <- impact |> group_by(taxa, Diaz_name, Neophyte) |> summarise(n=n())
+#sum(!is.na(test$Diaz_name))/length(test$Diaz_name)
 
 # Calculate correlations
 cor_extra<-cor(impact[impact$Neophyte=="extra", c(2,9, 14:19)],  use= "pairwise.complete.obs", method="spearman")
@@ -361,6 +368,8 @@ test(emtrends(MDL, ~ Neophyte, var="PC2"))
 emmeans::emmeans(MDL, pairwise ~woody)
 
 (anova(MDL))
+library(MuMIn)
+r.squaredGLMM(MDL)
 ```
 
 
@@ -449,6 +458,9 @@ table(result_PC1$significant)
 result_PC2$significant <- result_PC2$p.value < 0.05
 table(result_PC2$significant)
 
+result_woody$significant <- result_woody$p.value < 0.05
+table(result_PC2$significant)
+
 
 test <- result |> group_by(name, significant) |> summarise(n=n(), diff= mean(`Sum Sq`), sd= sd(`Sum Sq`), se= sd/sqrt(n))
 test
@@ -458,6 +470,9 @@ testPC1
 
 testPC2 <- result_PC2 |> group_by(Neophyte, significant) |> summarise(n=n(), diff= mean(`PC2.trend`), sd= sd(`PC2.trend`), se= sd/sqrt(n))
 testPC2
+
+testwoody <- result_woody |> group_by(contrast, significant) |> summarise(n=n(), diff= mean(estimate), sd= sd(estimate), se= sd/sqrt(n))
+testwoody
 ```
 
 
@@ -646,7 +661,7 @@ plot <- ggarrange( PCA_plot, growth, PC1, PC2, labels= c("a","b","c","d"), commo
 
 plot
 
-ggsave("../Images/Drivers.svg", plot, width=8, height=8)
+#ggsave("../Images/Drivers.svg", plot, width=8, height=8)
 ```
 
 

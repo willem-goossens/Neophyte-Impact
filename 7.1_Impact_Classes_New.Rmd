@@ -20,12 +20,11 @@ library(tidyverse)
 library(mgcv)
 library(doParallel)
 library(DHARMa)
-library(mgcViz)
+#library(mgcViz)
 library(ggeffects)
-library(sp)
+#library(sp)
 library(terra)
 library(sf)
-library(visreg)
 library(ggpubr)
 ```
 
@@ -46,7 +45,7 @@ fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv",show_col_types = FAL
 fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
 fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
 
-fast <- T
+fast <- F
 if(fast) {
   fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
@@ -550,7 +549,7 @@ library(rlist)
 library(ggsci)
 
 # load data
-load(file = "I:/importance.Rdata") 
+load(file = "I:/impact_new.Rdata") 
 # plot data
 plot(z)
 
@@ -566,17 +565,17 @@ plot_data_extra = data.frame(variable = rownames(z_extra[[2]]),
 
 # change names
 plot_data$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil",
-                         "DIV grazing","DIV mowing","HFP","MAP","Elevation","Intra","Extra")
+                         "DIV grazing","DIV mowing","HFP","MAP","Elevation","Intra","Extra","Spatial")
 
 plot_data_intra$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil",
-                         "DIV grazing","DIV mowing","HFP","MAP","Elevation")
+                         "DIV grazing","DIV mowing","HFP","MAP","Elevation","Spatial")
 
 plot_data_extra$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil",
-                         "DIV grazing","DIV mowing","HFP","MAP","Elevation")
+                         "DIV grazing","DIV mowing","HFP","MAP","Elevation","Spatial")
 
 
 # classify in types
-plot_data$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,2, 5,6)
+plot_data$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,1, 5,6,1)
 plot_data$type <- as.factor(plot_data$type)
 colnames(plot_data)[3] <- c("type")
 plot_data <- plot_data %>% mutate(type = factor(type, 
@@ -591,7 +590,7 @@ plot_data <- plot_data %>% mutate(type = factor(type,
 plot_data$Neophyte <- "native"
 
 # classify in types
-plot_data_intra$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,2)
+plot_data_intra$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,1,1)
 plot_data_intra$type <- as.factor(plot_data_intra$type)
 colnames(plot_data_intra)[3] <- c("type")
 plot_data_intra <- plot_data_intra %>% mutate(type = factor(type, 
@@ -607,7 +606,7 @@ plot_data_intra$Neophyte <- "intra"
 
 
 # classify in types
-plot_data_extra$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,2)
+plot_data_extra$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,1,1)
 plot_data_extra$type <- as.factor(plot_data_extra$type)
 colnames(plot_data_extra)[3] <- c("type")
 plot_data_extra <- plot_data_extra %>% mutate(type = factor(type, 
@@ -841,6 +840,11 @@ plot_all
 
 ggsave("../Images/Variance.png", width=8, height=8)
 ```
+```{r}
+visreg::visreg(mod3, "Latitude")
+visreg::visreg(mod3, "Longitude")
+
+```
 
 
 # 4 MAP
@@ -1012,5 +1016,149 @@ EU <-ggplot() +
 EU
 
 ggsave(EU, file= "../Images/Degree_invasion_EU.png", width=10, height=7)
+```
+
+
+
+
+```{r}
+# hfp
+hfp2009<- rast("../Extra data/DIV/HFP2009.tif")
+mollweide_crs <- "+proj=moll +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs"
+europe_bbox <- st_bbox(c(xmin = -3000000, xmax = 6000000, ymin = 3500000, ymax = 10000000), crs = mollweide_crs)
+europe_polygon <- st_as_sfc(europe_bbox)
+hfp2009<- crop(hfp2009, europe_polygon)
+# change projection to that of medRegion
+hfp2009<- terra::project(hfp2009, "+proj=longlat +datum=WGS84")
+cat(crs(hfp2009))
+# crop medregions from human footprint map
+hfp2009<- mask(hfp2009, medRegions)
+hfp2009<- crop(hfp2009, medRegions)
+
+plot(hfp2009)
+
+data <- spatSample(hfp2009, 10000, na.rm=T, method= "random")
+
+eva <- as.data.frame(sample(fullPlotData$hfp, 10000))
+colnames(eva) <- "HFP2009"
+
+
+data$source <- "Europe"
+eva$source <- "EVA plots"
+
+colnames(data)
+colnames(eva)
+
+
+combined <- rbind(data, eva)
+
+# If you want to use a t-test (assumes normality)
+t_test_result <- t.test(HFP2009 ~ source, data = combined)
+print(t_test_result)
+
+plot<- ggplot(combined, aes(x = source, y = HFP2009,fill = source)) +
+  geom_violin(trim = FALSE) +
+  theme_minimal() +
+  labs(y = "Human Footprint (HFP)", x = "Plots")+
+  geom_boxplot(width= 0.2, alpha=0.75, fill="white", outliers=F)+
+  theme_pubr()+
+  stat_summary(fun= "mean",
+                 geom = "point", aes(group= source), size=3)+
+  xlab(NULL)+
+  theme(legend.position = "none")+
+  annotate("text", x = 1, y = max(combined$HFP2009[combined$source=="Europe"])+max(combined$HFP2009[combined$source=="Europe"])/5,
+           label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
+  annotate("text", x = 2, y = max(combined$HFP2009[combined$source=="EVA plots"])+ max(combined$HFP2009[combined$source=="Europe"])/5,
+           label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)
+
+plot
+
+#ggsave("../Images/HFP_Europe.png", plot= plot, width = 5, height = 3)
+```
+
+```{r}
+colnames(medRegions)
+unique(medRegions$Region)
+germany <- medRegions[medRegions$Region=="Belgium",]
+germany<- germany[!is.na(germany$OBJECTID_1),]
+
+hfp_germany <- mask(hfp2009, germany)
+hfp_germany <- crop(hfp_germany, germany)
+
+data <- spatSample(hfp_germany, 10000, na.rm=T, method= "random")
+
+eva <- as.data.frame(sample(fullPlotData$hfp, 10000))
+colnames(eva) <- "HFP2009"
+
+data$source <- "Europe"
+eva$source <- "EVA plots"
+
+colnames(data)
+colnames(eva)
+
+combined <- rbind(data, eva)
+
+
+combined <- rbind(data, eva)
+
+# If you want to use a t-test (assumes normality)
+t_test_result <- t.test(HFP2009 ~ source, data = combined)
+print(t_test_result)
+
+plot<- ggplot(combined, aes(x = source, y = HFP2009,fill = source)) +
+  geom_violin(trim = FALSE) +
+  theme_minimal() +
+  labs(y = "Human Footprint (HFP)", x = "Plots")+
+  geom_boxplot(width= 0.2, alpha=0.75, fill="white", outliers=F)+
+  theme_pubr()+
+  stat_summary(fun= "mean",
+                 geom = "point", aes(group= source), size=3)+
+  xlab(NULL)+
+  theme(legend.position = "none")+
+  annotate("text", x = 1, y = max(combined$HFP2009[combined$source=="Europe"])+max(combined$HFP2009[combined$source=="Europe"])/5,
+           label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
+  annotate("text", x = 2, y = max(combined$HFP2009[combined$source=="EVA plots"])+ max(combined$HFP2009[combined$source=="Europe"])/5,
+           label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)
+
+plot
+
+```
+
+```{r}
+regions <- unique(medRegions$Region)
+
+factor <- length(fullPlotData$PlotObservationID)/10000
+
+data_sampled <- data.frame()
+i <- 2
+for(i in 1:length(regions)){
+  name <- regions[i]
+  length <- ceiling(sum(fullPlotData$Region==name)/factor)
+  
+  if(length == 0) next
+  country <- medRegions[medRegions$Region==name,]
+  country<- country[!is.na(country$OBJECTID_1),]
+
+  hfp_country <- mask(hfp2009, country)
+  hfp_country <- crop(hfp_country, country)
+  
+  data <- spatSample(hfp_country, length, na.rm=T, method= "random")
+  
+  data$eva <- sample(fullPlotData$hfp, nrow(data))
+  data$country <- name
+  
+  data_sampled <- rbind(data_sampled, data)
+  
+}
+
+
+eva <- as.data.frame(sample(fullPlotData$hfp, nrow(data_sampled)))
+colnames(eva) <- "HFP2009"
+
+data_sampled$source <- "Europe"
+eva$source <- "EVA plots"
+
+combined <- rbind(data, eva)
+
 ```
 

@@ -17,10 +17,10 @@ library(readr)
 library(tidyverse)
 library(sf)
 library(sp)
-library(CoordinateCleaner)
+#library(CoordinateCleaner)
 library(doParallel)
 library(units)
-library(lwgeom)
+#library(lwgeom)
 ```
 
 
