@@ -10,7 +10,7 @@ Based on the best model as determined in the baseModelExploration.qmd we assess 
 # 1 START
 We first clean the environment.
 ```{r, echo=F, warning=F, message=FALSE}
-rm(list=ls())
+#rm(list=ls())
 gc()
 ```
 
@@ -22,7 +22,7 @@ library(doParallel)
 library(DHARMa)
 #library(mgcViz)
 library(ggeffects)
-#library(sp)
+library(sp)
 library(terra)
 library(sf)
 library(ggpubr)
@@ -634,17 +634,65 @@ my_palette <- c(
 plotting <- rbind(plot_data, plot_data_intra, plot_data_extra)
 
 # plot data
-plot <- ggplot(plot_data, aes(x= reorder(variable, -value), y= value, fill=type))+
+plot_native <- ggplot(plot_data, aes(x= reorder(variable, -value), y= value, fill=type))+
   geom_bar(position= "stack",stat = "identity")+
+  ggpubr::theme_pubr()+
   scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
   NULL+
-  theme_bw()+
   xlab("Variable type")+
   ylab("Explained variance (%)")+
   scale_fill_manual(values= my_palette, name= "Variable type")+
-  theme(legend.position = "bottom",
-          legend.box = "vertical")
-plot
+  theme(legend.position = "bottom")+
+  theme(axis.text.x=element_text(size=12), axis.title.y=element_text(size=12), axis.title.x=element_blank(), 
+        axis.text.y=element_text(size=10))
+plot_native
+
+plot_native <- ggplot(plot_data, aes(x= reorder(variable, -value), y= value, fill=type))+
+  geom_bar(position= "stack",stat = "identity")+
+  ggpubr::theme_pubr()+
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  NULL+
+  xlab("Variable type")+
+  ylab("Explained variance (%)")+
+  scale_fill_manual(values= my_palette, name= "Variable type")+
+  theme(legend.position = "bottom")+
+  theme(axis.text.x=element_text(size=12), axis.title.y=element_text(size=12), axis.title.x=element_blank(), 
+        axis.text.y=element_text(size=10), plot.subtitle = element_text(size=12, face = "bold"))+
+  labs(subtitle = "Native")
+plot_native
+
+plot_intra <- ggplot(plot_data_intra, aes(x= reorder(variable, -value), y= value, fill=type))+
+  geom_bar(position= "stack",stat = "identity")+
+  ggpubr::theme_pubr()+
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  NULL+
+  xlab("Variable type")+
+  ylab("Explained variance (%)")+
+  scale_fill_manual(values= my_palette, name= "Variable type")+
+  theme(legend.position = "bottom")+
+  theme(axis.text.x=element_text(size=12), axis.title.y=element_text(size=12), axis.title.x=element_blank(), 
+        axis.text.y=element_text(size=10), plot.subtitle = element_text(size=12, face = "bold"))+
+  labs(subtitle = "Intra-European alien")
+plot_intra
+
+plot_extra <- ggplot(plot_data_extra, aes(x= reorder(variable, -value), y= value, fill=type))+
+  geom_bar(position= "stack",stat = "identity")+
+  ggpubr::theme_pubr()+
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  NULL+
+  xlab("Variable type")+
+  ylab("Explained variance (%)")+
+  scale_fill_manual(values= my_palette, name= "Variable type")+
+  theme(legend.position = "bottom")+
+  theme(axis.text.x=element_text(size=12), axis.title.y=element_text(size=12), axis.title.x=element_blank(), 
+        axis.text.y=element_text(size=10), plot.subtitle = element_text(size=12, face = "bold"))+
+  labs(subtitle ="Extra-European alien")
+plot_extra
+
+all <- ggarrange(plot_native, plot_extra, plot_intra, common.legend = T, align="hv", ncol=1, nrow=3, legend= "bottom", labels= letters[1:3])
+all
+
+ggsave("../Images/variance_all.png", width=8, height=8)
 
 plot_sum <- plotting |> group_by(Neophyte, type) |> summarise(value= sum(value))
 plot_sum$name <- "native"
@@ -785,8 +833,8 @@ create_plot= function(name){
       # Intra-European (right axis, scaled)
       geom_line(data = plot_pred_intra, aes(x = x, y = predicted* scale_factor, color = Neophyte), linewidth = 1.2) +
       geom_ribbon(data = plot_pred_intra, aes(x = x, ymin = conf.low* scale_factor, ymax = conf.high* scale_factor, fill =Neophyte), alpha = 0.2) +
-      scale_colour_manual(values=c("Extra-European"= "#004D40","Intra-European" ="#FFC107","Native"="#1E88E5"))+
-      scale_fill_manual(values=c("Extra-European"= "#004D40","Intra-European" ="#FFC107","Native"="#1E88E5"))+ 
+      scale_colour_manual(name="Origin", values=c("Extra-European"= "#004D40","Intra-European" ="#FFC107","Native"="#1E88E5"))+
+      scale_fill_manual(name="Origin", values=c("Extra-European"= "#004D40","Intra-European" ="#FFC107","Native"="#1E88E5"))+ 
       scale_y_continuous(
         name = "Native SR",
         sec.axis = sec_axis(~ . / scale_factor, name = "Alien SR")
@@ -823,6 +871,41 @@ create_plot_alien= function(name){
       theme(legend.position = "bottom") 
 }
 
+
+# function to create plot
+create_plot_alien2= function(name, name2){
+    model_name <-  variables[variables$name == name,1]
+    col<- variables[variables$name == name,4]
+    
+    plot_pred_nat <- ggeffects::predict_response(mod, model_name)
+    
+    plot_pred_nat$Neophyte <- ifelse(name=="APP intra-European", "Intra-European", "Extra-European")
+
+    model_name2 <-  variables[variables$name == name2,1]
+    col<- variables[variables$name == name2,4]
+    
+    plot_pred_nat2 <- ggeffects::predict_response(mod, model_name2)
+    
+    plot_pred_nat2$Neophyte <- ifelse(name2=="APP intra-European", "Intra-European", "Extra-European")
+    
+    # Base plot with Native on primary y-axis
+    plot_end <- ggplot() +
+      # Native (left axis)
+      geom_line(data = plot_pred_nat, aes(x = x, y = predicted, color = Neophyte), linewidth = 1.2) +
+      geom_ribbon(data = plot_pred_nat, aes(x = x, ymin = conf.low, ymax = conf.high, fill = Neophyte), alpha = 0.2) +
+      geom_line(data = plot_pred_nat2, aes(x = x, y = predicted, color = Neophyte), linewidth = 1.2) +
+      geom_ribbon(data = plot_pred_nat2, aes(x = x, ymin = conf.low, ymax = conf.high, fill = Neophyte), alpha = 0.2) +
+      scale_colour_manual(values=c("Extra-European"= "#004D40","Intra-European" ="#FFC107","Native"="#1E88E5"))+
+      scale_fill_manual(values=c("Extra-European"= "#004D40","Intra-European" ="#FFC107","Native"="#1E88E5"))+ 
+      scale_y_continuous(
+        name = "Native SR" ) +
+      xlab(name) +
+      ggpubr::theme_pubr() +
+      ylab(analysis) +
+      theme(legend.position = "none")+
+      scale_x_continuous(name= "Alien plant prevalence")
+}
+
 # get the relevant plots
 plot_EIVE_N <- create_plot("Soil nitrogen (EIVE)")
 plot_EIVE_R <- create_plot("Soil reaction (EIVE)")
@@ -830,9 +913,9 @@ plot_hfp <- create_plot("Human Footprint")
 plot_sev <- create_plot("Disturbance severity (DIV)")
 plot_intra <- create_plot_alien("APP intra-European")
 plot_extra <- create_plot_alien("APP extra-European")
+plot_both <- create_plot_alien2("APP intra-European","APP extra-European")
 
 # combine
-
 plot_all <-  ggarrange(plot_variance, 
                        ggarrange(plot_EIVE_N, plot_EIVE_R, plot_hfp, plot_sev,  plot_intra, plot_extra, ncol=2, nrow=3, labels= letters[2:7], 
                                  common.legend = T,legend="bottom", align="hv"), nrow=2, labels= letters[1], heights= c(1,2))
@@ -840,11 +923,70 @@ plot_all
 
 ggsave("../Images/Variance.png", width=8, height=8)
 ```
+
 ```{r}
-visreg::visreg(mod3, "Latitude")
-visreg::visreg(mod3, "Longitude")
+leg <- ggpubr::get_legend(plot_EIVE_N)
+
+
+under <- ggarrange(ggarrange(plot_EIVE_N, plot_EIVE_R, plot_hfp, plot_sev,  plot_intra, plot_extra, ncol=2, nrow=3, labels= letters[2:7], 
+                                 common.legend = T,legend="none", align="hv"), 
+                                 ggarrange(plot_daisie, nrow=1, ncol=1, legend= "none", labels= c("h")),ncol=1, nrow=2,
+                                 legend.grob = leg, heights= c(1,1,1), common.legend = T, align="hv", legend="bottom")
+
+under <- ggarrange(plot_EIVE_N, plot_EIVE_R, plot_hfp, plot_sev,  plot_both, plot_daisie, ncol=2, nrow=3, labels= letters[2:7], 
+                                 common.legend = T, align="hv", legend.grob = leg, heights= c(1,1,1), legend="bottom")
+under
+
+plot_all <-  ggarrange(plot_variance, under,ncol=1, nrow=2,
+                                 labels= letters[1], heights= c(1,2))
+plot_all
+ggsave("../Images/Variance_daisie.png", width=8, height=8)
+```
+
+
+## 3.4 Rest
+```{r}
+# change names
+plot_data$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T", "DIV severity","DIV soil",
+                         "DIV grazing","DIV mowing","HFP","MAP","Elevation","Intra","Extra","Spatial")
+
+# create vector for variables
+variables = data.frame(var = c("EIVEresT","EIVEresN","EIVEresM","EIVEresR","EIVEresL","DistSeverity.sqrt","Soil.Disturbance.sqrt",                               "Grazing.Pressure.sqrt","Mowing.Frequency.sqrt", "hfp","DI_extra", "DI_intra", "Area","chelsaP","elev","Longitude","Latitude"),
+                 type= c(2,3,2,3,2,4,4,4,4,4,5,6,1,2,1,1,1), 
+                 name = c("EIVE T", "Soil nitrogen (EIVE)", "EIVE M","Soil reaction (EIVE)", "EIVE L", "Disturbance severity (DIV)", 
+                          "Soil disturbance (DIV)","Grazing pressure (DIV)","Mowing pressure (DIV)","Human Footprint",
+                          "APP extra-European", "APP intra-European","ln(Area)",
+                          "Mean annual precipitation","Elevation","Longitude","Latitude"))
+variables$color <-my_palette[variables$type]
+
+plot_area <- create_plot("ln(Area)")
+plot_EIVE_L <- create_plot("EIVE L")
+plot_EIVE_T <- create_plot("EIVE T")
+plot_EIVE_M <- create_plot("EIVE M")
+plot_MAP <- create_plot("Mean annual precipitation")
+plot_elevation<- create_plot("Elevation")
+plot_longitude<- create_plot("Longitude")
+plot_latitude<- create_plot("Latitude")
+plot_soil<- create_plot("Soil disturbance (DIV)")
+plot_grazing<- create_plot("Grazing pressure (DIV)")
+plot_mowing<- create_plot("Mowing pressure (DIV)")
+
+blank_plot <- ggplot()+ geom_blank() +theme_classic()
+
+leg <- ggpubr::get_legend(plot_area)
+
+
+appendix <- ggarrange(ggarrange(plot_area, plot_elevation,plot_longitude, plot_latitude,
+                                plot_MAP, plot_EIVE_M, plot_EIVE_L, plot_EIVE_T, plot_soil, plot_grazing, 
+                                ncol=2, nrow= 5, align="hv",  legend="none", labels= letters[1:10], widths = c(1,1)),
+                       ggarrange(blank_plot, plot_mowing, blank_plot,labels= c("","k",""), widths= c(0.5,1,0.5), 
+                                 nrow=1, ncol=3, legend= "none"),
+                       ncol=1, nrow=2, heights = c(5,1), common.legend = T,legend="bottom", align="hv", legend.grob = leg)
+
+ggsave("../Images/Appendix_variables.png", plot= appendix, width=10, height= 12)
 
 ```
+
 
 
 # 4 MAP
@@ -1003,8 +1145,8 @@ EU <-ggplot() +
     legend.position = c(1, 0),  # Bottom-left corner
     legend.justification = c(1, 0),  # Anchor the legend box at its bottom-left
     legend.background = element_rect(fill = "aliceblue", color = "aliceblue"),
-    legend.title = element_text(size = 14),
-    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 8),
     legend.key.height = unit(0.6, "cm"),
     legend.key.width = unit(0.6, "cm")
   )+
@@ -1034,8 +1176,6 @@ cat(crs(hfp2009))
 # crop medregions from human footprint map
 hfp2009<- mask(hfp2009, medRegions)
 hfp2009<- crop(hfp2009, medRegions)
-
-plot(hfp2009)
 
 data <- spatSample(hfp2009, 10000, na.rm=T, method= "random")
 
@@ -1073,7 +1213,7 @@ plot<- ggplot(combined, aes(x = source, y = HFP2009,fill = source)) +
 
 plot
 
-#ggsave("../Images/HFP_Europe.png", plot= plot, width = 5, height = 3)
+ggsave("../Images/HFP_Europe.png", plot= plot, width = 6, height = 3)
 ```
 
 ```{r}

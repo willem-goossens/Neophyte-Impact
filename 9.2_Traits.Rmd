@@ -333,7 +333,7 @@ PCA_plot <-ggplot(data = scores, aes(x = PC1, y = PC2, color = Neophyte)) +
   scale_colour_manual(values=c( "#004D40", "#FFC107","#1E88E5"))+
   scale_fill_manual(values = c( "#004D40", "#FFC107","#1E88E5"))+ 
   scale_alpha_identity() + 
-  theme(legend.position="bottom")+ 
+  theme(legend.position="none")+ 
   labs(fill = "Origin", colour= "Origin")
 PCA_plot
 
@@ -504,7 +504,7 @@ PC1<- ggplot(test, aes(x, predicted, colour= group))+
   guides(linetype = "none") + 
   labs(fill = "Origin", colour= "Origin")+ 
   scale_alpha_identity() + 
-  theme(legend.position="bottom")+
+  theme(legend.position="none")+
   scale_y_continuous(limits=c(-1,1))
 PC1
 
@@ -558,14 +558,14 @@ growth<- ggplot(test, aes(x, predicted, colour= group))+
   scale_fill_manual(values = c( "#004D40", "#FFC107","#1E88E5"))+ 
   labs(fill = "Origin", colour= "Origin")+ 
   scale_alpha_identity() + 
-  theme(legend.position="bottom")
+  theme(legend.position="none")
 } else {
 
 test <- ggpredict(MDL, terms= c("growth"))
 test <- test[!is.na(test$group),]  
 test$x <- as.factor(test$x)
 
-growth<- ggplot(test, aes(x= factor(x, level= c("herb","graminoid","tree","shrub","other")), predicted))+
+growth<- ggplot(test, aes(x= factor(x, level= c("herb","graminoid","tree","shrub","other")), predicted), show.legend = FALSE)+
   geom_violin(data= general2[!is.na(general2$growth),], aes(x= factor(growth, level= c("herb","graminoid","tree","shrub","other")), 
                                                             y= impact, alpha= 0.3,
                                                             fill= "lightgrey"),
@@ -595,7 +595,7 @@ test <- ggpredict(MDL, terms= c("woody"))
 test <- test[!is.na(test$group),]  
 test$x <- as.factor(test$x)
 test$x
-growth<- ggplot(test, aes(x= factor(x, level= c("non-woody","semi-woody","woody")), predicted))+
+growth<- ggplot(test, aes(x= factor(x, level= c("non-woody","semi-woody","woody")), predicted), show.legend = FALSE)+
   geom_violin(data= general2[!is.na(general2$woody),], aes(x= factor(woody, level= c("non-woody","semi-woody","woody")), 
                                                             y= impact, alpha= 0.8,
                                                             fill= "#D81B60", color= "#D81B60"),
@@ -613,7 +613,8 @@ growth<- ggplot(test, aes(x= factor(x, level= c("non-woody","semi-woody","woody"
   # Significance letters (lower position)
   annotate("text", x=1, y=max(general2$impact), label="a", size=4, hjust=0.5, alpha=1, vjust= -0.3) +
   annotate("text", x=2, y=max(general2$impact), label="ab", size=4, hjust=0.5, alpha=1, vjust= -0.3) +
-  annotate("text", x=3, y=max(general2$impact), label="b", size=4, hjust=0.5, alpha=1, vjust= -0.3)
+  annotate("text", x=3, y=max(general2$impact), label="b", size=4, hjust=0.5, alpha=1, vjust= -0.3)+ 
+  guides(fill = "none", color = "none", linetype = "none", shape = "none")
 
 growth
 }
@@ -644,7 +645,7 @@ p<-ggplot(general2, aes(x=Neophyte, y= impact, group = Neophyte,
     plot.subtitle = element_text( hjust = 0.01))
 p
 
-
+PC2
 
 plot <- ggarrange(PC1, PC2, growth, labels= c("a","b","c"), common.legend = TRUE, legend="bottom", align="hv", nrow=1, ncol=3)
 
@@ -657,11 +658,39 @@ plot
 
 
 ```{r}
-plot <- ggarrange( PCA_plot, growth, PC1, PC2, labels= c("a","b","c","d"), common.legend = TRUE, legend="bottom", align="hv", nrow=2, ncol=2)
+plot_all <- ggarrange( PCA_plot, growth, PC1, PC2, labels= c("a","b","c","d","e"), common.legend = TRUE, 
+                       legend="bottom", align="hv", nrow=2, ncol=2)
 
-plot
+plot_all
+
+
 
 #ggsave("../Images/Drivers.svg", plot, width=8, height=8)
+```
+
+```{r}
+
+legend_PC <- ggpubr::get_legend(PC2)
+as_ggplot(legend_PC)
+
+plot_all <- ggarrange( ggarrange(PCA_plot, plot_daisie, labels= c("a","b"), ncol=2, widths = c(1,2),common.legend = TRUE, align="hv", legend=F), 
+                       ggarrange(growth, PC1, PC2, labels= c("c","d","e"),ncol=3,common.legend = TRUE, align="hv", legend = "none"),
+                       common.legend = TRUE,  legend="bottom", align="hv", nrow=2, legend.grob = legend_PC)
+plot_all
+
+ggsave("../Images/Drivers_daisie.png", plot_all, width=12, height=8)
+
+
+legend_PC <- ggpubr::get_legend(PC2)
+as_ggplot(legend_PC)
+
+plot_all <- ggarrange(ggarrange( PCA_plot, growth, PC1, PC2, labels= c("a","b","c","d"), common.legend = TRUE, 
+                      legend="none", align="hv", nrow=2, ncol=2),
+                      ggarrange(plot_daisie, nrow=1, ncol=1, legend= "none", labels= c("e")),
+                      common.legend = TRUE,  legend="bottom", align="hv", nrow=2, legend.grob = legend_PC, heights= c(1.5,0.5))
+plot_all
+
+ggsave("../Images/Drivers_daisie.png", plot_all, width=8, height=10)
 ```
 
 

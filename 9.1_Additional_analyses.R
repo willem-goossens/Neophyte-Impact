@@ -67,19 +67,7 @@ ggplot(eva, aes(x=Neophyte, y=EIVEresN, color= Neophyte))+
 
 
 ###### 2.3 N niche width #####
-test <- aov(EIVEnwN ~Neophyte, eva)
-summary(test)
-TukeyHSD(test)
 
-ggplot(eva, aes(x=Neophyte, y=EIVEnwN, color= Neophyte))+
-  geom_boxplot()+
-  theme_bw()+
-  stat_summary(fun= "mean",
-               geom = "point", aes(group= Neophyte), size=3)+
-  scale_colour_manual(values=c("#1E88E5","#B71C1C", "#FFC107", "#388E3C"), 
-                      name="Legend",
-                      breaks=c("native","native_intra", "intra","extra"),
-                      labels=c("native species","native species alien elsewhere", "intra European neophyte", "extra European neophyte"))
 
 
 ##### 3 Databases #####
@@ -224,11 +212,11 @@ plot <- ggplot(eva3, aes(x=Neophyte, y= var, fill=Neophyte))+
 }
 
 plot <- ggarrange(EIVEresN, EIVEresR, EIVEresL, EIVEresL, EIVEresM,Disturbance.Severity,  Disturbance.Frequency, 
-                  Grazing.Pressure, Mowing.Frequency, Soil.Disturbance, nrow=5, ncol=2, labels = LETTERS[1:10],
+                  Grazing.Pressure, Mowing.Frequency, Soil.Disturbance, nrow=5, ncol=2, labels = letters[1:10],
                   font.label = list(size = 12), align="hv")
 plot
 
-#ggsave("../Images/Species_values.svg", plot= plot, width = 10, height = 10)
+ggsave("../Images/Species_values.png", plot= plot, width = 12, height = 15)
 
 
 ###### 6.2 Plot Traits #######
@@ -309,23 +297,23 @@ for(i in 4: 9){
           axis.text.y=element_text(size=10)) +
     scale_y_continuous(limits=c(0, y_let+y_let/10))+
     ylab(names[i-3])+
-    annotate("text", x=1, y=y_n, label=paste("n=", length(eva3$taxa[eva3$Neophyte=="extra"])), size=4, hjust=0.5)+
-    annotate("text", x=2, y=y_n, label=paste("n=", length(eva3$taxa[eva3$Neophyte=="intra"])), size=4, hjust=0.5) +
-    annotate("text", x=3, y=y_n, label=paste("n=", length(eva3$taxa[eva3$Neophyte=="native"])), size=4, hjust=0.5) +
-    annotate("text", x = 1, y = y_let, label = cld_results$.group[cld_results$Neophyte=="extra"], size = 4,vjust = -0.5, hjust = 0.5, alpha=1) +
-    annotate("text", x = 2, y = y_let, label = cld_results$.group[cld_results$Neophyte=="intra"], size = 4,vjust = -0.5, hjust = 0.5, alpha=1) +
-    annotate("text", x = 3, y = y_let, label = cld_results$.group[cld_results$Neophyte=="native"], size = 4,vjust = -0.5, hjust = 0.5, alpha=1) 
+    annotate("text", x=1, y=y_n, label=paste("n=", length(eva3$name[eva3$Neophyte=="extra"])), size=4, hjust=1.5)+
+    annotate("text", x=2, y=y_n, label=paste("n=", length(eva3$name[eva3$Neophyte=="intra"])), size=4, hjust=1.5) +
+    annotate("text", x=3, y=y_n, label=paste("n=", length(eva3$name[eva3$Neophyte=="native"])), size=4, hjust=1.5) +
+    annotate("text", x = 1, y = y_let, label = cld_results$.group[cld_results$Neophyte=="extra"], size = 4,vjust = -0.5, hjust = 3.5, alpha=1) +
+    annotate("text", x = 2, y = y_let, label = cld_results$.group[cld_results$Neophyte=="intra"], size = 4,vjust = -0.5, hjust = 3.5, alpha=1) +
+    annotate("text", x = 3, y = y_let, label = cld_results$.group[cld_results$Neophyte=="native"], size = 4,vjust = -0.5, hjust =3.5, alpha=1) 
   plot
   
   assign(gsub(" ","_",var), plot) 
   
 }
 
-plot <- ggarrange(LA,SSD,LMA,SM,Nmass,H, nrow=3, ncol=2, labels = LETTERS[1:10],
+plot <- ggarrange(LA,SSD,LMA,SM,Nmass,H, nrow=3, ncol=2, labels = letters[1:10],
                   font.label = list(size = 12), align="hv")
 plot
 
-#ggsave("../Images/Species_traits.svg", plot= plot, width = 10, height = 6)
+ggsave("../Images/Species_traits.png", plot= plot, width = 12, height = 9)
 
 
 ##### 7 Impact #####

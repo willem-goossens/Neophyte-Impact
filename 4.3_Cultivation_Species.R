@@ -140,7 +140,8 @@ genus <- check[is.na(check$epi1),]
 impact <- impact[!impact$taxa %in% genus$original,]
 
 # our names
-names <- unique(eva[, c(2:6)])
+colnames(eva)
+names <- eva |> group_by(name, Matched.concept, irena) |> summarise(n=n())
 
 # check names
 Daisy$name <- names$name[match(Daisy$taxa, names$name)]
@@ -200,19 +201,20 @@ Daisy_plot <- Daisy[!Daisy$Neophyte=="native",]
 
 mu <- plyr::ddply(Daisy_plot, "Neophyte", summarise, grp.mean=median(impact))
 
-plot <- ggplot(Daisy_plot, aes(x= impact, fill= Neophyte))+
+plot_daisie <- ggplot(Daisy_plot, aes(x= impact, fill= Neophyte))+
   geom_histogram(alpha= 0.75)+
   geom_vline(data= mu, aes(xintercept=grp.mean, color= Neophyte),linetype="dashed", size=2)+
   ggpubr::theme_pubr()+
   xlab("Overall species impact")+
-  ylab("Number of species")+
-  scale_colour_manual(values=c( "#004D40", "#FFC107"), labels=  c("Extra-European aliens",  "Intra-European aliens"))+
-  scale_fill_manual(values = c( "#004D40", "#FFC107"), labels=  c("Extra-European aliens",  "Intra-European aliens"))+
+  ylab("Count")+
+  scale_colour_manual(values=c( "#004D40", "#FFC107"), labels=  c("Extra-European",  "Intra-European"))+
+  scale_fill_manual(values = c( "#004D40", "#FFC107"), labels=  c("Extra-European",  "Intra-European"))+
   scale_y_continuous(limits=c(0,50))+
   theme(legend.position= c(0.8, 0.85))+
   labs(fill= c("Origin"), colour= c("Origin"))
-  
-ggsave("../Images/Impact_Daisie.png", plot= plot, width = 5, height = 3)
+
+plot_daisie
+#ggsave("../Images/Impact_Daisie.png", plot= plot, width = 5, height = 3)
 
 #write_csv(Daisy, "../Extra data/Results/Daisy_impact.csv")
 #### 3 Summary ####

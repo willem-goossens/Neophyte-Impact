@@ -744,11 +744,14 @@ plot
 
 
 # plot together with files
-plot <- ggarrange(EU,ggarrange(Dominance, Frequency, nrow=2, labels=c("b","c")), ncol=2, labels=c("a"), 
-                  font.label=list(size=12), align="hv")
+plot <- ggarrange(EU,ggarrange(Dominance, Frequency, nrow=2, labels=c("b","c"),
+                               font.label=list(size=6)), 
+                  ncol=2, labels=c("a"), 
+                  font.label=list(size=6), align="hv", widths=  c(8,3))
 plot
 
-ggsave("../Images/Dominance_frequency.png", plot= plot, width = 5, height = 7)
+ggsave("../Images/Dominance_frequency_map.png", plot= plot, 
+       width = 9, height = 6, units = "cm", dpi = 600)
 
 ggsave("../Images/Dominance.png", plot= Dominance, width = 5, height = 3.5)
 ggsave("../Images/Frequency.png", plot= Frequency, width = 5, height = 3.5)
