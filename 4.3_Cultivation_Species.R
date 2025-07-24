@@ -3,8 +3,18 @@ rm(list=ls())
 library(tidyverse)
 
 # Load eva and plot data
-eva <- read_csv("../EVA data/fullPlotEva_new.csv", show_col_types = FALSE)
-fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv", show_col_types = FALSE)
+eva <- read_csv("../EVA data/fullPlotEva_4.csv", show_col_types = FALSE)
+fullPlotData <- read_csv("../EVA data/fullPlotData_4.csv", show_col_types = FALSE)
+cult <- readxl::read_excel("../Extra data/Species names/Cultivated species.xlsx")
+species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
+
+# assign species the correct origin
+species <- species_country_status[species_country_status$name %in% cult$Species,]
+species <- species[!(duplicated(species[,c(1,5,8)])),]
+species <- species[, c(1,5,8)]
+
+species$cult <- cult$`Naturalized in non-native range`[match(species$name, cult$Species)]
+species$cult[is.na(species$cult)] <- 0
 
 # Downsample by a factor of 100 if fast is selected
 fast <- F
@@ -16,51 +26,71 @@ if(fast) {
 
 #### 1 Cultivated ####
 # this has to be changed if further
-eva$name[eva$name=="Medicago sativa"] <- "Medicago sativa aggr."
-
 
 # change crop names
 # change crops 
 crops <- eva[grepl("crop ", eva$name, ignore.case = TRUE),]
-# Create the dataframe
-species_data <- data.frame(old = c( "crop vineyard", "crop barley", "crop maize", "crop wheat", "crop potato","crop hops", "crop pea", "crop digitalis", "crop tomato", 
-                                    "crop currant","crop cabbage", "crop bean", "crop onion", "crop asparagus", "crop spelt","crop carrot", "crop rhubarb", "crop clover", 
-                                    "crop tobacco", "crop zucchini", "crop parsley", "crop gladiolus", "crop salsify", "crop radish", "crop lettuce","crop buckwheat"),
-                          new = c("Vitis vinifera", "Hordeum vulgare", "Zea mays", "Triticum aestivum", "Solanum tuberosum", "Humulus lupulus", "Pisum sativum", 
-                                  "Digitalis purpurea", "Solanum lycopersicum", "Ribes rubrum","Brassica oleracea", "Phaseolus vulgaris", "Allium cepa", 
-                                  "Asparagus officinalis", "Triticum aestivum","Daucus carota", "Rheum rhabarbarum", "Trifolium repens", "Nicotiana tabacum", 
-                                  "Cucurbita pepo", "Petroselinum crispum", "Gladiolus grandiflorus", "Tragopogon porrifolius", "Raphanus sativus", "Lactuca sativa",
-                                  "Fagopyrum esculentum"))
+
+# calculated cover 
+cover_total <- eva |> group_by(PlotObservationID) |> summarise(n = sum(`Cover %`))
 
 
-eva$name[eva$name %in% species_data$old] <- species_data$new[match(eva$name[eva$name %in% species_data$old], species_data$old)]
+# get all cultivated species native range
+crops <- eva[eva$name %in%  species$name[(species$Neophyte == "native" | species$Neophyte == "native_intra")],]
+crops$rel <- crops$`Cover %`/cover_total$n[match(crops$PlotObservationID, cover_total$PlotObservationID)]
 
-# create our own vector
-species_vector <- c("Beta vulgaris subsp. vulgaris","Beta vulgaris", "Secale cereale","Triticum aestivum","Pisum sativum", "Solanum tuberosum",
-                    "Hordeum vulgare", "Avena sativa", "Zea mays", "Brassica napus","Oryza sativa","Triticum turgidum","Glycine max",
-                    "Brassica oleracea", "Sorghum bicolor","Helianthus annuus","Arachis hypogaea","Raphanus sativus", "Medicago sativa aggr.",
-                    "Trifolium incarnatum","Phacelia tanacetifolia","Fagopyrum esculentum", "Vitis vinifera", "Hordeum vulgare", "Zea mays", "Triticum aestivum", 
-                    "Solanum tuberosum", "Humulus lupulus", "Pisum sativum", 
-                    "Digitalis purpurea", "Solanum lycopersicum", "Ribes rubrum","Brassica oleracea", "Phaseolus vulgaris", "Allium cepa", 
-                    "Asparagus officinalis", "Triticum aestivum","Daucus carota", "Rheum rhabarbarum", "Trifolium repens", "Nicotiana tabacum", 
-                    "Cucurbita pepo", "Petroselinum crispum", "Gladiolus grandiflorus", "Tragopogon porrifolius", "Raphanus sativus", "Lactuca sativa",
-                    "Fagopyrum esculentum")
-length(unique(species_vector$species))
-
-# check number of observations higher than 50
-x <- eva[eva$name %in% species_vector & eva$`Cover %`>=50,]
+x <- crops[crops$rel >= 0.8,]
+#print(eva[eva$PlotObservationID == "11590",], n =50)
 y<- x |> group_by(name) |> summarise(n=n())
 
-# remove plots from both header and eva
-plots_cultivated <- eva$PlotObservationID[eva$name %in% species_vector & eva$`Cover %`>=50]
-fullPlotData<- fullPlotData[!fullPlotData$PlotObservationID %in% plots_cultivated, ]                    
-eva <- eva[!eva$PlotObservationID %in% plots_cultivated,]
 
-# check status species
-species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
-species_vector <- as.data.frame(species_vector)
-colnames(species_vector)<- "species"
-species_vector$status <- species_country_status$Neophyte[match(species_vector$species, species_country_status$name)]
+# remove
+fullPlotData<- fullPlotData[!fullPlotData$PlotObservationID %in% x$PlotObservationID, ]                    
+eva <- eva[!eva$PlotObservationID %in% x$PlotObservationID,]
+
+
+# get all cultivated species not-native but intra-European
+crops <- eva[eva$name %in% species$name[species$Neophyte == "intra"],]
+crops$rel <- crops$`Cover %`/cover_total$n[match(crops$PlotObservationID, cover_total$PlotObservationID)]
+
+x <- crops[crops$rel >=0.6,]
+y<- x |> group_by(name) |> summarise(n=n())
+
+# remove
+fullPlotData<- fullPlotData[!fullPlotData$PlotObservationID %in% x$PlotObservationID, ]  
+eva <- eva[!eva$PlotObservationID %in% x$PlotObservationID,]
+
+
+# get all cultivated species not-native extra-Europea
+crops <- eva[eva$name %in% species$name[species$cult=="0" & species$Neophyte == "extra"],]
+crops$rel <- crops$`Cover %`/cover_total$n[match(crops$PlotObservationID, cover_total$PlotObservationID)]
+
+x <- crops[crops$rel >=0.4,]
+y<- x |> group_by(name) |> summarise(n=n())
+
+# remove
+fullPlotData<- fullPlotData[!fullPlotData$PlotObservationID %in% x$PlotObservationID, ]  
+eva <- eva[!eva$PlotObservationID %in% x$PlotObservationID,]
+
+
+
+# get all cultivated species not-native extra-Europea
+crops <- eva[eva$name %in% species$name[species$cult=="1" & species$Neophyte == "extra"],]
+crops$rel <- crops$`Cover %`/cover_total$n[match(crops$PlotObservationID, cover_total$PlotObservationID)]
+
+x <- crops[crops$rel >=0.6,]
+y<- x |> group_by(name) |> summarise(n=n())
+
+# remove
+fullPlotData<- fullPlotData[!fullPlotData$PlotObservationID %in% x$PlotObservationID, ]  
+eva <- eva[!eva$PlotObservationID %in% x$PlotObservationID,]
+
+
+
+fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
+fullPlotData <- fullPlotData[fullPlotData$Date >= "1980-01-01",]
+
+eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 
 
 #### 2 Changes ####
@@ -70,11 +100,9 @@ which(eva$name %in% remove)
 
 eva <- eva[!eva$name %in% remove,]
 
-
-#write_csv(eva, "../EVA data/fullPlotEva_new.csv")
-#write_csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
+write_csv(eva, "../EVA data/fullPlotEva_new.csv")
+write_csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
 #write_csv(y, "../Extra data/Intermediate/removed_cultivated.csv")
-
 
 #### 3 Time ####
 # here again check time
@@ -203,7 +231,15 @@ mu <- plyr::ddply(Daisy_plot, "Neophyte", summarise, grp.mean=median(impact))
 
 plot_daisie <- ggplot(Daisy_plot, aes(x= impact, fill= Neophyte))+
   geom_histogram(alpha= 0.75)+
-  geom_vline(data= mu, aes(xintercept=grp.mean, color= Neophyte),linetype="dashed", size=2)+
+  # Thick white line for halo
+  geom_rect(data = mu,
+            aes(xmin = grp.mean - 0.05, xmax = grp.mean + 0.05,
+            ymin = -Inf, ymax = Inf, fill=Neophyte),
+            fill = "white", alpha = 0.2)
+  
+  # Coloured dashed line overlay
+  geom_vline(data = mu, aes(xintercept = grp.mean, color = Neophyte),
+             size = 1, linetype = "longdash") +
   ggpubr::theme_pubr()+
   xlab("Overall species impact")+
   ylab("Count")+
@@ -217,7 +253,44 @@ plot_daisie
 #ggsave("../Images/Impact_Daisie.png", plot= plot, width = 5, height = 3)
 
 #write_csv(Daisy, "../Extra data/Results/Daisy_impact.csv")
-#### 3 Summary ####
+
+## 4.3 GloNAF
+#glonaf_species<- readxl::read_excel("../Extra data/GLONAF/Taxon_x_List_GLONAF.xlsx")
+glonaf_regions<- read_csv("../Extra data/GLONAF/Region_GloNAF_vanKleunenetal2018Ecology.csv", show_col_types = FALSE)
+
+glonaf_species <- read_excel("../Extra data/GLONAF/glonaf_taxon_wcvp.xlsx")
+glonaf_region <- read_excel("../Extra data/GLONAF/glonaf_region.xlsx")
+glonaf_status <- read_excel("../Extra data/GLONAF/glonaf_flora2.xlsx")
+
+glonaf_region <- glonaf_region[glonaf_region$id %in% glonaf_regions$region_id,]
+
+regions_include <- glonaf_regions$region_id[glonaf_regions$tdwg1_name=="Europe"]
+regions_include <- c(regions_include, 889, 349)
+
+glonaf_species <- left_join(glonaf_status, glonaf_species ,by= c("taxon_wcvp_id"="id", "family_wcvp"="family_wcvp"))
+glonaf_species <- left_join(glonaf_species, glonaf_regions, by = c("region_id"="region_id"))
+europe_species <- glonaf_species[glonaf_species$region_id %in% regions_include,]
+
+glonaf_invasives <- europe_species[europe_species$status=="Invasive",]
+
+eva <- read_csv("../EVA data/fullPlotEVA_new.csv", show_col_types=F)
+fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv", show_col_types = FALSE)
+species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
+species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
+
+# Only observation ID and Region
+fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
+# Right join to keep only species present in fullplot (otherwise a lot of NAs)
+eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
+# Join eva and classification
+eva <- left_join(eva, species_country_status[, -c(2:4,6:7)], by= c("Region"= "Region", "name"= "name"))
+
+eva_names <- unique(eva[, c(6,26,25)])
+eva_names$glonaf_name <- glonaf_species$taxon_corrected[match(gsub(" aggr.","",eva_names$name), glonaf_species$taxon_corrected)]
+colnames(glonaf_invasives)
+eva_names <- left_join(eva_names, glonaf_invasives[, c(6,7,12,23)], by = c("glonaf_name"="taxon_corrected","Region"="name"))
+
+#### 5 Summary ####
 # data should be complete from now on, we calculate the number of species in our dataset with eive and div values
 colnames(eva)
 sum(!is.na(eva$eive_name))/ (length(eva$eive_name))

@@ -2159,3 +2159,66 @@ p
   ```
   
   
+  #### CULTIVATED ####
+  
+  # create our own vector
+  species_vector <- c("Beta vulgaris subsp. vulgaris","Beta vulgaris", "Secale cereale","Triticum aestivum","Pisum sativum", "Solanum tuberosum",
+                      "Hordeum vulgare", "Avena sativa", "Zea mays", "Brassica napus","Oryza sativa","Triticum turgidum","Glycine max",
+                      "Brassica oleracea", "Sorghum bicolor","Helianthus annuus","Arachis hypogaea","Raphanus sativus", "Medicago sativa aggr.",
+                      "Trifolium incarnatum","Phacelia tanacetifolia","Fagopyrum esculentum", "Vitis vinifera", "Hordeum vulgare", "Zea mays", "Triticum aestivum", 
+                      "Solanum tuberosum", "Humulus lupulus", "Pisum sativum", 
+                      "Digitalis purpurea", "Solanum lycopersicum", "Ribes rubrum","Brassica oleracea", "Phaseolus vulgaris", "Allium cepa", 
+                      "Asparagus officinalis", "Triticum aestivum","Daucus carota", "Rheum rhabarbarum", "Trifolium repens", "Nicotiana tabacum", 
+                      "Cucurbita pepo", "Petroselinum crispum", "Gladiolus grandiflorus", "Tragopogon porrifolius", "Raphanus sativus", "Lactuca sativa",
+                      "Fagopyrum esculentum")
+  
+  species_vector <- species_vector[!duplicated(species_vector)]
+  
+  # which should be looked at strictly
+  true_crops <- c(
+    "Beta vulgaris subsp. vulgaris",  # cultivated beet
+    "Beta vulgaris",                  # general beet (likely cultivated form)
+    "Secale cereale",                 # rye
+    "Triticum aestivum",             # wheat
+    "Pisum sativum",                 # pea
+    "Solanum tuberosum",             # potato
+    "Hordeum vulgare",               # barley
+    "Avena sativa",                  # oat
+    "Zea mays",                      # maize
+    "Brassica napus",                # rapeseed
+    "Oryza sativa",                  # rice
+    "Triticum turgidum",             # durum wheat
+    "Glycine max",                   # soybean
+    "Sorghum bicolor",               # sorghum
+    "Helianthus annuus",             # sunflower
+    "Arachis hypogaea",              # peanut
+    "Raphanus sativus",              # radish
+    "Medicago sativa aggr.",         # alfalfa (aggr. likely includes mostly cultivated forms)
+    "Trifolium incarnatum",          # crimson clover (typically sown)
+    "Phacelia tanacetifolia",        # phacelia (sown cover crop)
+    "Fagopyrum esculentum",          # buckwheat
+    "Solanum lycopersicum",          # tomato
+    "Phaseolus vulgaris",            # bean
+    "Allium cepa",                   # onion
+    "Rheum rhabarbarum",             # rhubarb
+    "Nicotiana tabacum",             # tobacco
+    "Cucurbita pepo",                # zucchini / pumpkin
+    "Gladiolus grandiflorus",        # gladiolus
+    "Lactuca sativa"                 # lettuce
+  )
+  
+  # looser regulations
+  semi_crops <- c(
+    "Vitis vinifera",               # grapevine
+    "Humulus lupulus",              # hops
+    "Ribes rubrum",                 # red currant
+    "Brassica oleracea",            # wild cabbage relatives
+    "Asparagus officinalis",        # asparagus
+    "Daucus carota",                # wild carrot
+    "Trifolium repens",             # white clover
+    "Petroselinum crispum",         # parsley
+    "Tragopogon porrifolius"        # salsify
+  )
+  
+  
+  

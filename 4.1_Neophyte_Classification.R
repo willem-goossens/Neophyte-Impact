@@ -34,9 +34,9 @@ veronika_problems <- veronika_problems[!veronika_problems$Conflict=="no",]
 
 ###### 2.2 Eva and Header #####
 # Load and make smaller to conocate
-fullPlotEva <- read_csv("../EVA data/fullPlotEva_new.csv", show_col_types = FALSE)
+fullPlotEva <- read_csv("../EVA data/fullPlotEva_4.csv", show_col_types = FALSE)
 eva2<- fullPlotEva[,c("PlotObservationID","species", "irena","Matched concept", "name")]
-fullPlotData<- read_csv("../EVA data/fullPlotData_new.csv", show_col_types = FALSE)
+fullPlotData<- read_csv("../EVA data/fullPlotData_4.csv", show_col_types = FALSE)
 fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 
 
@@ -49,7 +49,7 @@ species_country <- read_csv("../EVA data/country_species_new.csv", show_col_type
 eva_country<- left_join(eva2, fullPlot2)
 # Join eva_country with neophyte data from Irena --> gives all alien species per country
 eva_country_neophyte<- left_join(eva_country[,-c(2:4)], species_country, by= c("Region"= "Region", "name"="name"))
-eva_country_neophyte<- subset(eva_country_neophyte, select=-c(n, SeqID))
+eva_country_neophyte<- subset(eva_country_neophyte, select=-c(n))
 # check columns
 head(eva_country_neophyte)
 colnames(eva_country_neophyte)[8]<- "Neophyte"
@@ -78,7 +78,7 @@ Poland <- unique(sort(neophyteDefEU$name[neophyteDefEU$Region=="Poland"]))
 #setdiff(Poland2, Poland)
 
 
-colnames(species_country)[9] <- "Neophyte"
+colnames(species_country)[8] <- "Neophyte"
 
 # change some species with Veronika
 for(i in 1: nrow(veronika_aliens)){
@@ -88,39 +88,6 @@ i=1
 # change some species with Veronika
 for(i in 1: nrow(veronika_problems)){
   species_country$Neophyte[species_country$Region==veronika_problems$Region[i] & species_country$name==veronika_problems$name[i]] <- veronika_problems$`Aggregated.status.VK (with respect to a given region)`[i]
-}
-
-
-intra_analysis=T
-if(intra_analysis){
-  # Check whether some intra_EU species are native in other regions
-  native_names<-unique(species_country$species[species_country$Neophyte=="native"])
-  intra_EU <- unique(species_country$species[species_country$Neophyte=="intra"])
-  extra_EU <- unique(species_country$species[species_country$Neophyte=="extra"])
-  
-  sum(native_names %in% intra_EU) #818 (before around 848) (823) --> 789
-  native_intra<- native_names[native_names %in% intra_EU]
-  
-  
-  # Here we make a new dataframe with those species that are intra in a region in europe as native_intra
-  # to check whether the effect is just species dependent
-  eva2<- eva_country_neophyte
-  eva2$Neophyte[eva2$Neophyte=="native" & eva2$species %in% native_intra]<-"native_intra"
-  length(unique(eva2$species[eva2$Neophyte=="extra"]))
-  length(unique(eva2$species[eva2$Neophyte=="intra"]))
-  length(unique(eva2$species[eva2$Neophyte=="native"]))  
-  length(unique(eva2$species[eva2$Neophyte=="native_intra"])) 
-  
-  # check whether the classification was successful for all species
-  sum(unique(eva2$species[eva2$Neophyte=="native"]) %in% intra_EU)
-  
-  country_neophyte <- eva2 |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
-  table(country_neophyte['Neophyte'])
-  eva_country_neophyte<- eva2
-  eva2[is.na(eva2$Neophyte) & eva2$name != "Plant",]
-  species_country$Neophyte[species_country$Neophyte=="native" & species_country$species %in% native_intra]<-
-    "native_intra"
-  #species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
 }
 
 ###### 2.3 Crops ######
@@ -133,8 +100,46 @@ species_data <- data.frame(old = c( "crop vineyard", "crop barley", "crop maize"
                                    "Cucurbita pepo", "Petroselinum crispum", "Gladiolus grandiflorus", "Tragopogon porrifolius", "Raphanus sativus", "Lactuca sativa",
                                    "Fagopyrum esculentum"))
 
-
 species_country$name[species_country$name %in% species_data$old] <- species_data$new[match(species_country$name[species_country$name %in% species_data$old], species_data$old)]
+
+
+intra_analysis=T
+if(intra_analysis){
+  # Check whether some intra_EU species are native in other regions
+  native_names<-unique(species_country$name[species_country$Neophyte=="native"])
+  #native_names <- as.data.frame(native_names)
+  intra_EU <- unique(species_country$name[species_country$Neophyte=="intra"])
+  extra_EU <- unique(species_country$name[species_country$Neophyte=="extra"])
+  
+  sum(native_names %in% intra_EU) #818 (before around 848) (823) --> 789
+  native_intra<- native_names[native_names %in% intra_EU]
+  
+  
+  # Here we make a new dataframe with those species that are intra in a region in europe as native_intra
+  # to check whether the effect is just species dependent
+  eva2<- eva_country_neophyte
+  eva2$Neophyte[eva2$Neophyte=="native" & eva2$name %in% native_intra]<-"native_intra"
+  length(unique(eva2$name[eva2$Neophyte=="extra"]))
+  length(unique(eva2$name[eva2$Neophyte=="intra"]))
+  length(unique(eva2$name[eva2$Neophyte=="native"]))  
+  length(unique(eva2$name[eva2$Neophyte=="native_intra"])) 
+  
+  # check whether the classification was successful for all species
+  sum(unique(eva2$name[eva2$Neophyte=="native"]) %in% intra_EU)
+  
+  country_neophyte <- eva2 |> distinct(Region, Neophyte, species) %>% group_by(Region, Neophyte) |> summarise(n=n())
+  table(country_neophyte['Neophyte'])
+  eva_country_neophyte<- eva2
+  eva2[is.na(eva2$Neophyte) & eva2$name != "Plant",]
+  species_country$Neophyte[species_country$Neophyte=="native" & species_country$name %in% native_intra]<-
+    "native_intra"
+  status <- eva2 |>  group_by( Region,name,Neophyte) |> summarise(n=n())
+  #species_country_status<- read_csv("country_species_ESy.csv", show_col_types = FALSE)
+}
+
+test <- (species_country|> group_by(name, Neophyte) |>summarise(n=n()))
+
+nrow(test[test$Neophyte=="intra",])
 
 # check for duplicats
 dup <- species_country[duplicated(species_country[,c(1:5)]) |duplicated(species_country[,c(1:5)], fromLast=T), ]
@@ -145,6 +150,15 @@ species_country <- species_country[!duplicated(species_country[,c(1,5)]),]
 test <- read.csv("../EVA data/country_species_ESy_1980.csv")
 setdiff(species_country$name, test$name)
 #write_csv(species_country, "../EVA data/country_species_new.csv")
+
+
+
+
+
+
+
+
+
 
 # the remainder is not necessary anymore, we have delineated all species
 further= F

@@ -10,7 +10,7 @@ Based on the best model as determined in the baseModelExploration.qmd we assess 
 # 1 START
 We first clean the environment.
 ```{r, echo=F, warning=F, message=FALSE}
-#rm(list=ls())
+rm(list=ls())
 gc()
 ```
 
@@ -36,6 +36,7 @@ For complete data, load "I:/imporance.RData"
 We load the eva data with the species per plot
 ```{r}
 eva <- read_csv("../EVA data/fullPlotEva_new.csv",show_col_types = FALSE)
+eva <- eva[!eva$name=="Plant",]
 ```
 
 
@@ -43,7 +44,7 @@ Load filtered Data containing the richness and indicator values for each plot. I
 ```{r}
 fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv",show_col_types = FALSE)
 fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
-fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
+fullPlotData <- fullPlotData[fullPlotData$Date >= "1980-01-01",]
 
 fast <- F
 if(fast) {
@@ -80,7 +81,7 @@ fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 # Right join to keep only species present in fullplot (otherwise a lot of NAs)
 eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
 # Join eva and classification
-eva_country_neophyte<- left_join(eva, species_country_status[, -c(2:4,6:8)], by= c("Region"= "Region", "name"= "name"))
+eva_country_neophyte<- left_join(eva, species_country_status[, -c(2:4,6:7)], by= c("Region"= "Region", "name"= "name"))
 # Look at how much from every type are present
 table(eva_country_neophyte$Neophyte)
 eva <- eva_country_neophyte
@@ -177,8 +178,8 @@ taxaForCoverClassAnalysis <- plotsPerSpecies[plotsPerSpecies$numberOfPlots >=
 fullPlotData <- fullPlotData %>% 
     dplyr::select(PlotObservationID, ENS0, Area, 
            EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
-           DistSeverity.sqrt , Soil.Disturbance.sqrt , 
-           Grazing.Pressure.sqrt , Mowing.Frequency.sqrt , 
+           DistSeverity , Soil.Disturbance , 
+           Grazing.Pressure , Mowing.Frequency , 
            Latitude, Longitude, Dataset, chelsaP, hfp, elev)
 ```
 
@@ -274,10 +275,10 @@ model<-  n_native ~
               s(EIVEresR, bs = 'tp') +
               s(EIVEresL, bs = 'tp') +
               s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(DistSeverity, bs = 'tp') +
+              s(Soil.Disturbance, bs = 'tp')+
+              s(Grazing.Pressure, bs = 'tp')+
+              s(Mowing.Frequency, bs = 'tp') +
               s(hfp, bs="tp")+
               s(chelsaP, bs="tp")+
               s(elev, bs='tp')+
@@ -362,13 +363,14 @@ model2<-  n_extra ~
               s(EIVEresR, bs = 'tp') +
               s(EIVEresL, bs = 'tp') +
               s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(DistSeverity, bs = 'tp') +
+              s(Soil.Disturbance, bs = 'tp')+
+              s(Grazing.Pressure, bs = 'tp')+
+              s(Mowing.Frequency, bs = 'tp') +
               s(hfp, bs="tp")+
               s(chelsaP, bs="tp")+
-              s(elev, bs='tp')
+              s(elev, bs='tp')+
+              s(Latitude, Longitude, bs = 'tp')
 
 # run gamm
 mod2 <- bam(model2, family= nb(), data = fullPlotData,  method = 'fREML',  discrete=T, nthreads=4)
@@ -485,13 +487,14 @@ model3<-  n_intra ~
               s(EIVEresR, bs = 'tp') +
               s(EIVEresL, bs = 'tp') +
               s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(DistSeverity, bs = 'tp') +
+              s(Soil.Disturbance, bs = 'tp')+
+              s(Grazing.Pressure, bs = 'tp')+
+              s(Mowing.Frequency, bs = 'tp') +
               s(hfp, bs="tp")+
               s(chelsaP, bs="tp")+
-              s(elev, bs='tp')
+              s(elev, bs='tp')+
+              s(Latitude, Longitude, bs = 'tp')
 
 # run gamm
 mod3 <- bam(model3, family= nb(), data = fullPlotData,  method = 'fREML',  discrete=T, nthreads=4)
@@ -546,7 +549,7 @@ plot(z_intra)
 ## 3.1 Variance
 ```{r}
 library(rlist)
-library(ggsci)
+#library(ggsci)
 
 # load data
 load(file = "I:/impact_new.Rdata") 
@@ -575,15 +578,16 @@ plot_data_extra$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "E
 
 
 # classify in types
-plot_data$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,1, 5,6,1)
+plot_data$type <- c(1,3,4,4,3,3,5,5,5,5,5,3,2,7,6,2)
 plot_data$type <- as.factor(plot_data$type)
 colnames(plot_data)[3] <- c("type")
 plot_data <- plot_data %>% mutate(type = factor(type, 
                           levels = c("1", "2","3","4","6","5"),
-                          labels = c("Plot", 
-                                     "Environment",
+                          labels = c("Plot size", 
+                                     "Geography",
+                                     "Other environmental variables",
                                      "Soil nitrogen and reaction",
-                                     "Disturbance",
+                                     "Disturbance variables",
                                      "Extra-European alien",
                                      "Intra-European alien"
                                      )))
@@ -595,13 +599,14 @@ plot_data_intra$type <- as.factor(plot_data_intra$type)
 colnames(plot_data_intra)[3] <- c("type")
 plot_data_intra <- plot_data_intra %>% mutate(type = factor(type, 
                           levels = c("1", "2","3","4","6","5"),
-                          labels = c("Plot", 
-                                     "Environment",
+                          labels = c("Plot size", 
+                                     "Geography",
+                                     "Other environmental variables",
                                      "Soil nitrogen and reaction",
-                                     "Disturbance",
+                                     "Disturbance variables",
                                      "Extra-European alien",
                                      "Intra-European alien"
-                                     )))
+                                    )))
 plot_data_intra$Neophyte <- "intra"
 
 
@@ -611,10 +616,11 @@ plot_data_extra$type <- as.factor(plot_data_extra$type)
 colnames(plot_data_extra)[3] <- c("type")
 plot_data_extra <- plot_data_extra %>% mutate(type = factor(type, 
                           levels = c("1", "2","3","4","6","5"),
-                          labels = c("Plot", 
-                                     "Environment",
+                          labels = c("Plot size", 
+                                     "Geography",
+                                     "Other environmental variables",
                                      "Soil nitrogen and reaction",
-                                     "Disturbance",
+                                     "Disturbance variables",
                                      "Extra-European alien",
                                      "Intra-European alien"
                                      )))
@@ -1116,9 +1122,9 @@ EU <-ggplot() +
     guide = "none"            # Remove the legend for ocean depth
   ) +
   new_scale_fill() + 
-  geom_sf(data = world, fill = NA, color = "black", size = 0.2, alpha=0.2) +
+  geom_sf(data = world, fill = NA, color = "grey", size = 0.2, alpha=0.2) +
   # Add country borders
-  geom_sf(data = medRegions, fill = "antiquewhite", color = "black", size = 0.2, alpha= 0.5) +
+  geom_sf(data = medRegions, fill = "antiquewhite", color = "grey", size = 0.2, alpha= 0.5) +
   new_scale_fill() +
   # Plot occurrences
   geom_raster(data = grid_df, aes(X, Y, fill = mean), alpha= 0.8) +
@@ -1126,7 +1132,7 @@ EU <-ggplot() +
                        breaks = c(0,0.01, 0.1 ,1,10,100),
                        labels = c("0","0.01","0.1", "1", "10", "100"))+
   # Add country borders
-  geom_sf(data = medRegions, fill = NA, color = "black", size = 0.2, alpha= 0.5)+
+  geom_sf(data = medRegions, fill = NA, color = "grey", size = 0.2, alpha= 0.5)+
   # Define the map extent using the bounding box
   coord_sf(xlim = c(map_bbox[1], map_bbox[2]), 
            ylim = c(map_bbox[3], map_bbox[4]), 
@@ -1148,7 +1154,8 @@ EU <-ggplot() +
     legend.title = element_text(size = 12),
     legend.text = element_text(size = 8),
     legend.key.height = unit(0.6, "cm"),
-    legend.key.width = unit(0.6, "cm")
+    legend.key.width = unit(0.6, "cm"),
+    legend.margin = margin(0.5, 0.0, 0.0, 0.0, "cm"),
   )+
   # Theme customization
   labs(fill = expression(bold("Alien plant\nprevalence [%]")),
@@ -1157,7 +1164,7 @@ EU <-ggplot() +
 
 EU
 
-ggsave(EU, file= "../Images/Degree_invasion_EU.png", width=10, height=7)
+ggsave(EU, file= "../Images/Degree_invasion_EU.png", width=8, height=6)
 ```
 
 

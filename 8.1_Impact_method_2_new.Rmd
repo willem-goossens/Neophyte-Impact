@@ -38,8 +38,8 @@ correctArea<- F
 ## 1.2 Data
 Load eva and plot data
 ```{r, warnings=F, message=F}
-eva <- read_csv("../EVA data/fullPlotEva_ESy_1980.csv")
-fullPlotData <- read_csv("../EVA data/fullPlotData_EUNIS_1980.csv")
+eva <- read_csv("../EVA data/fullPlotEva_new.csv")
+fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv")
 
 # habitat choice
 habitats <- unique(fullPlotData$habitat)
@@ -54,9 +54,9 @@ if(chose_eunis){
 
 Downsample by a factor of 100 if fast is selected
 ```{r}
-fast <- T
+fast <- F
 if(fast) {
-  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.999,]
+  fullPlotData <- fullPlotData[runif(length(fullPlotData$PlotObservationID)) > 0.99,]
   eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 }
 ```
@@ -68,9 +68,9 @@ Load the neophyte definitions:
 # Data on which species are neophytes
 native_intra_analysis=F
 if(native_intra_analysis){
-  species_country_status<- read_csv("../EVA data/country_species_ESy_1980.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
 } else{
-  species_country_status<- read_csv("../EVA data/country_species_ESy_1980.csv", show_col_types = FALSE)
+  species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
   species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
 }
 
@@ -91,7 +91,7 @@ fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 # Right join to keep only species present in fullplot (otherwise a lot of NAs)
 eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
 # Join eva and classification
-eva<- left_join(eva, species_country_status[, -c(2:4,6:8)], by= c("Region"= "Region", "name"= "name"))
+eva<- left_join(eva, species_country_status[, -c(2:4,6:7)], by= c("Region"= "Region", "name"= "name"))
 # Look at how much from every type are present
 table(eva$Neophyte)
 ```
@@ -103,6 +103,7 @@ table(eva$Neophyte)
 Reduce EVA to a smaller dataset to accelerate computations.    
 Count the number of plots in which the species in the dataset exist.  
 ```{r, message=F}
+fast =T
 if(fast) {
   # downsize dataset
   reducedEva <- eva |> select(PlotObservationID, name, `Cover %`, 
@@ -163,12 +164,12 @@ if(fast) {
   round(end-begin)
   
   parallel::stopCluster(cl = my.cluster)
-  #write.csv(plotsPerSpecies, "speciesDominance.csv")
+  write.csv(plotsPerSpecies, "speciesDominance.csv")
 } else {
   if(native_intra_analysis){
   plotsPerSpecies <- read.csv("../Results/speciesDominance_1980_native_intra.csv")
   }else{
-  plotsPerSpecies<- read.csv("../Results/speciesDominance_1980.csv")
+  plotsPerSpecies<- read.csv("../Results/speciesDominance.csv")
   }
 }
 ```
@@ -204,7 +205,8 @@ reducedEva_official <- reducedEva|> group_by(PlotObservationID, name, Neophyte) 
 ```{r}
 head(fullPlotData)
 # Perform PCA with scaled (i.e. unit variance) variables on all EIVE and DIV variables in base model + chelsa P and hfp (add 54 for elevation)
-PCA<- prcomp(fullPlotData[, c(26:31, 33:35, 51,53)  ], scale=T)
+PCA<- prcomp(fullPlotData[, c(16:20, 26,28:30, 41,43,44)  ], scale=T)
+cor.test(fullPlotData$chelsaT, fullPlotData$EIVEresT)
   
 # get amount of variance explained by top 4 axes
 eig.val <- get_eigenvalue(PCA)
@@ -224,14 +226,14 @@ fullPlotData <- cbind(fullPlotData, PCA)
 ```{r, meassage=F}
 # The name of the first species (to test the function)
 plantName = allPlants$names[1]
-plantStatus= allPlants$Neophyte[1]
+plantStatus= allPlants$neophyte[1]
 
 # Function to compute the impact for each species, so we only need the plant name as input
 computePlantImpact <- function(plantName, plantStatus) {
   
   
   # Copy the full dataset without aberrant totalCover
-  tmpFullPlotData <- fullPlotData %>% filter(totalCover <=900)
+  tmpFullPlotData <- fullPlotData %>% filter(totalCover <=500)
   reducedEva <- reducedEva_official
   reducedEva <- reducedEva[reducedEva$PlotObservationID %in% tmpFullPlotData$PlotObservationID,]
   
@@ -239,8 +241,8 @@ computePlantImpact <- function(plantName, plantStatus) {
   tmpFullPlotData <- tmpFullPlotData %>% 
     select(PlotObservationID, numberOfVascularPlantSpecies, Area, 
            EIVEresM, EIVEresN, EIVEresR, EIVEresL, EIVEresT, 
-           DistSeverity.sqrt, Soil.Disturbance.sqrt, 
-           Grazing.Pressure.sqrt, Mowing.Frequency.sqrt, 
+           DistSeverity, Soil.Disturbance, 
+           Grazing.Pressure, Mowing.Frequency, 
            Latitude, Longitude, Dataset, chelsaP, hfp, totalCover, PC1, PC2, PC3,PC4, ENS0, elev)
   
   # Get the indices of the plant in the eva dataset
@@ -314,18 +316,13 @@ computePlantImpact <- function(plantName, plantStatus) {
 
   # If species is not present:
   tmpFullPlotData$speciesCover[is.na(tmpFullPlotData$speciesCover)] <- 0.0
-  tmpFullPlotData$totalCover[is.na(tmpFullPlotData$speciesCover)] <- 100.0
+  #tmpFullPlotData$totalCover[is.na(tmpFullPlotData$speciesCover)] <- 100.0
 
   # Exclude all plots which have 0 total cover
   tmpFullPlotData <- tmpFullPlotData[tmpFullPlotData$totalCover >0,] 
   
   # Do SR - 1 for all plots in which the species is present
   tmpFullPlotData$ENS0 <- tmpFullPlotData$ENS0 - tmpFullPlotData$plantOccurs
-  
-  # Correct area: if true we calculate the area that is reserved for the other plant species. 
-  if(correctArea) {
-    tmpFullPlotData$Area <- tmpFullPlotData$Area*(1.0 - tmpFullPlotData$speciesCover/tmpFullPlotData$totalCover)
-  }
   
   # There is a numerical problem in the bam function if we provide empty plots...
   tmpFullPlotData <- tmpFullPlotData %>% filter(numberOfVascularPlantSpecies > 0, Area > 0)
@@ -354,10 +351,10 @@ computePlantImpact <- function(plantName, plantStatus) {
               s(EIVEresR, bs = 'tp') +
               s(EIVEresL, bs = 'tp') +
               s(EIVEresT, bs = 'tp') +
-              s(DistSeverity.sqrt, bs = 'tp') +
-              s(Soil.Disturbance.sqrt, bs = 'tp')+
-              s(Grazing.Pressure.sqrt, bs = 'tp')+
-              s(Mowing.Frequency.sqrt, bs = 'tp') +
+              s(DistSeverity, bs = 'tp') +
+              s(Soil.Disturbance, bs = 'tp')+
+              s(Grazing.Pressure, bs = 'tp')+
+              s(Mowing.Frequency, bs = 'tp') +
               s(Latitude, Longitude, bs = 'tp') +
               s(chelsaP, bs='tp')+
               s(hfp, bs='tp')+
@@ -426,6 +423,7 @@ computePlantImpact <- function(plantName, plantStatus) {
 ## 2.2 Impact
 Use foreach to speed up computations
 ```{r}
+fast=F
 if(fast){
 
 # prepare parallel
@@ -449,8 +447,6 @@ round(end-begin, 2)
 
 parallel::stopCluster(cl = my.cluster)
 }
-
-
 ```
 
 
@@ -459,6 +455,7 @@ parallel::stopCluster(cl = my.cluster)
 
 Run this if all data, then foreach does not work
 ```{r}
+fast= T
 if(!fast){
 
 allPlantsImpact <-  data.frame(taxa = character(), Estimate = numeric(), StdErr = numeric(), `zValue` = numeric(), pr = numeric(), numberOfPlots = integer(), Neophyte= character())
@@ -474,7 +471,7 @@ round(end-begin)
 x<- allPlantsImpact
 
 #write.csv(x, 'Impact2_ENS0.csv')
-x <- read_csv('I:/Impact_1980_new.csv')
+
 y <- read_csv('I:/Impact_1980.csv')
 all.equal(x, y)
 }
@@ -482,10 +479,14 @@ all.equal(x, y)
 
 Remove genus level observations
 ```{r}
+x <- read_csv('I:/Impact_1980_new_again.csv')
 # remove genus data
 check <-vegdata::parse.taxa(unique(x$taxa))
 genus <- check[is.na(check$epi1),]
 x <- x[!x$taxa %in% genus$original,]
+
+test <- unique(x[, c(1,8)])
+test |> group_by(Neophyte) |> summarise(n=n())
 ```
 
 
@@ -527,7 +528,7 @@ TukeyHSD(ranked)
 
 ```{r}
 # load phylogenetic data
-phylo <- read_csv("../Extra data/Species names/phylo.csv")
+phylo <- read_csv("../Extra data/Species names/phylo.csv",show_col_types = FALSE)
 x[, c(14,15)] <- phylo[match(x$taxa, phylo$name), 6:7]
 colnames(x)[14:15]<- c("genus","family")
 
@@ -555,34 +556,34 @@ successful_runs <- 0
 
 # Run until we get 1000 successful models
 while (successful_runs < 1000) {
-# sample natives
-natives <- x[x$Neophyte=="native",]
-natives <- natives[sample(nrow(natives),1000, replace=F),]
-# sample intras
-intras <- x[x$Neophyte=="intra",]
-intras <- intras[sample(nrow(intras),1000, replace=T),]
-# sample extras
-extras <- x[x$Neophyte=="extra",]
-extras <- extras[sample(nrow(extras),1000, replace=T),]
-all <- rbind(natives, intras, extras)
-
-# model again
-model <- lmer((RelDiff) ~ -1+ Neophyte+class + (1|family/genus), data= all)
-
-summary(model)
-
-if(isSingular(model)) next
-
-# plot(DHARMa::simulateResiduals(model))
-
-# check pairwise differences
-emmeans_results <- emmeans::emmeans(model, pairwise ~ Neophyte)
-# save in data frame
-sum <- summary(emmeans_results)$contrasts
-# add to large table
-result <- rbind(result, sum)
-
-successful_runs <- successful_runs +1 
+  # sample natives
+  natives <- x[x$Neophyte=="native",]
+  natives <- natives[sample(nrow(natives),200, replace=F),]
+  # sample intras
+  intras <- x[x$Neophyte=="intra",]
+  intras <- intras[sample(nrow(intras),200, replace=T),]
+  # sample extras
+  extras <- x[x$Neophyte=="extra",]
+  extras <- extras[sample(nrow(extras),200, replace=T),]
+  all <- rbind(natives, intras, extras)
+  
+  # model again
+  model <- lmer((RelDiff) ~ -1+ Neophyte+class + (1|family/genus), data= all)
+  
+  summary(model)
+  
+  if(isSingular(model)) next
+  
+  # plot(DHARMa::simulateResiduals(model))
+  
+  # check pairwise differences
+  emmeans_results <- emmeans::emmeans(model, pairwise ~ Neophyte)
+  # save in data frame
+  sum <- summary(emmeans_results)$contrasts
+  # add to large table
+  result <- rbind(result, sum)
+  
+  successful_runs <- successful_runs +1 
 }
 
 
@@ -617,7 +618,7 @@ cover_class <- unique(x$class)
 cover_class
 
 # if not for loop, choose i value
-i=5
+i=1
 
 # can be done with for loop, but than it is hard to change some parameters so better not to
 for(i in 1:6){
@@ -629,7 +630,7 @@ index <- case_when(
   i == 3 ~ "Medium cover"  ,
   i == 4 ~ "High cover"  ,
   i == 5~ "Very high cover" ,
-  i == 6~ "Dominant cover")
+  i == 6~ "Extremely high cover")
   
 # downsize dataset 
 Dataset <- x[x$class==cover_class[i],]
@@ -726,19 +727,25 @@ ResultLow_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/le
 ResultMedium_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
 ResultHigh_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
 ResultVery_high_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
-ResultDominant_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
+ResultExtremely_high_cover |> group_by(contrast) |> summarise(sign = sum(p.value < 0.05)/length(p.value))
  
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="0%-1%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
 plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="1%-10%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
 plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="10%-30%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
 plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="30%-50%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
 plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="50%-70%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
 plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 model <- lmer(RelDiff ~ Neophyte + (1|family/genus), x[x$class=="70%-100%",])
+emmeans::emmeans(model, pairwise ~ Neophyte)
 plot(emmeans::emmeans(model, pairwise ~ Neophyte))
 ```
 
@@ -757,7 +764,7 @@ index <- case_when(
   i == 3 ~ "Medium cover"  ,
   i == 4 ~ "High cover"  ,
   i == 5~ "Very high cover" ,
-  i == 6~ "Dominant cover")
+  i == 6~ "Extremely high cover")
 
 index2 <- case_when(
   i == 1  ~ "]0%-1%]",  
@@ -821,11 +828,11 @@ p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
 
 
 
-
+Loop for 1 and 2
 ```{r}
 # if not for loop, choose i value
 
-i=5
+i=1
 # can be done with for loop, but than it is hard to change some parameters so better not to
 #for(i in 1:6){
   
@@ -836,7 +843,185 @@ index <- case_when(
   i == 3 ~ "Medium cover"  ,
   i == 4 ~ "High cover"  ,
   i == 5~ "Very high cover" ,
-  i == 6~ "Dominant cover")
+  i == 6~ "Extremely high cover")
+
+index2 <- case_when(
+  i == 1  ~ "]0%-1%]",  
+  i == 2~ "]1%-10%]"  ,
+  i == 3 ~ "]10%-30%]"  ,
+  i == 4 ~ "]30%-50%]"  ,
+  i == 5~ "]50%-70%]" ,
+  i == 6~ "]70%-100%]")
+
+  
+# downsize dataset 
+Dataset <- x[x$class==cover_class[i],]
+  
+# create title
+title <- paste(index, index2)
+class <- paste("]",cover_class[i], "]", sep="")
+
+if(i %%2 ==0){
+  min2 <- min(Dataset$RelDiff)
+}else{
+  max1 <- max(Dataset$RelDiff)
+}
+
+# plot
+p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
+               color = Species, fill = Species))+
+    geom_violin(alpha=0.5, scale="width")+
+    geom_boxplot(width= 0.25, alpha=0.8, fill="white")+
+    theme_pubr()+
+    stat_summary(fun= "mean",
+                 geom = "point", aes(group= Neophyte), size=3)+
+    scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+    scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
+    theme(legend.position = "none")+
+    theme(legend.text= element_text(size=12),legend.title =element_text(size=14))+
+    annotate("text", x = 1, y = max1 + max1/10,label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
+    annotate("text", x = 2, y = max1 + max1/10, label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+    annotate("text", x = 3, y = max1 + max1/10, label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+    annotate("text", x=1, y=max1 + max1/5, 
+             label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="extra"])), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=2, y=max1 + max1/5, 
+             label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="intra"])), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=3, y=max1 + max1/5, 
+             label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="native"])), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=1, y=min2 + min2/5, 
+             label= paste("mean=",format(round(mean(Dataset$RelDiff[Dataset$Neophyte=="extra"]), digits=2),  nsmall=2)), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=2,y=min2 +min2/5, 
+             label= paste("mean=",format(round(mean(Dataset$RelDiff[Dataset$Neophyte=="intra"]), digits=2),  nsmall=2)), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=3, y=min2 + min2/5, 
+             label= paste("mean=", format(round(mean(Dataset$RelDiff[Dataset$Neophyte=="native"]), digits= 2), nsmall=2)), 
+             vjust = 0, hjust = 0.5, size=4)+
+    #labs(subtitle = "Significance level: NS")+
+    ylab("Relative impact")+
+    ggtitle(title)+
+    xlab(NULL)+
+    geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
+    theme(plot.title= element_text(hjust=0.01),
+      plot.subtitle = element_text( hjust = 0.01))+
+    scale_y_continuous(limits=c(min2+ min2/5, max1+max1/5))+
+    scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native", "Native\nalien elsewhere"))
+
+  assign(gsub(" ","_",index), p)
+  p
+
+```
+
+
+Loop for 3 and 4
+```{r}
+# if not for loop, choose i value
+
+i=3
+# can be done with for loop, but than it is hard to change some parameters so better not to
+#for(i in 1:6){
+  
+# create a vector for the title
+index <- case_when(
+  i == 1  ~ "Very low cover",  
+  i == 2~ "Low cover"  ,
+  i == 3 ~ "Medium cover"  ,
+  i == 4 ~ "High cover"  ,
+  i == 5~ "Very high cover" ,
+  i == 6~ "Extremely high cover")
+
+index2 <- case_when(
+  i == 1  ~ "]0%-1%]",  
+  i == 2~ "]1%-10%]"  ,
+  i == 3 ~ "]10%-30%]"  ,
+  i == 4 ~ "]30%-50%]"  ,
+  i == 5~ "]50%-70%]" ,
+  i == 6~ "]70%-100%]")
+
+  
+# downsize dataset 
+Dataset <- x[x$class==cover_class[i],]
+  
+# create title
+title <- paste(index, index2)
+class <- paste("]",cover_class[i], "]", sep="")
+
+if(i %%2 ==0){
+  min4 <- min(Dataset$RelDiff)
+}else{
+  max3 <- max(Dataset$RelDiff)
+}
+
+# plot
+p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
+               color = Species, fill = Species))+
+    geom_violin(alpha=0.5, scale="width")+
+    geom_boxplot(width= 0.25, alpha=0.8, fill="white")+
+    theme_pubr()+
+    stat_summary(fun= "mean",
+                 geom = "point", aes(group= Neophyte), size=3)+
+    scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+    scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
+    theme(legend.position = "none")+
+    theme(legend.text= element_text(size=12),legend.title =element_text(size=14))+
+    annotate("text", x = 1, y = max3 + max3/10,label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
+    annotate("text", x = 2, y = max3 + max3/10, label = "ab", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+    annotate("text", x = 3, y = max3 + max3/10, label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+    annotate("text", x=1, y=max3 + max3/5, 
+             label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="extra"])), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=2, y=max3 + max3/5, 
+             label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="intra"])), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=3, y=max3 + max3/5, 
+             label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="native"])), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=1, y=min4 + min4/5, 
+             label= paste("mean=",format(round(mean(Dataset$RelDiff[Dataset$Neophyte=="extra"]), digits=2),  nsmall=2)), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=2,y=min4 +min4/5, 
+             label= paste("mean=",format(round(mean(Dataset$RelDiff[Dataset$Neophyte=="intra"]), digits=2),  nsmall=2)), 
+             vjust = 0, hjust = 0.5, size=4)+
+    annotate("text", x=3, y=min4 + min4/5, 
+             label= paste("mean=", format(round(mean(Dataset$RelDiff[Dataset$Neophyte=="native"]), digits= 2), nsmall=2)), 
+             vjust = 0, hjust = 0.5, size=4)+
+    #labs(subtitle = "Significance level: NS")+
+    ylab("Relative impact")+
+    ggtitle(title)+
+    xlab(NULL)+
+    geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
+    theme(plot.title= element_text(hjust=0.01),
+      plot.subtitle = element_text( hjust = 0.01))+
+    scale_y_continuous(limits=c(min4+ min4/5, max3+max3/5))+
+    scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native", "Native\nalien elsewhere"))
+
+  assign(gsub(" ","_",index), p)
+  p
+
+```
+
+
+
+
+Loop for 5 and 6
+```{r}
+# if not for loop, choose i value
+
+i= 5
+# can be done with for loop, but than it is hard to change some parameters so better not to
+#for(i in 1:6){
+  
+# create a vector for the title
+index <- case_when(
+  i == 1  ~ "Very low cover",  
+  i == 2~ "Low cover"  ,
+  i == 3 ~ "Medium cover"  ,
+  i == 4 ~ "High cover"  ,
+  i == 5~ "Very high cover" ,
+  i == 6~ "Extremely high cover")
 
 index2 <- case_when(
   i == 1  ~ "]0%-1%]",  
@@ -872,9 +1057,9 @@ p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
     scale_fill_manual(values = c("#1E88E5", "#FFC107", "#004D40")) +
     theme(legend.position = "none")+
     theme(legend.text= element_text(size=12),legend.title =element_text(size=14))+
-    #annotate("text", x = 1, y = max5 + max5/10,label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
-    #annotate("text", x = 2, y = max5 + max5/10, label = "ab", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
-    #annotate("text", x = 3, y = max5 + max5/10, label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+    annotate("text", x = 1, y = max5 + max5/10,label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1) +
+    annotate("text", x = 2, y = max5 + max5/10, label = "a", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
+    annotate("text", x = 3, y = max5 + max5/10, label = "b", size = 4, vjust = 0.5, hjust = 0.5, alpha=1)+
     annotate("text", x=1, y=max5 + max5/5, 
              label= paste("n=",length(Dataset$Estimate[Dataset$Neophyte=="extra"])), 
              vjust = 0, hjust = 0.5, size=4)+
@@ -912,7 +1097,7 @@ p<-ggplot(Dataset, aes(x=Neophyte, y= RelDiff, group = Species,
 ```{r}
 # arrange all plots and save
 plot <- ggarrange(Very_low_cover, Low_cover, Medium_cover, High_cover,
-                  Very_high_cover, Dominant_cover, nrow=3, ncol=2, labels= c("a","b", "c","d","e","f"),
+                  Very_high_cover, Extremely_high_cover, nrow=3, ncol=2, labels= c("a","b", "c","d","e","f"),
                   font.label = list(size = 12), align="hv")
 
 plot
@@ -924,6 +1109,6 @@ ggsave("../Images/Impact.png", plot= plot, width = 10, height = 10)
 #ggsave("../Images/Medium.jpg", plot= Medium_cover, width = 5, height = 3)
 #ggsave("../Images/High.jpg", plot= High_cover, width = 5, height = 3)
 #ggsave("../Images/Very_high.jpg", plot= Very_high_cover, width = 5, height = 3)
-#ggsave("../Images/Dominant.jpg", plot= Dominant_cover, width = 5, height = 3)
+#ggsave("../Images/Extremely high.jpg", plot= Extremely high_cover, width = 5, height = 3)
 
 ```

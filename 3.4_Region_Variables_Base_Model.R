@@ -20,6 +20,11 @@ old <- read.csv("../EVA data/fullPlotData_EUNIS_1980.csv")
 
 #write.csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
 
+
+fullPlotData <- left_join(fullPlotData, old[, c(1, 48:60)], by= c("PlotObservationID"="PlotObservationID"))
+
+all.equal(fullPlotData[fullPlotData$PlotObservationID %in% old$PlotObservationID, c(38:50)], old[old$PlotObservationID %in% fullPlotData$PlotObservationID, c(48:60)], check.attributes=F)
+
 remaining <- fullPlotData[!fullPlotData$PlotObservationID %in% old$PlotObservationID,]
 
 ##### 2 LOAD ####
@@ -145,8 +150,9 @@ if(saving){
   st_geometry(plotLocations) <- NULL
   colnames(plotLocations)[6]<- "hfp2009"
   #fullPlotData <- read_csv("fullPlotData_new.csv", show_col_types = FALSE)
-  fullPlotData$hfp2009[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- plotLocations$hfp2009
+  #fullPlotData$hfp2009[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- plotLocations$hfp2009
   #write_csv(fullPlotData, "fullPlotData_ESY_1980.csv")
+  fullPlotData$hfp2009[!fullPlotData$PlotObservationID %in% old$PlotObservationID] <- plotLocations$hfp2009
 }
 
 ###### 3.3 HFP 1993 #####
@@ -244,7 +250,7 @@ remaining <- fullPlotData[!fullPlotData$PlotObservationID %in% old$PlotObservati
 # Check if there are any NAs --> not here but yes later --> are dates 00.00.0000 --> remove later!
 anyNA(remaining$Date)
 # Make dates
-fullPlotData$Date<- as.Date(fullPlotData$Date, format = "%d.%m.%Y")
+fullPlotData$Date<- as.Date(fullPlotData$Date, format = "%Y-%m-%d")
 
 # Assign extracted data to correct plot
 

@@ -20,6 +20,7 @@ library(lme4)
 library(plantlist)
 library(ggpubr)
 library(emmeans)
+library(vegdata)
 library(ggeffects)
 ```
 
@@ -47,10 +48,10 @@ if(fast) {
 Diaz_names<- Diaz$`Species name standardized against TPL`
 Diaz_names<- as.data.frame(Diaz_names)
 # vector with eva names
-eva_names<- as.data.frame(unique(eva$`Matched.concept`))
+eva_names<- as.data.frame(unique(eva$`Matched concept`))
 colnames(eva_names) <- "Matched concept"
-eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched.concept`)]
-eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched.concept`)]
+eva_names$name <- eva$name[match( eva_names$`Matched concept`, eva$`Matched concept`)]
+eva_names$species <- eva$species[match( eva_names$`Matched concept`, eva$`Matched concept`)]
 
 # check how much species in our dataset possess a trait value in Diaz
 sum(unique(eva_names$name) %in% Diaz_names$Diaz_names)
@@ -62,7 +63,7 @@ sum(eva_names$species %in% Diaz_names$Diaz_names)
 # 3 Analyse
 ## 3.1 Join names
 ```{r}
-eva_names <- eva |> group_by(name, irena, `Matched.concept`, species, `Turboveg2.concept`) |> summarise(n=n())
+eva_names <- eva |> group_by(name, irena, `Matched concept`, species, `Turboveg2 concept`) |> summarise(n=n())
 
 # name
 Diaz$name <- eva_names$name[match(Diaz$`Species name standardized against TPL`, eva_names$name)]
@@ -81,16 +82,30 @@ Diaz$name[is.na(Diaz$name)] <- eva_names$name[match(Diaz$`Species name standardi
 sum(!is.na(Diaz$name))
 Diaz$name[is.na(Diaz$name)] <- eva_names$name[match(Diaz$`Species name standardized against TPL`[is.na(Diaz$name)], eva_names$irena)]
 sum(!is.na(Diaz$name))
-Diaz$name[is.na(Diaz$name)] <- eva_names$name[match(Diaz$`Species name standardized against TPL`[is.na(Diaz$name)], eva_names$`Matched.concept`)]
+Diaz$name[is.na(Diaz$name)] <- eva_names$name[match(Diaz$`Species name standardized against TPL`[is.na(Diaz$name)], eva_names$`Matched concept`)]
 sum(!is.na(Diaz$name))
-Diaz$name[is.na(Diaz$name)] <- eva_names$name[match(Diaz$`Species name standardized against TPL`[is.na(Diaz$name)], eva_names$`Turboveg2.concept`)]
+Diaz$name[is.na(Diaz$name)] <- eva_names$name[match(Diaz$`Species name standardized against TPL`[is.na(Diaz$name)], eva_names$`Turboveg2 concept`)]
 sum(!is.na(Diaz$name))
 
 Diaz2 <- Diaz |> group_by(name) |> summarise(LA = mean(`Leaf area (mm2)`, na.rm=T), LMA = mean(`LMA (g/m2)`, na.rm=T), 
                                              SSD= mean(`SSD combined (mg/mm3)`, na.rm=T), SM = mean(`Diaspore mass (mg)`, na.rm=T), 
                                              Nmass = mean(`Nmass (mg/g)`, na.rm=T), H = mean(`Plant height (m)`, na.rm=T),
-                                             Diaz_name =  names(sort(table((`Species name standardized against TPL`)), decreasing=T)[1]))
+                                             Diaz_name =  names(sort(table((`Species name standardized against TPL`)), decreasing=T)[1]), 
+                                             number = max(`Number of traits with values`))
+
 Diaz2 <- Diaz2[!is.na(Diaz2$name),]
+hist(as.integer( Diaz2$number))
+sum(Diaz2$number == 6)
+sum(Diaz2$number == 5)
+sum(Diaz2$number == 4)
+sum(Diaz2$number == 3)
+sum(Diaz2$number == 2)
+sum(Diaz2$number == 1)
+
+sum(Diaz2$number)/(length(Diaz2$name)*6)
+sum(!is.na(Diaz2[,2:7]))/(nrow(Diaz2)*6)
+
+length(unique(eva$name))
 
 extra <- Diaz[!is.na(Diaz$Woodiness),]
 Diaz2$woody <- extra$Woodiness[match(Diaz2$name, extra$name)]
@@ -108,9 +123,25 @@ sum(!is.na(eva_names$Diaz_name))/length(eva_names$Diaz_name)
 #write_csv(eva_names, "../Extra data/Traits/Eva_diaz.csv")
 ```
 
+Numbers
+```{r}
+sum(is.na(eva_names[, c(7:12)]))/6/length(eva_names$name)
+
+eva_names <- eva_names %>% group_by(name)  %>%  
+  summarise(LA= mean(LA, na.rm=T), LMA= mean(LMA, na.rm=T), SSD= mean(SSD, na.rm=T), SM = mean(SM, na.rm=T), Nmass= mean(Nmass, na.rm=T), H= mean(H, na.rm=T),
+            #Diaz_name =  names(sort(table((Diaz_name)), decreasing=T)[1]),
+            #woody = names(sort(table((woody)), decreasing=T)[1]),
+            #growth =  names(sort(table((growth)), decreasing=T)[1]),
+            #Genus =  names(sort(table((Genus)), decreasing=T)[1]),
+            #Family =  names(sort(table((Family)), decreasing=T)[1])
+            )
+```
+
+
+
 ## 3.2 Traits
 ```{r}
-mean <- read_csv("../Results/trait_normalized.csv")
+mean <- read_csv("../Results/trait_normalized_new.csv")
 
 eva_names$LA[is.na(eva_names$LA)] <- mean$LA[match(eva_names$name[is.na(eva_names$LA)], mean$SpeciesName)]
 eva_names$LMA[is.na(eva_names$LMA)] <- mean$LMA[match(eva_names$name[is.na(eva_names$LMA)], mean$SpeciesName)]
@@ -123,11 +154,11 @@ eva_names$Nmass[is.na(eva_names$Nmass)] <- mean$Nmass[match(eva_names$name[is.na
 
 ```{r}
 # standardize
-eva_names[, c(7:12)] <- log(eva_names[,c(7:12)])
-eva_names[, c(7:12)] <- scale(eva_names[, c(7:12)])
+eva_names[, c(2:7)] <- log(eva_names[,c(2:7)])
+eva_names[, c(2:7)] <- scale(eva_names[, c(2:7)])
 
 # remove outliers (see Diaz et al 2016 for number 4)
-for(j in 7:12){
+for(j in 2:7){
   tr <- as.matrix(eva_names[,j])
   print(sum(is.na(tr)))
   tr <- ifelse(tr <= -4, NA, tr)
@@ -137,15 +168,27 @@ for(j in 7:12){
 }
 ```
 
+
+```{r}
+eva_names$Diaz_name <- Diaz2$Diaz_name[match(eva_names$name, Diaz2$name)]
+eva_names$growth <- Diaz2$growth[match(eva_names$name, Diaz2$name)]
+eva_names$woody <- Diaz2$woody[match(eva_names$name, Diaz2$name)]
+eva_names$Family <- Diaz2$Family[match(eva_names$name, Diaz2$name)]
+eva_names$Genus <- Diaz2$Genus[match(eva_names$name, Diaz2$name)]
+```
+
+
+
 ```{r}
 # give Diaz name
 # eva
-eva <- left_join(eva, eva_names[,c(1,7:13)], by= c("name"="name"))
+eva <- left_join(eva, eva_names[,c(1:12)], by= c("name"="name"))
 
 # check number of tree species in our database
 sum(eva_names$growth=="tree", na.rm=T)
 
-sum(!is.na(eva$Diaz_name))/length(is.na(eva$Diaz_name))
+sum(!is.na(eva$Diaz_name))/length((eva$Diaz_name))
+length(unique(eva$name[!is.na(eva$Diaz_name)]))/length(unique(eva$name))
 ```
 
 
@@ -168,6 +211,35 @@ length(unique(eva$name[!is.na(eva$Diaz_name)]))/length(unique(eva$name))
 # 90.8% of the observations do have a value for at least one trait
 sum(!is.na(eva$Diaz_name))/ length(eva$PlotObservationID)
 ```
+
+Alien
+```{r}
+colnames(eva)
+# Data on which species are neophytes
+native_intra_analysis=F
+if(native_intra_analysis){
+  species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
+} else{
+  species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
+  species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
+# or if we want to do it with intra seperately
+}
+# Only observation ID and Region
+fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
+# Right join to keep only species present in fullplot (otherwise a lot of NAs)
+eva_country_neophyte <- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
+# Join eva and classification
+eva_country_neophyte<- left_join(eva_country_neophyte, species_country_status[, -c(2:4,6:7)], by= c("Region"= "Region", "name"= "name"))
+# Look at how much from every type are present
+table(eva_country_neophyte$Neophyte)
+
+# there are still na's present --> due to being named 'plant'
+nas<- eva_country_neophyte[is.na(eva_country_neophyte$Neophyte),]
+eva_country_neophyte <- (eva_country_neophyte[!eva_country_neophyte$name=="Plant",])
+test <- eva_country_neophyte |> group_by(name, Neophyte, Diaz_name) |> summarise(n= n())
+test <- test |> group_by(Neophyte) |> summarise(n = sum(!(is.na(Diaz_name))))
+```
+
 
 
 
@@ -196,7 +268,7 @@ cor(y[,2:7], fullPlotData[,20:24],use="pairwise.complete.obs", method="pearson")
 ## 4.1 Explore
 ```{r}
 # Load impact data
-impact<- read.csv("I:/Impact_1980_new.csv")
+impact<- read.csv("I:/Impact_1980_new_again.csv")
 
 # possibly only use non-tree species (can maybe influence calculation)
 # Diaz <- Diaz |> filter(!`Growth Form`=="tree")
@@ -206,12 +278,13 @@ impact<- read.csv("I:/Impact_1980_new.csv")
 ## 4.2 Join
 ```{r}
 # Merge 7.1 and traits data
-impact<- left_join(impact, eva_names[!duplicated(eva_names$name), c(1,7:12, 14:15)], by=c("taxa"="name"))
-
+impact<- left_join(impact, eva_names[, c(1,2:12)], by=c("taxa"="name"))
+test <- unique(impact[, c(1,8)])
+test |> group_by(Neophyte) |> summarise(n=n())
 
 # if relative add 13 in join
-#test <- impact |> group_by(taxa, Diaz_name, Neophyte) |> summarise(n=n())
-#sum(!is.na(test$Diaz_name))/length(test$Diaz_name)
+test <- impact |> group_by(taxa, Diaz_name) |> summarise(n=n())
+sum(!is.na(test$Diaz_name))/length(test$Diaz_name)
 
 # Calculate correlations
 cor_extra<-cor(impact[impact$Neophyte=="extra", c(2,9, 14:19)],  use= "pairwise.complete.obs", method="spearman")
@@ -224,10 +297,9 @@ cor <- cor(impact[, c(2,9,  14:19)],  use="pairwise.complete.obs", method="spear
 ## 4.3 Phylogenetic
 ```{r}
 phylo <- read.csv("../Extra data/Species names/phylo.csv")
-impact[,22:23] <- phylo[match(impact$taxa, phylo$name), 6:7]
+impact[,23:24] <- phylo[match(impact$taxa, phylo$name), 7:6]
 
 # remove genera
-library(vegdata)
 check <-vegdata::parse.taxa(unique(impact$taxa))
 genus <- check[is.na(check$epi1),]
 impact <- impact[!impact$taxa %in% genus$original,]
@@ -240,11 +312,11 @@ impact <- cbind(impact, eva[match(impact$taxa, eva$name), c(11:15, 17:23)])
 colnames(impact)
 
 # Change names FT
-colnames(impact)[29:35]<- c("Sev","Sev_herb","Freq","Freq_herb","Gras","Mow","Soil") 
+colnames(impact)[30:36]<- c("Sev","Sev_herb","Freq","Freq_herb","Gras","Mow","Soil") 
 
 # compute general impact
 general <- impact |> 
-  group_by(taxa, Neophyte, LA, Nmass, LMA, H, SM, SSD, family, genus, growth, woody, 
+  group_by(taxa, Neophyte, LA, Nmass, LMA, H, SM, SSD, Family, Genus, growth, woody, 
            EIVEresM, EIVEresT, EIVEresR, EIVEresL, EIVEresN, 
            Sev,Sev_herb,Freq,Freq_herb,Gras,Mow,Soil) |> 
   summarise(impact= sum((RelDiff*n)/numberOfPlots))
@@ -322,14 +394,14 @@ dev_1
 dev_2 <- round(apply(scores[2], 2,var)/sum(PCA$sdev^2)*100, 1)
 # Plot
 PCA_plot <-ggplot(data = scores, aes(x = PC1, y = PC2, color = Neophyte)) +
-  geom_point(aes(alpha= ifelse(Neophyte=="Native", 0.1, 0.5)), size = 2) +
+  geom_point(aes(alpha= ifelse(Neophyte=="Native", 0.1, 0.5), shape = Neophyte), size = 2) +
   geom_segment(data = loadings, aes(x = 0, y = 0, xend = PC1*5, yend = PC2*5),
                arrow = arrow(length = unit(0.2, "cm")), color = "black") +
   geom_text(data = loadings, aes(x = PC1*5, y = PC2*5, label = rownames(loadings)),
             color = "black", vjust = -0.5, size=5) +
   theme_pubr() +
-  xlab((expression(PC[size]*" ("* 37.2* "%)"))) +
-  ylab((expression(PC[economics]* " ("* 30.4* "%)"))) +
+  xlab((expression(PC[size]*" ("* 37.8* "%)"))) +
+  ylab((expression(PC[economics]* " ("* 29.1* "%)"))) +
   scale_colour_manual(values=c( "#004D40", "#FFC107","#1E88E5"))+
   scale_fill_manual(values = c( "#004D40", "#FFC107","#1E88E5"))+ 
   scale_alpha_identity() + 
@@ -348,7 +420,7 @@ general2 <- general2 %>% mutate(Neophyte = factor(Neophyte,
                           levels = c("native","intra", "extra"))) 
 
 # run model with PC1 (size) and PC2 (econ), also include the growth form
-MDL<- lmer(impact ~ -1 +Neophyte +PC1* Neophyte + PC2* Neophyte   + woody+ (1|family/genus), general2)
+MDL<- lmer(impact ~ -1 +Neophyte +PC1* Neophyte + PC2* Neophyte   + woody+ (1|Family/Genus), general2)
 anova(MDL)
 
 # summarise and look at the differences
@@ -375,7 +447,7 @@ r.squaredGLMM(MDL)
 
 ```{r}
 # glmm
-model <- lmer(impact ~ Neophyte +PC1* Neophyte + PC2* Neophyte   + woody+ (1|family/genus)+ (1|family/genus), general2)
+model <- lmer(impact ~ Neophyte +PC1* Neophyte + PC2* Neophyte   + woody+ (1|Family/Genus), general2)
 summary(model)
 
 simulation <- DHARMa::simulateResiduals(model)
@@ -414,7 +486,7 @@ while (successful_runs < 1000) {
   all <- rbind(natives, intras, extras)
   
   # model again
-  model<- lmer(impact ~ -1 +Neophyte +PC1* Neophyte + PC2* Neophyte   + woody+ (1|family/genus), all)
+  model<- lmer(impact ~ -1 +Neophyte +PC1* Neophyte + PC2* Neophyte   + woody+ (1|Family/Genus), all)
   summary(model)
   
   if(isSingular(model)) next
@@ -500,7 +572,7 @@ PC1<- ggplot(test, aes(x, predicted, colour= group))+
   geom_hline(yintercept=0, linetype='dotted', alpha=0.5)+
   scale_colour_manual(values=c( "#004D40", "#FFC107","#1E88E5"))+
   scale_fill_manual(values = c( "#004D40", "#FFC107","#1E88E5"))+ 
-  scale_linetype_manual(values=c("dashed","dashed","solid" )) +
+  scale_linetype_manual(values=c("dashed","solid","dashed" )) +
   guides(linetype = "none") + 
   labs(fill = "Origin", colour= "Origin")+ 
   scale_alpha_identity() + 
@@ -664,8 +736,7 @@ plot_all <- ggarrange( PCA_plot, growth, PC1, PC2, labels= c("a","b","c","d","e"
 plot_all
 
 
-
-#ggsave("../Images/Drivers.svg", plot, width=8, height=8)
+ggsave("../Images/Drivers.svg", plot_all, width=8, height=8)
 ```
 
 ```{r}

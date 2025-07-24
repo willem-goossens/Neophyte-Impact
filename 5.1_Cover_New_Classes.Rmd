@@ -23,6 +23,7 @@ library(vegdata)
 library(doParallel)
 library(emmeans)
 library(DHARMa)
+library(glmmTMB)
 ```
 
 ## 1.2 Data loaded
@@ -40,11 +41,11 @@ normal = T
 if(normal){
   fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv")
   fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
-  fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
+  fullPlotData <- fullPlotData[fullPlotData$Date >= "1980-01-01",]
 } else {
   fullPlotData_EUNIS <- read_csv("../EVA data/fullPlotData_new.csv")
   fullPlotData$Date <- as.Date(fullPlotData$Date, format = c("%Y-%m-%d"))
-  fullPlotData <- fullPlotData[fullPlotData$Date > "1980-01-01",]
+  fullPlotData <- fullPlotData[fullPlotData$Date >= "1980-01-01",]
   habitats <- unique(fullPlotData$habitat)
   # adapt here the type you want to assess, e.g. 'grasslands'=1
   fullPlotData <- fullPlotData[fullPlotData$habitat==habitats[3] & !is.na(fullPlotData$habitat),]
@@ -88,7 +89,7 @@ eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID")
 # Join eva and classification
 colnames(eva)
 
-eva_country_neophyte<- left_join(eva, species_country_status[, -c(2:4,6:8)], by= c("Region"= "Region", "name"= "name"))
+eva_country_neophyte<- left_join(eva, species_country_status[, -c(2:4,6:7)], by= c("Region"= "Region", "name"= "name"))
 # Look at how much from every type are present
 table(eva_country_neophyte$Neophyte)
 eva <- eva_country_neophyte
@@ -141,7 +142,7 @@ if(fast){
   foreach::getDoParRegistered()
   foreach::getDoParWorkers()
   
-  i=5425
+  i=1
   # Take time beginning
   begin<- Sys.time()
   # Do calculation of average and median cover+ variance in dataset
@@ -187,6 +188,7 @@ write_csv(speciesDominance, "../Results/speciesDominance_1980.csv")
   speciesDominance<- read.csv("../Results/speciesDominance_1980.csv")
   }
 }
+
 ```
 
 
@@ -198,7 +200,9 @@ sum(eva_names$n >=30)
 # difference is due to summing of cover within one plot
 setdiff(eva_names[eva_names$n>=30, 1:2], speciesDominance[, c(1,6)])
 
-sum(eva$name=="Crataegus pentagyna")
+sum(eva$name=="Juglans ailantifolia")
+
+length(unique(eva$PlotObservationID[eva$name %in% "Juglans ailantifolia"]))
 ```
 
 
@@ -230,17 +234,26 @@ speciesDominance <- speciesDominance[!speciesDominance$names %in% genus$original
 #write_csv(genus_country, "genus_country.csv")
 ```
 
-
-
-
 ```{r}
+# make it similar every time
 set.seed(1)
+
+speciesDominance$rel <- speciesDominance$coverMean/100
 
 # how many have we of each origin
 table(speciesDominance$neophyte)
 
-# glmm
-model <- lmer(log10(coverMean) ~ -1+ neophyte + (1|family/genus), data= speciesDominance )
+speciesDominance
+
+ggplot(speciesDominance, aes(x = rel, y= neophyte, fill = neophyte, colour = neophyte)) +
+  ggridges::geom_density_ridges( alpha = 1) +
+  ylab("Origin class") +
+  xlab("Relative cover") +
+  labs(fill = "Neophyte", colour = "Neophyte")
+
+# glmmTMB
+speciesDominance$rel <- speciesDominance$coverMean/100
+model <- glmmTMB((rel) ~ -1+ neophyte + (1|family/genus), data= speciesDominance, family= beta_family() )
 summary(model)
 summary(emmeans::emmeans(model, pairwise ~ neophyte))
 
@@ -249,8 +262,6 @@ simulation <- DHARMa::simulateResiduals(model)
 plot(simulation)
 # does not work
 
-# problem due to unbalanced number of observations per neophyte group
-table(speciesDominance$neophyte)
 
 # we will 'bootstrap' or results using 1000 replications
 result <- data.frame(contrast = character(), estimate = numeric(), SE= numeric(), df=numeric(), t.ratio=numeric(), p.value= numeric())
@@ -259,69 +270,47 @@ result <- data.frame(contrast = character(), estimate = numeric(), SE= numeric()
 successful_runs <- 0
 
 while (successful_runs < 1000) {
-# sample natives
-natives <- speciesDominance[speciesDominance$neophyte=="native",]
-natives <- natives[sample(nrow(natives),200, replace=F),]
-# sample intras
-intras <- speciesDominance[speciesDominance$neophyte=="intra",]
-intras <- intras[sample(nrow(intras),200, replace=T),]
-# sample extras
-extras <- speciesDominance[speciesDominance$neophyte=="extra",]
-extras <- extras[sample(nrow(extras),200, replace=T),]
-all <- rbind(natives, speciesDominance[!speciesDominance$neophyte=="native",])
-all <- rbind(natives, intras, extras)
-
-if(native_intra_analysis){
-  native_intra <- speciesDominance[speciesDominance$neophyte=="native_intra",]
-  native_intra <- native_intra[sample(nrow(native_intra),200, replace=F),]
-  all <- rbind(natives, intras, extras, native_intra)
+  # sample natives
+  natives <- speciesDominance[speciesDominance$neophyte=="native",]
+  natives <- natives[sample(nrow(natives),200, replace=F),]
+  # sample intras
+  intras <- speciesDominance[speciesDominance$neophyte=="intra",]
+  intras <- intras[sample(nrow(intras),200, replace=T),]
+  # sample extras
+  extras <- speciesDominance[speciesDominance$neophyte=="extra",]
+  extras <- extras[sample(nrow(extras),200, replace=T),]
+  all <- rbind(natives, speciesDominance[!speciesDominance$neophyte=="native",])
+  all <- rbind(natives, intras, extras)
+  
+  if(native_intra_analysis){
+    native_intra <- speciesDominance[speciesDominance$neophyte=="native_intra",]
+    native_intra <- native_intra[sample(nrow(native_intra),200, replace=F),]
+    all <- rbind(natives, intras, extras, native_intra)
+  }
+  
+  # model again
+  model <-  glmmTMB((rel) ~ -1+ neophyte + (1|family/genus), data= all, family= beta_family() )
+  summary(model)
+  
+  if (model$fit$convergence != 0) next
+  
+  # check pairwise differences
+  emmeans_results <- emmeans::emmeans(model, pairwise ~ neophyte)
+  # save in data frame
+  sum <- summary(emmeans_results)$contrasts
+  # add to large table
+  result <- rbind(result, sum)
+  
+  successful_runs <- successful_runs+1
 }
-
-# model again
-model <- lmer(log10(coverMean) ~ -1+ neophyte + (1|family/genus), data= all)
-
-summary(model)
-
-if(isSingular(model)) next
-
-# check pairwise differences
-emmeans_results <- emmeans::emmeans(model, pairwise ~ neophyte)
-# save in data frame
-sum <- summary(emmeans_results)$contrasts
-# add to large table
-result <- rbind(result, sum)
-
-successful_runs <- successful_runs+1
-}
-
+  
 # look at aggregated results (mean and sd)
 aggregated_result <- aggregate(. ~ contrast, data = result, FUN = function(x) c(mean = mean(x), sd = sd(x)))
-
+  
 # assess number of significant
 result$significant <- result$p.value < 0.05
 table(result$significant)
 result |> group_by(contrast, significant) |> summarise(n=n())
-
-pvals <- result$p.value[result$contrast=="intra - native"]
-
-fisher_method <- function(pvals) {
-  # Check for valid p-values
-  if (any(pvals <= 0 | pvals > 1)) {
-    stop("All p-values must be between 0 and 1 (exclusive).")
-  }
-
-  # Calculate the test statistic
-  stat <- -2 * sum(log(pvals))
-  df <- 2 * length(pvals)
-
-  # Compute the combined p-value from chi-squared distribution
-  p_combined <- pchisq(stat, df = df, lower.tail = FALSE)
-
-  return(p_combined)
-}
-
-result$p.value[result$p.value==0] <- 10^-12
-result |> group_by(contrast) |> summarise(n=fisher_method(p.value))
 ```
 
 
@@ -332,6 +321,8 @@ topdominant<- speciesDominance[order(speciesDominance$coverMean, decreasing=T),]
 topdominant<- topdominant[1:100,]
 topdominant_intra<- topdominant[topdominant$neophyte=="intra",]
 topdominant_extra <- topdominant[topdominant$neophyte=="extra",]
+
+#write_csv(topdominant, "../Results/speciesDominance_top100.csv")
 ```
 
 
@@ -431,15 +422,23 @@ The data is present in speciesDominance, which facilitates the calculations
 ```{r}
 set.seed(1)
 
-# glmm
-model <- lmer(log10(numberOfPlots) ~ -1+ neophyte + (1|family/genus), data= speciesDominance )
+# plot to get idea about distribution
+ggplot(speciesDominance, aes(x = numberOfPlots, y= neophyte, fill = neophyte, colour = neophyte)) +
+  ggridges::geom_density_ridges( alpha = 1) +
+  ylab("Origin class") +
+  xlab("Relative cover") +
+  labs(fill = "Neophyte", colour = "Neophyte")
+
+# glmmTMB
+model <- glmmTMB((numberOfPlots) ~ -1+ neophyte + (1|family/genus), data= speciesDominance, family= nbinom2() )
 summary(model)
-emmeans::emmeans(model, pairwise ~ neophyte)
+summary(emmeans::emmeans(model, pairwise ~ neophyte))
 
 # check assumptions
 simulation <- DHARMa::simulateResiduals(model)
 plot(simulation)
 # does not work
+
 
 # we will 'bootstrap' or results using 1000 replications
 result_freq <- data.frame(contrast = character(), estimate = numeric(), SE= numeric(), df=numeric(), t.ratio=numeric(), p.value= numeric())
@@ -450,41 +449,41 @@ successful_runs <- 0
 
 # Run until we get 1000 successful models
 while (successful_runs < 1000) {
-# sample natives
-natives <- speciesDominance[speciesDominance$neophyte=="native",]
-natives <- natives[sample(nrow(natives),200, replace=F),]
-# sample intras
-intras <- speciesDominance[speciesDominance$neophyte=="intra",]
-intras <- intras[sample(nrow(intras),200, replace=T),]
-# sample extras
-extras <- speciesDominance[speciesDominance$neophyte=="extra",]
-extras <- extras[sample(nrow(extras),200, replace=T),]
-all <- rbind(natives, speciesDominance[!speciesDominance$neophyte=="native",])
-all <- rbind(natives, intras, extras)
-
-
-if(native_intra_analysis){
-  native_intra <- speciesDominance[speciesDominance$neophyte=="native_intra",]
-  native_intra <- native_intra[sample(nrow(native_intra),200, replace=F),]
-  all <- rbind(natives, intras, extras, native_intra)
-}
-
-
-# model again
-model <- lmer(log10(numberOfPlots) ~ -1+ neophyte + (1|family/genus), data= all)
-
-summary(model)
-
-if(isSingular(model)) next
-
-# check pairwise differences
-emmeans_results <- emmeans::emmeans(model, pairwise ~ neophyte)
-# save in data frame
-sum <- summary(emmeans_results)$contrasts
-# add to large table
-result_freq <- rbind(result_freq, sum)
-
-successful_runs <- successful_runs+1
+  # sample natives
+  natives <- speciesDominance[speciesDominance$neophyte=="native",]
+  natives <- natives[sample(nrow(natives),200, replace=F),]
+  # sample intras
+  intras <- speciesDominance[speciesDominance$neophyte=="intra",]
+  intras <- intras[sample(nrow(intras),200, replace=T),]
+  # sample extras
+  extras <- speciesDominance[speciesDominance$neophyte=="extra",]
+  extras <- extras[sample(nrow(extras),200, replace=T),]
+  all <- rbind(natives, speciesDominance[!speciesDominance$neophyte=="native",])
+  all <- rbind(natives, intras, extras)
+  
+  
+  if(native_intra_analysis){
+    native_intra <- speciesDominance[speciesDominance$neophyte=="native_intra",]
+    native_intra <- native_intra[sample(nrow(native_intra),200, replace=F),]
+    all <- rbind(natives, intras, extras, native_intra)
+  }
+  
+  
+  # model again
+  model <- glmmTMB((numberOfPlots) ~ -1+ neophyte + (1|family/genus), data= all, family= nbinom2() )
+  
+  summary(model)
+  
+  if (model$fit$convergence != 0) next
+  
+  # check pairwise differences
+  emmeans_results <- emmeans::emmeans(model, pairwise ~ neophyte)
+  # save in data frame
+  sum <- summary(emmeans_results)$contrasts
+  # add to large table
+  result_freq <- rbind(result_freq, sum)
+  
+  successful_runs <- successful_runs+1
 }
 
 # look at aggregated results (mean and sd)
@@ -503,6 +502,7 @@ topfrequent<- speciesDominance[order(speciesDominance$numberOfPlots, decreasing=
 topfrequent<- topfrequent[1:100,]
 topdominant_intra<- topdominant[topdominant$neophyte=="intra",]
 topdominant_extra <- topdominant[topdominant$neophyte=="extra",]
+#write_csv(topfrequent, "../Results/speciesDominance_top100_frequent.csv")
 ```
 
 
@@ -639,7 +639,9 @@ Dominance <- ggplot(speciesDominance, aes(x=neophyte, y=log10(coverMean), group=
   scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native")) +
   theme(axis.text.x=element_text(size=12), axis.title.y=element_text(size=12), axis.title.x=element_blank(), 
         axis.text.y=element_text(size=10)) +
-  ylab("Mean cover when present (%)") +
+  
+  theme(axis.title.y = element_text(margin = margin(r = 0)))+
+  ylab("Mean cover\nwhen present (%)") +
   
   # Sample sizes (higher position)
   annotate("text", x=1, y=y_n_Dominance, label=paste("n=", length(speciesDominance$coverMean[speciesDominance$neophyte=="extra"])), size=4, hjust=0.5) +
@@ -663,8 +665,9 @@ Frequency <- ggplot(speciesDominance, aes(x=neophyte, y=log10(numberOfPlots), gr
   theme(legend.position="none") +
   scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native")) +
   scale_y_continuous(breaks= seq(2, 5, by =1), limits=c(1.5, y_n_Frequency )) +
-  ylab(expression("log"[10]* " number of occurrences")) +
+  ylab("log10 number\nof occurrences")+
   xlab(element_blank())+
+  theme(axis.title.y = element_text(margin = margin(r = 0)))+
   
   # Sample sizes (higher position)
   annotate("text", x=1, y=y_n_Frequency, label=paste("n=", length(speciesDominance$numberOfPlots[speciesDominance$neophyte=="extra"])), size=4, hjust=0.5) +
@@ -722,7 +725,7 @@ Frequency <- ggplot(speciesDominance, aes(x=neophyte, y=log10(numberOfPlots), gr
   theme(legend.position="none") +
   scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native", "Native\nalien elsewhere")) +
   scale_y_continuous(breaks= seq(2, 5, by =1), limits=c(1.5, y_n_Frequency )) +
-  ylab(expression("log"[10]* " number of occurrences")) +
+  ylab(paste("log[10]", "\nnumber of occurrences")) +
   xlab(element_blank())+
   
   # Sample sizes (higher position)
@@ -742,16 +745,19 @@ Frequency <- ggplot(speciesDominance, aes(x=neophyte, y=log10(numberOfPlots), gr
 plot <- ggarrange(Dominance, Frequency, nrow=2, ncol=1, align="hv")
 plot
 
+#EU <- EU + theme(plot.margin = margin(0, 0, 0, 0))
+#Dominance <- Dominance + theme(plot.margin = margin(0, 0, 0, 0))
+#Frequency <- Frequency + theme(plot.margin = margin(0, 0, 0, 0))
 
 # plot together with files
-plot <- ggarrange(EU,ggarrange(Dominance, Frequency, nrow=2, labels=c("b","c"),
-                               font.label=list(size=6)), 
+plot <- ggarrange(EU,ggarrange(Dominance, Frequency, nrow=2, ncol=1, labels=c("b","c"),
+                               font.label=list(size=12), align= "hv"), 
                   ncol=2, labels=c("a"), 
-                  font.label=list(size=6), align="hv", widths=  c(8,3))
+                  font.label=list(size=12), align="v", widths=  c(7,4), heights=c(6,6))
 plot
 
 ggsave("../Images/Dominance_frequency_map.png", plot= plot, 
-       width = 9, height = 6, units = "cm", dpi = 600)
+       width = 12, height = 6)
 
 ggsave("../Images/Dominance.png", plot= Dominance, width = 5, height = 3.5)
 ggsave("../Images/Frequency.png", plot= Frequency, width = 5, height = 3.5)

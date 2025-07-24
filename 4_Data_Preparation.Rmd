@@ -42,8 +42,11 @@ if(Layerremove){
   eva <- eva |> group_by(PlotObservationID, species) |> filter(Layer %in% c(0,4:9))
 }
 
+test <- eva[duplicated(eva[, c("PlotObservationID","name","Layer")]),]
+length(unique(test$PlotObservationID))
+
 # Which rows contain duplicates
-numberOfRowsDuplicates<- sum((eva|> group_by(PlotObservationID)|> mutate(duplicated = duplicated(species)))$duplicated)
+numberOfRowsDuplicates<- sum(test$duplicated>0)
 Layersum=T
 if(Layersum){
   eva <- eva |> group_by(PlotObservationID, species,`Turboveg2 concept`, `Matched concept`, irena, name, source, Layer) |>
@@ -51,7 +54,6 @@ if(Layersum){
 } else {
   eva <- eva |> select(PlotObservationID, species,`Turboveg2 concept`, `Matched concept`, irena, name, source,`Cover %`, Layer)
 }
-
 
 # remove species with 0 cover
 numberOfZeroCover <- length(eva$PlotObservationID[eva$`Cover %`=="0"])
@@ -78,9 +80,10 @@ totalCover <-
   summarise(totalCover = sum(cover))
 
 # Check distribution (we max on 2000, but total cover goes up to 25000)
-hist(totalCover$totalCover[totalCover$totalCover> 750 & totalCover$totalCover<2000 ])
+hist(totalCover$totalCover[totalCover$totalCover<2000 ])
+hist(totalCover$totalCover[totalCover$totalCover> 900 & totalCover$totalCover<2000 ])
 # We calculate the number of plots in which this occurs
-numberOfTooLargeCover<- length(totalCover$totalCover[totalCover$totalCover> 900])
+numberOfTooLargeCover<- length(totalCover$totalCover[totalCover$totalCover> 300])
 
 # We check the datasets --> many datasets have more than 900 (64 out of 320)
 # unique(header$Dataset[header$PlotObservationID %in% (totalCover$PlotObservationID[totalCover$totalCover> 900])])
@@ -90,7 +93,7 @@ eva[eva$PlotObservationID %in% totalCover$PlotObservationID[totalCover$totalCove
 
 maxcover=T
 if(maxcover){
-  eva<- eva[!eva$PlotObservationID %in% totalCover$PlotObservationID[totalCover$totalCover> 900],] 
+  eva<- eva[!eva$PlotObservationID %in% totalCover$PlotObservationID[totalCover$totalCover> 500],] 
 }
 ```
 
@@ -109,11 +112,11 @@ header <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_header.
 totalNumberOfPlots <- length(header$PlotObservationID)
 
 # Plot sizes too small/ inexistent
-plotsWithoutPlotSize <- is.na(header$`Relevé area (m²)`) | header$`Relevé area (m²)` <= 0
+plotsWithoutPlotSize <- is.na(header$`Relevé area (m²)`) | header$`Relevé area (m²)` <= 1
 numberOfPlotsWithoutPlotSize <- sum(plotsWithoutPlotSize)
 
 # Plot sizes too large (https://onlinelibrary.wiley.com/doi/full/10.1002/ece3.8965)
-tooLargePlots <- header$`Relevé area (m²)` > 1000
+tooLargePlots <- header$`Relevé area (m²)` > 1024
 numberOfTooLargePlots<- sum(tooLargePlots, na.rm=T)
 
 # Plots without coordinates
@@ -410,6 +413,8 @@ highDiversityPlots <- fullPlotData[fullPlotData$numberOfVascularPlantSpecies > 1
 # Jurgen plots suspiciously high
 highDiversityPlotsToBeRemoved <- c(842839, 843192, 842921) # plots published by Juergen which are for sure incorrect
 
+revision_removal <- highDiversityPlotsToBeRemoved
+
 highDiversityPlots$Dataset<- as.character(highDiversityPlots$Dataset)
 # Look at datasets containing the plots with SR> 100
 highDiversityDatasets <- unique(highDiversityPlots$Dataset)
@@ -433,7 +438,7 @@ highDiversityPlots[highDiversityPlots$PlotObservationID %in% highDiversityPlotsT
 numberOfHighDiversityPlotsToBeRemoved <- length(highDiversityPlotsToBeRemoved)
 
 # remove the too high diversiy plots from the dataset
-fullPlotData <- fullPlotData[!(fullPlotData$PlotObservationID %in% highDiversityPlotsToBeRemoved),]
+fullPlotData <- fullPlotData[!(fullPlotData$PlotObservationID %in% revision_removal),]
 
 # make a new highdiversityplots dataset for all true diverse plots (according to the method)
 highDiversityPlots <- fullPlotData[fullPlotData$numberOfVascularPlantSpecies > 100,]
@@ -461,12 +466,67 @@ fullPlotData <- fullPlotData[!plotsForWhichNotAllIndicatorValuesWereEstimated,]
 ```
 
 
+At least 80% species
+```{r}
+# remove plots with less than 80% cover EIVE
+test <- eva |> group_by(PlotObservationID) |> summarise(n = sum(!is.na(eive_name))/ length(eive_name))
+sum(test$n >=0.80)/ length(test$n)
+sum(test$n <0.80)
+fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% test$PlotObservationID[test$n >= 0.80],]
+
+# remove plots with less than 80% cover DIV
+test <- eva |> group_by(PlotObservationID) |> summarise(n = sum(!is.na(div_name))/ length(name))
+sum(test$n >=0.80)/ length(test$n)
+sum(test$n < 0.80)
+fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% test$PlotObservationID[test$n >= 0.80],]
+hist(test$n[test$n<0.95])
+```
+
+
+
+
 ## 3.4 Filter date
 ```{r}
 fullPlotData$Date<- as.Date(fullPlotData$Date, format = "%d.%m.%Y")
 numberOfPlotsWithoutDate<-length(fullPlotData$PlotObservationID[is.na(fullPlotData$Date)])
 fullPlotData<- fullPlotData[!is.na(fullPlotData$Date),]
 fullPlotData <- fullPlotData[fullPlotData$Date >= "1980-01-01",]
+```
+
+## 3.5 Duplicates
+```{r}
+# new dataset to adapt
+data <- fullPlotData
+data$all <- paste(data$Longitude, data$Latitude)
+
+# dataset duplicated plots
+dup <- data[duplicated(data[, c(9,10:19, 25:29,35)]) | 
+              duplicated(data[, c(9,10:19, 25:29,35)], fromLast=T),]
+
+# remove those with even equal size
+remove <- dup$PlotObservationID[duplicated(dup[, c(7,8,9,10:19, 25:29,35)])]
+length(remove)
+fullPlotData <- fullPlotData[!fullPlotData$PlotObservationID %in% remove,]
+
+
+# remove already these plots
+dup <- dup[!dup$PlotObservationID %in% remove,]
+dup <- dup[duplicated(dup[, c(8,9,10:19, 25:29,35)]) |
+           duplicated(dup[, c(8,9,10:19, 25:29,35)], fromLast=T),]
+
+# Define the columns used to identify duplicates
+dup_colnames <- colnames(dup)[ c(8, 9, 10:19, 25:29, 35)]
+# Keep only duplicates
+dup_filtered <- dup %>% group_by(across(all_of(dup_colnames))) %>% filter(n() > 1) %>% slice_max(order_by = Area, n = 1) %>% ungroup()
+remove <- dup$PlotObservationID[!dup$PlotObservationID %in% dup_filtered$PlotObservationID]
+length(remove)
+fullPlotData <- fullPlotData[!fullPlotData$PlotObservationID %in% remove,]
+
+
+# check also for plots with duplicate coordinates only
+dup <- data[duplicated(data[, c(35)]) | 
+              duplicated(data[, c(35)], fromLast=T),]
+# this is not feasible to do
 ```
 
 
@@ -479,6 +539,16 @@ eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 ```
 
 `r numberOfPlotsWithMissingIndicatorValues` of the plots were removed because not all indicator values could be estimated.
+
+## 3.6 Uncertainty
+```{r}
+summary(header$`Location uncertainty (m)`)
+numberUncertain <- header$PlotObservationID[header$`Location uncertainty (m)`>1000]
+length(numberUncertain)
+
+header <- header[!header$PlotObservationID %in% numberUncertain,]
+fullPlotData <- fullPlotData[!fullPlotData$PlotObservationID  %in% numberUncertain,]
+```
 
 
 # 6 EXPORT
@@ -496,14 +566,13 @@ eva_names$div <- eva$div_name[match( eva_names$`Matched concept`, eva$`Matched c
 # Make sure all plot data is in eva
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
-#write_csv(fullPlotData, "../EVA data/fullPlotData_new.csv")
-
+#write_csv(fullPlotData, "../EVA data/fullPlotData_4.csv")
 
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 fullPlotEva <- eva
 head(eva)
-#write_csv(eva, "../EVA data/fullPlotEva_new.csv")
+#write_csv(eva, "../EVA data/fullPlotEva_4.csv")
 ```
 
 
@@ -605,9 +674,9 @@ species_country <- species_country[!duplicated(species_country[,c(5,1)]),]
 
 
 # merge --> 97727 --> 97591 --> 97558 --> 97391 (97424)
-species_country <- full_join(species_country, neophyte[, -c(3:5,6,7,9)], by= c("name"="name", "Region"="Region"))
+species_country <- full_join(species_country, neophyte[, -c(1,3:5,6,7,9,11)], by= c("name"="name", "Region"="Region"))
 species_country <- species_country[!is.na(species_country$species),]
-
+head(species_country)
 
 neophyte <- neophyte[, -c(1,6,7,9)]
 
@@ -672,15 +741,13 @@ species_country$species[species_country$species %in% name_change$old.name] <-
 species_country$name[species_country$name %in% name_change$old.name] <-
   name_change$new.name[match(species_country$name[species_country$name %in% name_change$old.name], name_change$old.name)]
 
-
 eva$species[eva$species %in% name_change$old.name] <-
   name_change$new.name[match(eva$species[eva$species %in% name_change$old.name], name_change$old.name)]
 eva$name[eva$name %in% name_change$old.name] <-
   name_change$new.name[match(eva$name[eva$name %in% name_change$old.name], name_change$old.name)]
 
-
 #write_csv(species_country,"../EVA data/country_species_new.csv")
-#write_csv(eva, "../EVA data/fullPlotEva_new.csv")
+#write_csv(eva, "../EVA data/fullPlotEva_4.csv")
 ```
 
 

@@ -28,7 +28,7 @@ fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
 eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
 rm(list=c("fullPlot2"))
 # Join eva and classification
-eva<- left_join(eva, species_country_status[, -c(2:4,6:8)], by= c("Region"= "Region", "name"= "name"))
+eva<- left_join(eva, species_country_status[, -c(2:4,6:7)], by= c("Region"= "Region", "name"= "name"))
 eva <- eva[!eva$name=="Plant",]
 
 
@@ -84,6 +84,11 @@ databases <- databases |> mutate(rel_used_vs_obtained = round(n/`# of plots`, 3)
 
 #write.csv(databases,"databases.csv", row.names = F)
 
+# number of databases
+test <- fullPlotData |> group_by(Dataset) |> summarise(n=n())
+header <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_header.csv", "\t")
+head(header)
+unique(header$Dataset)
 
 ##### 4. TIME ####
 fullPlotData$Date <-  as.Date(fullPlotData$Date, format = "%d.%m.%Y")
@@ -111,10 +116,13 @@ p <- ggplot(answers_by_date, aes(x= Date)) +
   geom_line(aes(y=rel_cumsum), color = "blue")+ scale_x_date(date_breaks = "10 years", date_labels = "%Y")
 p
 
-
+colnames(eva)
 #### 5. Numbers ####
 ###### 5.1 Species ######
 eva_names <- eva |> group_by(name, Neophyte) |> summarise(n =n())
+eva_names |> group_by(Neophyte) |> summarise(n= n())
+nrow(eva |> group_by(name) |> summarise(n =n()))
+
 sum(eva_names$n >=30)
 
 analysed <- eva_names[eva_names$n>=30,]
@@ -122,11 +130,22 @@ analysed <- eva_names[eva_names$n>=30,]
 eva_names$div <- eva$div_name[match(eva_names$name, eva$name)]
 eva_names$eive <- eva$eive_name[match(eva_names$name, eva$name)]
 
-sum(!is.na(eva_names$div))/ nrow(eva_names)
-sum(!is.na(eva_names$eive))/ nrow(eva_names)
+# remove genera
+check <-vegdata::parse.taxa(unique(eva_names$name))
+genus <- check[is.na(check$epi1),]
+eva_names <- eva_names[!eva_names$name %in% genus$original,]
+eva_test <- eva[!eva$name %in% genus$original,]
 
-sum(!is.na(eva$eive_name)) / nrow(eva)
-sum(!is.na(eva$div_name)) / nrow(eva)
+test <- eva_names |> group_by(Neophyte) |> summarise(n = sum(!is.na(div)))
+nrow(eva_names)
+
+eva_names <- eva_test |> group_by(name, eive_name, div_name) |> summarise(n =n())
+
+sum(!is.na(eva_names$div_name))/ nrow(eva_names)
+sum(!is.na(eva_names$eive_name))/ nrow(eva_names)
+
+sum(!is.na(eva_test$eive_name)) / nrow(eva_test)
+sum(!is.na(eva_test$div_name)) / nrow(eva_test)
 
 sum(eva_names$Neophyte=="extra")
 # read species dominance, which is more correct
@@ -134,6 +153,13 @@ species_dominance <- read.csv("../Results/speciesDominance_1980.csv")
 
 setdiff(species_dominance$names, analysed$name)
 setdiff( analysed$name, species_dominance$names)
+
+eva_diaz <- read.csv("../Extra data/Traits/Eva_diaz.csv")
+length(unique(eva_diaz$name))
+
+fullPlotData[!fullPlotData$PlotObservationID %in% eva_test$PlotObservationID,]
+
+
 
 #### 6. Traits #####
 ###### 6.1 Plot EIVE #######
@@ -238,6 +264,7 @@ eva_names$Nmass[is.na(eva_names$Nmass)] <- mean$Nmass[match(eva_names$name[is.na
 test <- eva_names
 test[, c(4:9)] <- log(test[,c(4:9)])
 test[, c(4:9)] <- scale(test[, c(4:9)])
+
 j=4
 # remove outliers (see Diaz et al 2016 for number 4)
 for(j in 4:9){
@@ -344,3 +371,14 @@ general$cover <- speciesDominance$coverMean[match(general$taxa, speciesDominance
 
 cor.test(general$impact, general$number)
 cor.test(general$impact, general$cover)
+
+##### 8 Custodians ####
+
+fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv",show_col_types = FALSE)
+
+header <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_header.csv", "\t")
+
+fullPlotData$Dataset <- header$Dataset[match(fullPlotData$PlotObservationID, header$PlotObservationID)]
+
+sum(fullPlotData$Dataset=="EU-RU-002")
+sum(fullPlotData$Dataset != "EU-RU-002")

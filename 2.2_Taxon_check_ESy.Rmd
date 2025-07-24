@@ -42,7 +42,7 @@ library(kewr)
 Here we load the data and chose which dataset we want to use.  
 We later remove all rows without a plot ID and check which taxa are present in the dataset
 ```{r Load data, message= F, warning=FALSE}
-fast <- T
+fast <- F
 if(fast) {
   eva <- read_delim("../EVA Data/onePromilleEva.csv", "\t")
 } else {
@@ -175,6 +175,9 @@ unique(eva$`Taxon group`)
 
 ## 3.3 Euro+Med
 ```{r}
+eva$`Matched concept` <- gsub(" c.f."," cf.", eva$`Matched concept`)
+eva$`Matched concept` <- gsub(" cfr."," cf.", eva$`Matched concept`)
+
 # unique names and taxon group combinations (same length as unique species)
 eva_names <- as.data.frame(unique(eva$`Matched concept`))
 colnames(eva_names)<- c("species")
@@ -188,6 +191,11 @@ eva_names$euro <- Euro$TaxonConcept[match(vegdata::taxname.abbr(eva_names$specie
 # how many species
 sum(is.na(eva_names$euro))
 eva_names$euro[is.na(eva_names$euro)] <- Euro$TaxonConcept[match(vegdata::taxname.simplify(eva_names$species[is.na(eva_names$euro)]),
+                                                                 vegdata::taxname.simplify(Euro$TaxonName))]
+# how many species now --> additional 497 found
+sum(is.na(eva_names$euro))
+# cf. --> Axmanova
+eva_names$euro[is.na(eva_names$euro)] <- Euro$TaxonConcept[match(vegdata::taxname.simplify(gsub(" cf.","",eva_names$species[is.na(eva_names$euro)])),
                                                                  vegdata::taxname.simplify(Euro$TaxonName))]
 # how many species now --> additional 497 found
 sum(is.na(eva_names$euro))
@@ -233,10 +241,12 @@ unknown$species <-  Euro$TaxonConcept[match(vegdata::taxname.abbr(unknown$name),
 unknown$species[is.na(unknown$species)]<- Euro$TaxonConcept[match(vegdata::taxname.simplify(unknown$name[is.na(unknown$species)], 
                                                                                            genus=F, epithet=T, rank=F),
                                                                  vegdata::taxname.simplify(Euro$TaxonName, genus=F, epithet=T, rank=F))]
+unknown$species[is.na(unknown$species)]<- Euro$TaxonConcept[match(vegdata::taxname.simplify(gsub(" cf.","",unknown$name[is.na(unknown$species)])),
+                                                                 vegdata::taxname.simplify(Euro$TaxonName, genus=F, epithet=T, rank=F))]
 unknown$source[!is.na(unknown$species)]<- "ESy Matched"
 # how many do we add
 length(unique(unknown$species))
-# we add our findings to eva --> additional 698 species found now
+# we add our findings to eva --> additional 699 species found now
 eva[is.na(eva$species),]<- unknown
 
 
@@ -257,10 +267,12 @@ unknown$species <-  Euro$TaxonConcept[match(vegdata::taxname.abbr(unknown$name),
 unknown$species[is.na(unknown$species)]<- Euro$TaxonConcept[match(vegdata::taxname.simplify(unknown$name[is.na(unknown$species)], 
                                                                                            genus=F, epithet=T, rank=F),
                                                                  vegdata::taxname.simplify(Euro$TaxonName, genus=F, epithet=T, rank=F))]
+unknown$species[is.na(unknown$species)]<- Euro$TaxonConcept[match(vegdata::taxname.simplify(gsub(" cf.","",unknown$name[is.na(unknown$species)])),
+                                                                 vegdata::taxname.simplify(Euro$TaxonName, genus=F, epithet=T, rank=F))]
 unknown$source[!is.na(unknown$species)]<- "ESy Turboveg"
 # how many do we add
 length(unique(unknown$species))
-# we add our findings to eva --> 37 more species
+# we add our findings to eva --> 38 more species
 eva[is.na(eva$species),]<- unknown
 
 
@@ -373,7 +385,7 @@ eva <- eva[!eva$`Matched concept` %in% remove,]
 
 Check species now not yet
 ```{r}
-# 5544 remaining
+# 3912 remaining
 eva_names <- eva[is.na(eva$species)& !duplicated(eva$`Matched concept`),]
 ```
 
@@ -387,6 +399,9 @@ Search internet
 change <- data.frame(old= c("Carex divulsa  subsp. coriogyne"), new= c("Carex divulsa subsp. coriogyne"))
 eva$`Matched concept`[eva$`Matched concept` %in% change$old] <- change$new
 
+remove <- c("Entodon concinnus","Hygrohypnum luridum")
+eva <- eva[!eva$`Matched concept` %in% remove,]
+
 
 # which species are not in data
 eva_names <- as.data.frame(unique(eva$`Matched concept`[is.na(eva$species)]))
@@ -395,14 +410,13 @@ colnames(eva_names)<- "species"
 eva_names$taxon <- eva$`Taxon group`[match( eva_names$species, eva$`Matched concept`)]
 
 
-
-fast=F
+fast= F
 if(fast){
   # search powo and store results in list if we find a direct match
   mybiglist <- list()
   for(i in 1: length(eva_names$species)){
     # powo
-    r<- search_powo(vegdata::taxname.abbr(eva_names$species[i]))
+    r<- search_powo(vegdata::taxname.abbr(gsub(" cf.","",eva_names$species[i])))
     # only if there is a match store result in data, otherwise put NA
     if(length(r$results)>0){
       # make dataframe
@@ -413,7 +427,7 @@ if(fast){
       mybiglist[[i]] <- NA
     }
   } 
-  #saveRDS(mybiglist, "species_powo_ESy_new.RData")
+  #saveRDS(mybiglist, "~/Doctoraat/Impact/Extra data/Species names/species_powo_ESy_new.RData")
 } else {
     # read all data
     mybiglist<- readRDS("~/Doctoraat/Impact/Extra data/Species names/species_powo_ESy_new.RData")
@@ -673,6 +687,11 @@ eva |> group_by(source)|> summarise(n=n())
 # 6 Remaining
 ## 6.1 Plants
 ```{r}
+remove <- c("Campylophyllopsis calcarea","Pellia endiviifolia cf.","Hypanthium glabre","Mylia anomala cf.","Pellia endiviifolia cf.",
+            "Campylophyllum calcareum cf.", "Campylophyllum calcareum cf.")
+eva[eva$`Matched concept` %in% remove,]
+eva <- eva[!eva$`Matched concept` %in% remove,]
+
 # create again unique list of unknown species
 eva_names <- data.frame(unique(eva$`Matched concept`[is.na(eva$species)]))
 colnames(eva_names)<- "species"
@@ -833,8 +852,9 @@ change <- data.frame(old.name = c("Camelina sativa var. sativa",
 change$source <- "own"
 
 # change names in eva
-eva$species[is.na(eva$species)] <- change$new.name[match(eva$`Matched concept`[is.na(eva$species)],change$old.name)]
 eva$source[is.na(eva$species)] <- change$source[match(eva$`Matched concept`[is.na(eva$species)],change$old.name)]
+eva$species[is.na(eva$species)] <- change$new.name[match(eva$`Matched concept`[is.na(eva$species)],change$old.name)]
+
 
 ```
 
@@ -855,8 +875,9 @@ plants <- eva_names[eva_names$taxon=="Vascular plant",]
 plants$source <- "Matched concept"
 
 # give remaining plants just name
-eva$species[is.na(eva$species)] <- plants$species[match(eva$`Matched concept`[is.na(eva$species)], plants$species)]
 eva$source[is.na(eva$species)] <- plants$source[match(eva$`Matched concept`[is.na(eva$species)], plants$species)]
+eva$species[is.na(eva$species)] <- plants$species[match(eva$`Matched concept`[is.na(eva$species)], plants$species)]
+
 
 eva_names<- as.data.frame(unique(eva$`Matched concept`))
 colnames(eva_names) <- "Matched concept"
@@ -869,8 +890,9 @@ eva_names |> group_by(source) |> summarise(n=n())
 
 ## 6.2 Remove
 ```{r}
-# remaining --> 18575
+# remaining --> 10390
 unknown <- eva[is.na(eva$species),]
+# 1188
 unknown <- unknown[!duplicated(unknown$`Matched concept`),]
 
 # also check using GBIF
@@ -881,14 +903,14 @@ species_list <- unique(unknown$`Matched concept`)
 check_species <- function(species_name) {
   rgbif::name_backbone(name = species_name, kingdom = "plants")
 }
-
+fast=F
 if(fast){
   # Apply the function to the species list
   results <- lapply(species_list, check_species)
   results <- plyr::ldply(results)
-  #write_csv(results, "GBIF_plants.csv")
+  write_csv(results, "../Extra data/Species names/GBIF_plants.csv")
 } else {
-  results <- read_csv("GBIF_plants.csv", show_col_types = FALSE)
+  results <- read_csv("../Extra data/Species names/GBIF_plants.csv", show_col_types = FALSE)
 }
 
 # remove all not plants data
@@ -907,7 +929,7 @@ plants <- plants[!is.na(plants$verbatim_name),]
 
 
 
-# make unknown again --> 13371
+# make unknown again --> 5477
 unknown<- eva[is.na(eva$species),]
 # these should all be plant species
 # we could not accept their names, but removing them would change the species richness
@@ -998,7 +1020,7 @@ eva_names |> group_by(source) |> summarise(n=n())
 ## 7.1 subspecies removal
 ```{r}
 # read data
-eva <- read_csv("../EVA Data/eva_ESy_subsp.csv", show_col_types = FALSE)
+#eva <- read_csv("../EVA Data/eva_ESy_subsp.csv", show_col_types = FALSE)
 
 
 # vector with eva names
@@ -1073,9 +1095,63 @@ z <- z[!grepl("subsp.", z$TaxonName),]
 
 eva$name[eva$name %in% z$original] <- z$TaxonName[match(eva$name[eva$name %in% z$original], z$original)]
 
+length(unique(eva$`Matched concept`))
+length(unique(eva$name))
+
+
+remove <- c("Entodon concinnus","Hygrohypnum luridum")
+
+eva <- eva[!eva$name %in% remove,]
 
 # save
-#write_csv(eva, "eva_ESy.csv")
+write_csv(eva, "../EVA data/eva_ESy.csv")
+#eva <- read_csv("../EVA data/eva_ESy.csv")
+```
+
+## 7.2 further removed
+```{r}
+eva$name[eva$name=="Medicago sativa"] <- "Medicago sativa aggr."
+
+species_data <- data.frame(old = c( "crop vineyard", "crop barley", "crop maize", "crop wheat", "crop potato","crop hops", "crop pea", "crop digitalis",
+                                    "crop tomato", "crop currant","crop cabbage", "crop bean", "crop onion", "crop asparagus", "crop spelt",
+                                    "crop carrot", "crop rhubarb", "crop clover", "crop tobacco", "crop zucchini", "crop parsley", "crop gladiolus",
+                                    "crop salsify", "crop radish", "crop lettuce","crop buckwheat"),
+                          new = c("Vitis vinifera", "Hordeum vulgare", "Zea mays", "Triticum aestivum", "Solanum tuberosum", "Humulus lupulus", 
+                                  "Pisum sativum", "Digitalis purpurea", "Solanum lycopersicum", "Ribes rubrum","Brassica oleracea", 
+                                  "Phaseolus vulgaris", "Allium cepa", "Asparagus officinalis", "Triticum aestivum","Daucus carota", 
+                                  "Rheum rhabarbarum", "Trifolium repens", "Nicotiana tabacum", "Cucurbita pepo", "Petroselinum crispum", 
+                                  "Gladiolus grandiflorus", "Tragopogon porrifolius", "Raphanus sativus", "Lactuca sativa",
+                                  "Fagopyrum esculentum"))
+
+
+
+eva$name[eva$name %in% species_data$old] <- species_data$new[match(eva$name[eva$name %in% species_data$old], species_data$old)]
+
+
+
+length(unique(eva$`Matched concept`))
+length(unique(eva$name))
+
+# count
+eva_names <- eva |> group_by(`Matched concept`, name, source) |> summarise(n=n())
+
+
+# remove genera
+check <-vegdata::parse.taxa(unique(eva_names$name))
+genus <- check[is.na(check$epi1),]
+eva_names$genus <- NA
+eva_names$genus[eva_names$name %in% genus$original] <- 1
+
+test <- eva_names |> group_by(`Matched concept`,name, source, genus) |> summarise(n=n())
+
+test |> group_by(source) |> summarise(n=n())
+
+test <- test[!test$source == "Plant",]
+test |> group_by(source, genus) |> summarise(n=n())
+
+test <- test[test$genus=="1",]
+
+length(unique(eva_names$name[is.na(eva_names$genus)]))
 ```
 
 
