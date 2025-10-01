@@ -121,10 +121,22 @@ colnames(eva)
 ###### 5.1 Species ######
 eva_names <- eva |> group_by(name, Neophyte) |> summarise(n =n())
 eva_names |> group_by(Neophyte) |> summarise(n= n())
-nrow(eva |> group_by(name) |> summarise(n =n()))
+nrow(eva_names |> group_by(name) |> summarise(n= n()))
+
+eva_names<- (eva |> group_by(name, Neophyte) |> summarise(n =n()))
+
+# remove genera
+check <-vegdata::parse.taxa(unique(eva_names$name))
+genus <- check[is.na(check$epi1),]
+eva_names$genus <- NA
+eva_names$genus[eva_names$name %in% genus$original] <- 1
+length(eva_names$name[is.na(eva_names$genus)])
+length(unique(eva_names$name[is.na(eva_names$genus)]))
+
+eva_names[is.na(eva_names$genus),] |> group_by(Neophyte) |> summarise(n= n())
 
 sum(eva_names$n >=30)
-
+nrow(eva |> group_by(name)|> summarise(n=n()))
 analysed <- eva_names[eva_names$n>=30,]
 
 eva_names$div <- eva$div_name[match(eva_names$name, eva$name)]
@@ -137,7 +149,7 @@ eva_names <- eva_names[!eva_names$name %in% genus$original,]
 eva_test <- eva[!eva$name %in% genus$original,]
 
 test <- eva_names |> group_by(Neophyte) |> summarise(n = sum(!is.na(div)))
-nrow(eva_names)
+length(unique(eva_names$name))
 
 eva_names <- eva_test |> group_by(name, eive_name, div_name) |> summarise(n =n())
 
@@ -147,9 +159,16 @@ sum(!is.na(eva_names$eive_name))/ nrow(eva_names)
 sum(!is.na(eva_test$eive_name)) / nrow(eva_test)
 sum(!is.na(eva_test$div_name)) / nrow(eva_test)
 
-sum(eva_names$Neophyte=="extra")
+eva_names <- eva_test |> group_by(name, eive_name, div_name, Neophyte) |> summarise(n =n())
+eva_names[!is.na(eva_names$eive_name),] |> group_by(Neophyte) |> summarise(n= n())
+eva_names[!is.na(eva_names$div_name),] |> group_by(Neophyte) |> summarise(n= n())
+
 # read species dominance, which is more correct
 species_dominance <- read.csv("../Results/speciesDominance_1980.csv")
+check <-vegdata::parse.taxa(unique(species_dominance$name))
+genus <- check[is.na(check$epi1),]
+species_dominance <- species_dominance[!species_dominance$name %in% genus$original,]
+species_dominance |> group_by(neophyte) |> summarise(n=n())
 
 setdiff(species_dominance$names, analysed$name)
 setdiff( analysed$name, species_dominance$names)
@@ -179,11 +198,40 @@ sum(!is.na(eva$div_name))/length(eva$PlotObservationID)
 names <- c("EIVE-M","EIVE-N","EIVE-L", "EIVE-R","EIVE-T","Disturbance Severity","Disturbance Frequency","Grazing Pressure", "Mowing Frequency","Soil Disturbance")
 phylo <- read_csv("../Extra data/Species names/phylo.csv", show_col_types = F)
 
+eva_names <- eva |> group_by(name,Neophyte, eive_name, div_name) |> summarise(n=n())
+
+# remove genera
+check <-vegdata::parse.taxa(unique(eva_names$name))
+genus <- check[is.na(check$epi1),]
+eva_names <- eva_names[!eva_names$name %in% genus$original,]
+length(unique(eva_names$name[!is.na(eva_names$div_name)]))/length(unique(eva_names$name))
+length(unique(eva_names$name))
+
+
+# traits
+eva_names$Diaz <- eva_diaz$Diaz_name[match(eva_names$name, eva_diaz$name)]
+eva_names$n <- eva_diaz$number[match(eva_names$name, eva_diaz$name)]
+length(unique(eva_names$name[!is.na(eva_names$Diaz)]))/length(unique(eva_names$name))
+sum(eva_names$n[!is.na(eva_names$Diaz_name)], na.rm=T)/length(unique(eva_names$name[!is.na(eva_names$Diaz_name)]))/6
+
+eva2 <- eva[!eva$name %in% genus$original,]
+sum(eva2$name %in% eva_names$name[!is.na(eva_names$div_name)]) / length(eva2$name %in% eva_names$name[!is.na(eva_names$div_name)])
+
+eva_names_number <- eva_names[!is.na(eva_names$eive_name),]
+eva_names_number |> group_by(Neophyte) |> summarise(n=n())
+eva_names_number <- eva_names[!is.na(eva_names$div_name),]
+eva_names_number |> group_by(Neophyte) |> summarise(n=n())
+
+
+eva2 <- eva |> group_by(name, Neophyte,eive_name, div_name, EIVEresM, EIVEresN, EIVEresL, EIVEresR, EIVEresT, Disturbance.Severity, Disturbance.Frequency,
+                        Grazing.Pressure, Mowing.Frequency, Soil.Disturbance) |> summarise(n=n())
+
+
 library(emmeans)
 library(multcomp)
 
 for(i in 5: 14){
-
+i=9
 var <- colnames(eva2)[i]
 eva3 <- eva2[, c(1,2,i)]
 colnames(eva3)[3] <- "var"
@@ -237,7 +285,7 @@ plot <- ggplot(eva3, aes(x=Neophyte, y= var, fill=Neophyte))+
  
 }
 
-plot <- ggarrange(EIVEresN, EIVEresR, EIVEresL, EIVEresL, EIVEresM,Disturbance.Severity,  Disturbance.Frequency, 
+plot <- ggarrange(EIVEresN, EIVEresR, EIVEresL, EIVEresT, EIVEresM,Disturbance.Severity,  Disturbance.Frequency, 
                   Grazing.Pressure, Mowing.Frequency, Soil.Disturbance, nrow=5, ncol=2, labels = letters[1:10],
                   font.label = list(size = 12), align="hv")
 plot
@@ -251,7 +299,7 @@ eva_names <- eva |> group_by(name, Neophyte) |>summarise(n=n())
 Diaz <- read_csv("../Extra data/Traits/Eva_diaz.csv")
 eva_names <- left_join(eva_names, Diaz[!duplicated(Diaz$name),-c(2:6)], by=c("name"="name"))
 
-mean <- read_csv("../Results/trait_normalized.csv")
+mean <- read_csv("../Results/trait_normalized_new.csv")
 
 eva_names$LA[is.na(eva_names$LA)] <- mean$LA[match(eva_names$name[is.na(eva_names$LA)], mean$SpeciesName)]
 eva_names$LMA[is.na(eva_names$LMA)] <- mean$LMA[match(eva_names$name[is.na(eva_names$LMA)], mean$SpeciesName)]
@@ -281,6 +329,20 @@ phylo <- read.csv("../Extra data/Species names/phylo.csv")
 eva_names[, c(14,13)] <- phylo[match(eva_names$name, phylo$name), 6:7]
 names <- c("Leaf area [mm²]", "LMA [g/m²]","SSD [mg/mm³]","Seed mass [mg]","Leaf N [mg/g]","Height [m]")
 
+# remove genera
+check <-vegdata::parse.taxa(unique(eva_names$name))
+genus <- check[is.na(check$epi1),]
+eva_names <- eva_names[!eva_names$name %in% genus$original,]
+length(unique(eva_names$name[!is.na(eva_names$Diaz_name)]))/length(unique(eva_names$name))
+
+eva2 <- eva[!eva$name %in% genus$original,]
+sum(eva2$name %in% eva_names$name[!is.na(eva_names$Diaz_name)]) / length(eva2$name %in% eva_names$name[!is.na(eva_names$Diaz_name)])
+
+eva_names_number <- eva_names[!is.na(eva_names$Diaz_name),]
+eva_names |> group_by(Neophyte) |> summarise(n= sum(!is.na(Diaz_name))/length(!is.na(Diaz_name)))
+eva_names_number <- eva_names_number[!duplicated(eva_names_number$name),]
+
+sum(eva_names_number$number, na.rm=T)/nrow(eva_names_number)/6
 
 
 i=4
@@ -376,9 +438,22 @@ cor.test(general$impact, general$cover)
 
 fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv",show_col_types = FALSE)
 
+meta <- read_excel("../EVA Data/171_NeophyteInvasions20230216_metadata.xlsx")
 header <- read_delim("../EVA Data/171_NeophyteInvasions20230216_notJUICE_header.csv", "\t")
 
 fullPlotData$Dataset <- header$Dataset[match(fullPlotData$PlotObservationID, header$PlotObservationID)]
 
 sum(fullPlotData$Dataset=="EU-RU-002")
 sum(fullPlotData$Dataset != "EU-RU-002")
+
+
+plots <- fullPlotData |> group_by(Dataset) |> summarise(n=n())
+plots <- plots[order(plots$n, decreasing = TRUE),]
+
+plots$GIVD <- meta$`GIVD code`[match(plots$Dataset, meta$`TV3 database name`)]
+plots$Custodian <- meta$Custodian[match(plots$Dataset, meta$`TV3 database name`)]
+
+nrow(plots)/3
+
+#write_csv(plots, "../Extra data/Intermediate/plots_dataset.csv")
+readr::write_excel_csv(plots, "../Extra data/Intermediate/plots_dataset.csv")

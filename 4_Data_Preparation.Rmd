@@ -69,7 +69,7 @@ if(coverzero){
 Compute total cover for each plot.
 ```{r}
 # fisher calculation
-reducedEva <- eva |> select(PlotObservationID, name, `Cover %`, Layer)
+reducedEva <- eva[, c(1,6,9,8)]
 reducedEva <- reducedEva |> group_by(PlotObservationID, name, Layer) |> summarise(cover= sum(`Cover %`))
 reducedEva <- reducedEva|> group_by(PlotObservationID, name) |> 
   summarise(cover = (1-prod((1-ifelse(cover/100>1, 1, cover/100 ))))*100)
@@ -446,6 +446,21 @@ highDiversityPlots <- fullPlotData[fullPlotData$numberOfVascularPlantSpecies > 1
 # hist(fullPlotData$numberOfVascularPlantSpecies)
 ```
 
+
+```{r}
+dup_check <- highDiversityPlots[duplicated(highDiversityPlots[, c(5,9)]) | duplicated(highDiversityPlots[, c(5,9)], fromLast=T), ]
+
+check <- eva[eva$PlotObservationID %in% dup_check$PlotObservationID, ]
+
+list_species <-  check |> group_by(PlotObservationID) %>%
+  summarise(species_set = paste(sort(unique(name)), collapse = ","), .groups = "drop")
+
+remove <- which(duplicated(list_species$species_set))
+length(remove)
+fullPlotData <- fullPlotData[!fullPlotData$PlotObservationID %in%
+                               list_species$PlotObservationID[remove],]
+```
+
 `r numberOfHighDiversityPlotsToBeRemoved` of the plots were removed because they have suspiciously high, non unique richness in the same database or are known to be incorrect.
 
 ## 3.3 Filter IV
@@ -507,7 +522,7 @@ dup <- data[duplicated(data[, c(9,10:19, 25:29,35)]) |
 remove <- dup$PlotObservationID[duplicated(dup[, c(7,8,9,10:19, 25:29,35)])]
 length(remove)
 fullPlotData <- fullPlotData[!fullPlotData$PlotObservationID %in% remove,]
-
+data <- data[!data$PlotObservationID %in% remove,]
 
 # remove already these plots
 dup <- dup[!dup$PlotObservationID %in% remove,]
@@ -521,12 +536,60 @@ dup_filtered <- dup %>% group_by(across(all_of(dup_colnames))) %>% filter(n() > 
 remove <- dup$PlotObservationID[!dup$PlotObservationID %in% dup_filtered$PlotObservationID]
 length(remove)
 fullPlotData <- fullPlotData[!fullPlotData$PlotObservationID %in% remove,]
+data <- data[!data$PlotObservationID %in% remove,]
 
-
-# check also for plots with duplicate coordinates only
-dup <- data[duplicated(data[, c(35)]) | 
-              duplicated(data[, c(35)], fromLast=T),]
+# check also for plots with duplicate coordinates, date and species richnesses
+dup <- data[duplicated(data[, c(8,35,9)]) | 
+              duplicated(data[, c(8,35,9)], fromLast=T),]
 # this is not feasible to do
+dup <- dup[duplicated(dup[, c(9,10:19, 25:29,35)]) | 
+              duplicated(dup[, c(9,10:19, 25:29,35)], fromLast=T),]
+remove <- dup$PlotObservationID[duplicated(dup[, c(9, 10:19, 25:29,35)])]
+length(remove)
+fullPlotData <- fullPlotData[!fullPlotData$PlotObservationID %in% remove,]
+data <- data[!data$PlotObservationID %in% remove,]
+
+
+# check also for plots with duplicate coordinates, date and species richnesses
+dup <- data[duplicated(data[, c(8,35,9)]) | 
+              duplicated(data[, c(8,35,9)], fromLast=T),]
+
+remove <- dup$PlotObservationID[duplicated(dup[, c(8,35,9)])| duplicated(dup[, c(8,35,9)], fromLast=T)]
+length(remove)
+
+test <- eva[eva$PlotObservationID %in% remove, c(1,6)]
+test$all <- data$all[match(test$PlotObservationID, data$PlotObservationID)]
+
+
+# Group by plot and collect species as sorted concatenated string
+species_by_plot <- test %>%
+  group_by(PlotObservationID, all) %>%
+  summarise(species_set = paste(sort(unique(name)), collapse = ","), .groups = "drop")
+
+# Find plots with identical species sets
+duplicate_species_sets <- species_by_plot %>%
+  group_by(species_set, all) %>%
+  filter(n() > 1) %>%
+  summarise(plots_with_same_species = list(PlotObservationID), .groups = "drop")
+
+# Optional: see number of matching plots per group
+duplicate_species_sets$plot_count <- sapply(duplicate_species_sets$plots_with_same_species, length)
+
+# View result
+
+
+# Step 3: Flatten the list and identify which PlotObservationIDs to remove
+to_remove <- unlist(lapply(duplicate_species_sets$plots_with_same_species,
+                           function(ids) ids[-1]))  # keep the first, remove the rest
+
+# Step 4: Remove duplicates from the original `test` dataset
+test <- test[!test$PlotObservationID %in% to_remove,]
+
+dup <- dup[!dup$PlotObservationID %in% to_remove,]
+
+length(to_remove)
+
+fullPlotData <- fullPlotData[!fullPlotData$PlotObservationID %in% to_remove,]
 ```
 
 
@@ -566,13 +629,13 @@ eva_names$div <- eva$div_name[match( eva_names$`Matched concept`, eva$`Matched c
 # Make sure all plot data is in eva
 fullPlotData <- fullPlotData[fullPlotData$PlotObservationID %in% eva$PlotObservationID,]
 fullPlotData$Dataset <- as.factor(as.character(fullPlotData$Dataset))
-#write_csv(fullPlotData, "../EVA data/fullPlotData_4.csv")
+write_csv(fullPlotData, "../EVA data/fullPlotData_4.csv")
 
 # Make sure all eva data has a plot 
 eva <- eva[eva$PlotObservationID %in% fullPlotData$PlotObservationID,]
 fullPlotEva <- eva
 head(eva)
-#write_csv(eva, "../EVA data/fullPlotEva_4.csv")
+write_csv(eva, "../EVA data/fullPlotEva_4.csv")
 ```
 
 
@@ -746,8 +809,8 @@ eva$species[eva$species %in% name_change$old.name] <-
 eva$name[eva$name %in% name_change$old.name] <-
   name_change$new.name[match(eva$name[eva$name %in% name_change$old.name], name_change$old.name)]
 
-#write_csv(species_country,"../EVA data/country_species_new.csv")
-#write_csv(eva, "../EVA data/fullPlotEva_4.csv")
+write_csv(species_country,"../EVA data/country_species_new.csv")
+write_csv(eva, "../EVA data/fullPlotEva_4.csv")
 ```
 
 

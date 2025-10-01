@@ -1105,7 +1105,7 @@ eva <- eva[!eva$name %in% remove,]
 
 # save
 write_csv(eva, "../EVA data/eva_ESy.csv")
-#eva <- read_csv("../EVA data/eva_ESy.csv")
+eva <- read_csv("../EVA data/eva_ESy.csv")
 ```
 
 ## 7.2 further removed

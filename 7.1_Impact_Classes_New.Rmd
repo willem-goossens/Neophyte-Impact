@@ -552,7 +552,7 @@ library(rlist)
 #library(ggsci)
 
 # load data
-load(file = "I:/impact_new.Rdata") 
+load(file = "I:/impact_new_again.Rdata") 
 # plot data
 plot(z)
 
@@ -582,7 +582,7 @@ plot_data$type <- c(1,3,4,4,3,3,5,5,5,5,5,3,2,7,6,2)
 plot_data$type <- as.factor(plot_data$type)
 colnames(plot_data)[3] <- c("type")
 plot_data <- plot_data %>% mutate(type = factor(type, 
-                          levels = c("1", "2","3","4","6","5"),
+                          levels = c("1", "2","3","4","5","6","7"),
                           labels = c("Plot size", 
                                      "Geography",
                                      "Other environmental variables",
@@ -594,11 +594,11 @@ plot_data <- plot_data %>% mutate(type = factor(type,
 plot_data$Neophyte <- "native"
 
 # classify in types
-plot_data_intra$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,1,1)
+plot_data_intra$type <- c(1,3,4,4,3,3,5,5,5,5,5,3,2,2)
 plot_data_intra$type <- as.factor(plot_data_intra$type)
 colnames(plot_data_intra)[3] <- c("type")
 plot_data_intra <- plot_data_intra %>% mutate(type = factor(type, 
-                          levels = c("1", "2","3","4","6","5"),
+                          levels = c("1", "2","3","4","5","6","7"),
                           labels = c("Plot size", 
                                      "Geography",
                                      "Other environmental variables",
@@ -606,16 +606,16 @@ plot_data_intra <- plot_data_intra %>% mutate(type = factor(type,
                                      "Disturbance variables",
                                      "Extra-European alien",
                                      "Intra-European alien"
-                                    )))
+                                     )))
 plot_data_intra$Neophyte <- "intra"
 
 
 # classify in types
-plot_data_extra$type <- c(1,2,3,3,2,2,4,4,4,4,4,2,1,1)
+plot_data_extra$type <- c(1,3,4,4,3,3,5,5,5,5,5,3,2,2)
 plot_data_extra$type <- as.factor(plot_data_extra$type)
 colnames(plot_data_extra)[3] <- c("type")
 plot_data_extra <- plot_data_extra %>% mutate(type = factor(type, 
-                          levels = c("1", "2","3","4","6","5"),
+                          levels = c("1", "2","3","4","5","6","7"),
                           labels = c("Plot size", 
                                      "Geography",
                                      "Other environmental variables",
@@ -627,12 +627,13 @@ plot_data_extra <- plot_data_extra %>% mutate(type = factor(type,
 plot_data_extra$Neophyte <- "extra"
 
 my_palette <- c(
-  "#1b9e77",  # Blue-Green
-  "#d95f02",  # Golden Yellow
-  "#7570b3",  # Soft Purple
-  "#66c2a5",  # Sky Blue
-  "#004D40",  # Warm Pink
-   "#FFC107"   # Pale Yellow-Green
+  "#1b9e77",  
+  "#7570b3", 
+  "#66c2a5",
+  "#d95f02",  
+  "#e7298a" ,  
+  "#004D40", 
+  "#FFC107"   
 )
 
 
@@ -798,11 +799,20 @@ plot
 ## 3.3 Together plots
 ```{r}
 # choose model for which you want to plot
+analysis <- "Native SR"
+if(analysis == "Native SR"){
+  MDL <- mod
+} else if(analysis == "Extra-\nEuropean SR"){
+  MDL <- mod2
+} else {
+  MDL <- mod3
+}
+
 
 # create vector for variables
-variables = data.frame(var = c("EIVEresT","EIVEresN","EIVEresM","EIVEresR","EIVEresL","DistSeverity.sqrt","Soil.Disturbance.sqrt",
-                               "Grazing.Pressure.sqrt","Mowing.Frequency.sqrt", "hfp","DI_extra", "DI_intra"),
-                 type= c(2,3,2,3,2,4,4,4,4,4,5,6), 
+variables = data.frame(var = c("EIVEresT","EIVEresN","EIVEresM","EIVEresR","EIVEresL","DistSeverity","Soil.Disturbance",
+                               "Grazing.Pressure","Mowing.Frequency", "hfp","DI_extra", "DI_intra"),
+                 type= c(3,4,3,4,3,5,5,5,5,5,6,7), 
                  name = c("EIVE T", "Soil nitrogen (EIVE)", "EIVE M","Soil reaction (EIVE)", "EIVE L", "Disturbance severity (DIV)", "DIV soil", 
                           "DIV grazing","DIV mowing","Human Footprint","APP extra-European", "APP intra-European"))
 variables$color <-my_palette[variables$type]
@@ -927,8 +937,9 @@ plot_all <-  ggarrange(plot_variance,
                                  common.legend = T,legend="bottom", align="hv"), nrow=2, labels= letters[1], heights= c(1,2))
 plot_all
 
-ggsave("../Images/Variance.png", width=8, height=8)
+#ggsave("../Images/Variance.svg", width=8, height=8)
 ```
+
 
 ```{r}
 leg <- ggpubr::get_legend(plot_EIVE_N)
@@ -946,7 +957,9 @@ under
 plot_all <-  ggarrange(plot_variance, under,ncol=1, nrow=2,
                                  labels= letters[1], heights= c(1,2))
 plot_all
+#ggsave("../Images/Variance_daisie.svg", width=8, height=8)
 ggsave("../Images/Variance_daisie.png", width=8, height=8)
+
 ```
 
 
@@ -957,7 +970,7 @@ plot_data$variable <-  c("Area", "EIVE M", "EIVE N", "EIVE R","EIVE L", "EIVE T"
                          "DIV grazing","DIV mowing","HFP","MAP","Elevation","Intra","Extra","Spatial")
 
 # create vector for variables
-variables = data.frame(var = c("EIVEresT","EIVEresN","EIVEresM","EIVEresR","EIVEresL","DistSeverity.sqrt","Soil.Disturbance.sqrt",                               "Grazing.Pressure.sqrt","Mowing.Frequency.sqrt", "hfp","DI_extra", "DI_intra", "Area","chelsaP","elev","Longitude","Latitude"),
+variables = data.frame(var = c("EIVEresT","EIVEresN","EIVEresM","EIVEresR","EIVEresL","DistSeverity","Soil.Disturbance",                               "Grazing.Pressure","Mowing.Frequency", "hfp","DI_extra", "DI_intra", "Area","chelsaP","elev","Longitude","Latitude"),
                  type= c(2,3,2,3,2,4,4,4,4,4,5,6,1,2,1,1,1), 
                  name = c("EIVE T", "Soil nitrogen (EIVE)", "EIVE M","Soil reaction (EIVE)", "EIVE L", "Disturbance severity (DIV)", 
                           "Soil disturbance (DIV)","Grazing pressure (DIV)","Mowing pressure (DIV)","Human Footprint",
