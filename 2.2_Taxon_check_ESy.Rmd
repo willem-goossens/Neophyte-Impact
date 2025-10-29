@@ -4,7 +4,7 @@ author: "Willem Goossens"
 date: "`r Sys.Date()`"
 output: html_document
 ---
-
+change
 # 1 LOAD
 ```{r clear, echo=F}
 # clear
