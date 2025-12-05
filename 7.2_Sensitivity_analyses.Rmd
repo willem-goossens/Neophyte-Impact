@@ -1,0 +1,483 @@
+---
+title: "Sensitivity analysis"
+author: "Willem Goossens"
+date: "2025-12-01"
+output: html_document
+---
+
+
+# Start
+Clean 
+```{r}
+rm(list=ls())
+```
+
+
+Load packages
+```{r}
+library(tidyverse)
+library(fuzzyjoin)
+library(tibble)
+library(ggpubr)
+library(ggridges)
+library(ggpubr)
+library(lme4)
+library(emmeans)
+library(multcomp)
+```
+# DOMINANCE
+## 1 START
+## 1.1 Data
+Load data
+```{r}
+# we will have to redo the analysis once
+speciesDominance<- read.csv("../Results/speciesDominance_all.csv")
+speciesDominance <- speciesDominance[!is.na(speciesDominance$coverMean),]
+
+
+# look at quantiles
+quantiles <- quantile(speciesDominance$coverMean[speciesDominance$neophyte=="native"], probs = c(0, 0.01, 0.05, 0.95, 0.99, 1))
+# Assign each species to a class
+speciesDominance$significantCoverMean <- as.factor(cut(speciesDominance$coverMean, breaks = quantiles, 
+                                                       labels = c("p=0.01 negative", "p=0.05 negative", "", "p=0.05 positive", "p=0.01 positive"), right = TRUE))
+
+
+# read phylogenetic data
+phylo <- read_csv("../Extra data/Species names/phylo.csv", show_col_types = F)
+speciesDominance[, c(8:9)] <- phylo[match(speciesDominance$names, phylo$name), 6:7]
+
+# remove all not species level data
+names <- speciesDominance$names
+# check
+check <-vegdata::parse.taxa(names)
+
+# get all genera (or family) observations
+genus <- check[is.na(check$epi1),]
+# remove these observations
+speciesDominance <- speciesDominance[!speciesDominance$names %in% genus$original,]
+```
+
+
+## 1.2 Number
+```{r}
+# look at number of observations
+table(speciesDominance$neophyte[speciesDominance$numberOfPlots >= 20])
+table(speciesDominance$neophyte[speciesDominance$numberOfPlots >= 25])
+table(speciesDominance$neophyte[speciesDominance$numberOfPlots >= 30])
+table(speciesDominance$neophyte[speciesDominance$numberOfPlots >= 35])
+table(speciesDominance$neophyte[speciesDominance$numberOfPlots >= 40])
+```
+
+
+```{r}
+# create databases
+sensitivity_values <- c(20,25,30,35,40)
+
+# assign values 
+for(i in sensitivity_values){
+  p <- speciesDominance[speciesDominance$numberOfPlots >= i,]
+  assign( paste("sensitivity",i, sep="_"), p)
+}
+```
+
+## 2 ANALYSIS
+## 2.1 Significance
+```{r}
+test_significance =F
+if(test_significance){
+# run for all
+for(i in sensitivity_values){
+  dataset <-  speciesDominance[speciesDominance$numberOfPlots >= i,]
+  
+  # dominance
+  # calculate significance
+  dataset$rel <- dataset$coverMean/100
+  model <- glmmTMB(rel ~ -1+ neophyte + (1|family/genus), data= dataset, family= beta_family())
+  summary(model)
+  ## assign value
+  p <- summary(emmeans::emmeans(model, pairwise ~ neophyte))$contrasts
+  assign(paste("overall_dominance", i, sep="_"), p)
+  
+  # check assumptions
+  simulation <- DHARMa::simulateResiduals(model)
+  plot(simulation)
+
+  
+  # frequency
+  # glmmTMB
+  model <- glmmTMB((numberOfPlots) ~ -1+ neophyte + (1|family/genus/names), data= dataset, family= nbinom2() )
+  summary(model)
+  # assign value
+  p <- summary(emmeans::emmeans(model, pairwise ~ neophyte))
+  assign(paste("overall_frequency", i, sep="_"), p)
+
+  
+  # check assumptions
+  simulation <- DHARMa::simulateResiduals(model)
+  plot(simulation)
+  # does not work
+  
+  
+  # we will 'bootstrap' or results using 1000 replications
+  result <- data.frame(contrast = character(), estimate = numeric(), SE= numeric(), df=numeric(), t.ratio=numeric(), p.value= numeric())
+  result_freq <- data.frame(contrast = character(), estimate = numeric(), SE= numeric(), df=numeric(), t.ratio=numeric(), p.value= numeric())
+
+  # Counter for successful runs
+  successful_runs <- 0
+  
+  while (successful_runs < 1000) {
+    # sample natives
+    natives <- dataset[dataset$neophyte=="native",]
+    natives <- natives[sample(nrow(natives),200, replace=F),]
+    # sample intras
+    intras <- dataset[dataset$neophyte=="intra",]
+    intras <- intras[sample(nrow(intras),200, replace=T),]
+    # sample extras
+    extras <- dataset[dataset$neophyte=="extra",]
+    extras <- extras[sample(nrow(extras),200, replace=T),]
+    all <- rbind(natives, dataset[!dataset$neophyte=="native",])
+    all <- rbind(natives, intras, extras)
+    
+    # model again
+    model <-  glmmTMB((rel) ~ -1+ neophyte + (1|family/genus), data= all, family= beta_family() )
+
+    model2 <-  glmmTMB((numberOfPlots) ~ -1+ neophyte + (1|family/genus), data= all, family= nbinom2() )
+
+    if (model$fit$convergence != 0) next
+    if (model2$fit$convergence != 0) next
+
+    # check pairwise differences
+    emmeans_results <- emmeans::emmeans(model, pairwise ~ neophyte)
+    # save in data frame
+    sum <- summary(emmeans_results)$contrasts
+    # add to large table
+    result <- rbind(result, sum)
+    
+    # check pairwise differences
+    emmeans_results <- emmeans::emmeans(model2, pairwise ~ neophyte)
+    # save in data frame
+    sum <- summary(emmeans_results)$contrasts
+    # add to large table
+    result_freq <- rbind(result_freq, sum)
+    
+    # add a significance 
+    successful_runs <- successful_runs+1
+  }
+    
+  # look at aggregated results (mean and sd)
+  aggregated_result <- aggregate(. ~ contrast, data = result, FUN = function(x) c(mean = mean(x), sd = sd(x)))
+  # assess number of significant
+  result$significant <- result$p.value < 0.05
+  p <- result |> group_by(contrast) |> summarise(n = sum(significant), n2 = sum(!significant))
+  assign(paste("bootstrap_dominance",i, sep="_"), p)  
+    
+    
+  # look at aggregated results (mean and sd)
+  aggregated_result_freq <- aggregate(. ~ contrast, data = result_freq, FUN = function(x) c(mean = mean(x), sd = sd(x)))
+  # assess number of significant
+  result_freq$significant <- result_freq$p.value < 0.05
+  p <- result_freq |> group_by(contrast) |> summarise(n = sum(significant), n2 = sum(!significant))
+  assign(paste("bootstrap_frequency",i, sep="_"), p)  
+}
+
+# save dominance together
+dominance_bootstrapp <- bind_rows(bootstrap_dominance_20, bootstrap_dominance_25, bootstrap_dominance_30, bootstrap_dominance_35,
+                                  bootstrap_dominance_40)
+dominance_bootstrapp$sensitivity <- sort(rep(sensitivity_values, 3))
+dominance_bootstrapp$type <- "dominance"
+
+# save frequency
+frequency_bootstrapp <- bind_rows(bootstrap_frequency_20, bootstrap_frequency_25, bootstrap_frequency_30, bootstrap_frequency_35,
+                                  bootstrap_frequency_40)
+frequency_bootstrapp$sensitivity <- sort(rep(sensitivity_values, 3))
+frequency_bootstrapp$type <- "frequency"
+
+bootstrap <- bind_rows(dominance_bootstrapp, frequency_bootstrapp)
+
+# we save the top 10
+#write_csv(bootstrap, "../Extra data/Intermediate/bootstrap_sensitivity.csv")
+} else {
+bootstrap <- read_csv("../Extra data/Intermediate/bootstrap_sensitivity.csv",show_col_types = FALSE)
+}
+```
+
+## 2.2 Plot
+```{r}
+# replot data seperately
+for(i in sensitivity_values){
+  
+  # get data 
+  dataset <-  speciesDominance[speciesDominance$numberOfPlots >= i,]
+
+  # Define relative positions for annotations
+  dataset <- dataset %>% mutate(Neophyte = factor(neophyte, 
+                            levels = c("native", "intra","extra"),
+                            labels = c("Native", 
+                                       "Intra-European", 
+                                       "Extra-European")))  
+  
+  
+  # get data
+  y_n_Dominance <- max(log10(dataset$coverMean)) + 0.2 * diff(range(log10(dataset$coverMean)))
+  y_text_Dominance <- max(log10(dataset$coverMean)) + 0.1 * diff(range(log10(dataset$coverMean)))
+  
+  y_n_Frequency <- max(log10(dataset$numberOfPlots)) + 0.2 * diff(range(log10(dataset$numberOfPlots)))
+  y_text_Frequency <- max(log10(dataset$numberOfPlots)) + 0.1 * diff(range(log10(dataset$numberOfPlots)))
+  
+  
+  # Violin plot for Dominance
+  Dominance <- ggplot(dataset, aes(x=neophyte, y=log10(coverMean), group=Neophyte, colour=Neophyte, fill=Neophyte)) + 
+    geom_violin(alpha=0.5, scale="width") +
+    geom_boxplot(width=0.25, alpha=0.8, fill="white") +
+    theme_pubr() +
+    stat_summary(fun="mean", geom="point", aes(group=Neophyte), size=3) +
+    scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40")) +
+    scale_fill_manual(values=c("#1E88E5", "#FFC107", "#004D40")) +
+    guides(color="none") +
+    theme(legend.position="none") +
+    scale_y_continuous(breaks=c(-1, 0, 1, 2), labels=c(0.1, 1, 10, 100), limits=c(-1, y_n_Dominance + 0)) +
+    scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native")) +
+    theme(axis.text.x=element_text(size=12), axis.title.y=element_text(size=12), axis.title.x=element_blank(), 
+          axis.text.y=element_text(size=10)) +
+    
+    theme(axis.title.y = element_text(margin = margin(r = 0)))+
+    ylab("Dominance") +
+    
+    # Sample sizes (higher position)
+    annotate("text", x=1, y=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$neophyte=="extra"])), size=4, hjust=0.5) +
+    annotate("text", x=2, y=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$neophyte=="intra"])), size=4, hjust=0.5) +
+    annotate("text", x=3, y=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$neophyte=="native"])), size=4, hjust=0.5) +
+    
+    # Significance letters (lower position)
+    annotate("text", x=1, y=y_text_Dominance, label="a", size=4, hjust=0.5, alpha=1) +
+    annotate("text", x=2, y=y_text_Dominance, label="b", size=4, hjust=0.5, alpha=1) +
+    annotate("text", x=3, y=y_text_Dominance, label="c", size=4, hjust=0.5, alpha=1)
+  
+  # Violin plot for Frequency
+  Frequency <- ggplot(dataset, aes(x=neophyte, y=log10(numberOfPlots), group=Neophyte, colour=Neophyte, fill=Neophyte)) + 
+    geom_violin(alpha=0.5, scale="width") +
+    geom_boxplot(width=0.25, alpha=0.8, fill="white") +
+    theme_pubr() +
+    stat_summary(fun="mean", geom="point", aes(group=Neophyte), size=3) +
+    scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40")) +
+    scale_fill_manual(values=c("#1E88E5", "#FFC107", "#004D40")) +
+    guides(color="none") +
+    theme(legend.position="none") +
+    scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native")) +
+    scale_y_continuous(breaks= seq(2, 5, by =1), limits=c(1.5, y_n_Frequency )) +
+    ylab("Frequency")+
+    xlab(element_blank())+
+    theme(axis.title.y = element_text(margin = margin(r = 0)))+
+    
+    # Sample sizes (higher position)
+    annotate("text", x=1, y=y_n_Frequency, label=paste("n=", length(dataset$numberOfPlots[dataset$neophyte=="extra"])), size=4, hjust=0.5) +
+    annotate("text", x=2, y=y_n_Frequency, label=paste("n=", length(dataset$numberOfPlots[dataset$neophyte=="intra"])), size=4, hjust=0.5) +
+    annotate("text", x=3, y=y_n_Frequency, label=paste("n=", length(dataset$numberOfPlots[dataset$neophyte=="native"])), size=4, hjust=0.5) +
+    
+    # Significance letters (lower position)
+    annotate("text", x=1, y=y_text_Frequency, label="b", size=4, hjust=0.5, alpha=1) +
+    annotate("text", x=2, y=y_text_Frequency, label="c", size=4, hjust=0.5, alpha=1) +
+    annotate("text", x=3, y=y_text_Frequency, label="a", size=4, hjust=0.5, alpha=1)
+
+  assign(paste("dominance",i, sep="_"), Dominance)
+  assign(paste("frequency",i, sep="_"), Frequency)
+  
+  plot <- ggarrange(Dominance, Frequency, nrow=1, ncol=2, align="hv")
+  assign(paste("dom_freq",i, sep="_"), plot)
+  plot
+}
+
+# plot all together
+plot <- ggarrange(dom_freq_20,dom_freq_25,dom_freq_30,dom_freq_35,dom_freq_40, nrow= 5, ncol=1, labels = c("A","B","C","D","E"))
+plot
+
+# this does not make sense, we will try to plot it differently
+```
+
+
+## 3 SENSITIVITY
+## 3.1 Database
+```{r}
+# merge
+# create a unique dataset
+dataset <-  speciesDominance[speciesDominance$numberOfPlots >= 20,]
+dataset$type <- "20"
+
+
+# add all other numbers
+for( i in sensitivity_values[!sensitivity_values %in% 20]){
+  p <- speciesDominance[speciesDominance$numberOfPlots >= i,]
+  p$type <- as.character(i)
+  spacer <- as.data.frame(matrix(NA, ncol=ncol(p), nrow=1))
+  colnames(spacer) <- colnames(p)
+  spacer$type <- paste("spacer",i-5, sep="_")
+  p <- bind_rows(spacer, p)
+  dataset <- bind_rows(dataset, p)
+}
+
+dataset$type <- as.factor(dataset$type)
+
+  
+# combine number and origin
+dataset$combined <- paste(dataset$type, dataset$neophyte, sep= "_")
+
+# Define relative positions for annotations
+dataset <- dataset %>% mutate(neophyte = factor(neophyte, 
+                            levels = c("native", "intra","extra"),
+                            labels = c("Native", 
+                                       "Intra-European", 
+                                       "Extra-European")))  
+
+  
+# get data
+y_n_Dominance <- max(log10(dataset$coverMean), na.rm = T) + 0.2 * diff(range(log10(dataset$coverMean), na.rm = T))
+y_text_Dominance <- max(log10(dataset$coverMean), na.rm = T) + 0.1 * diff(range(log10(dataset$coverMean), na.rm = T))
+  
+y_n_Frequency <- max(log10(dataset$numberOfPlots), na.rm = T) + 0.2 * diff(range(log10(dataset$numberOfPlots), na.rm = T))
+y_text_Frequency <- max(log10(dataset$numberOfPlots), na.rm = T) + 0.1 * diff(range(log10(dataset$numberOfPlots), na.rm = T))
+
+# get order data
+order_data <- unique(dataset$combined)  
+
+ordered_combined <- c(
+  "20_native", "20_intra", "20_extra", "spacer_20_NA",
+  "25_native", "25_intra", "25_extra", "spacer_25_NA",
+  "30_native", "30_intra", "30_extra", "spacer_30_NA",
+  "35_native", "35_intra", "35_extra", "spacer_35_NA",
+  "40_native", "40_intra", "40_extra"
+)
+
+dataset$combined <- factor(dataset$combined, levels = ordered_combined)
+```
+
+## 3.2 Plot
+```{r}
+# Violin plot for Dominance
+Dominance <- ggplot(dataset, aes(y=combined, x=log10(coverMean), group=combined, colour=neophyte, fill=neophyte)) + 
+  geom_violin(alpha=0.5, scale="width") +
+  geom_boxplot(width=0.25, alpha=0.8, fill="white") +
+  theme_pubr() +
+  stat_summary(fun="mean", geom="point", aes(group=neophyte), size=3) +
+  scale_colour_manual(values=c("Native" = "#1E88E5", 
+                             "Intra-European" = "#FFC107", 
+                             "Extra-European" = "#004D40")) +
+  scale_fill_manual(values=c("Native" = "#1E88E5", 
+                             "Intra-European" = "#FFC107", 
+                             "Extra-European" = "#004D40"))+
+  guides(color="none") +
+  theme(legend.position="none", axis.ticks.y = element_blank() ) +
+  scale_x_continuous(breaks=c(-1, 0, 1, 2), labels=c(0.1, 1, 10, 100), limits=c(-1, y_n_Dominance + 0)) +
+  scale_y_discrete(labels=c("Native","Intra-European", "Extra-European",  "",
+                            "Native","Intra-European", "Extra-European",  "",
+                            "Native","Intra-European", "Extra-European",  "",
+                            "Native","Intra-European", "Extra-European",  "",
+                            "Native","Intra-European", "Extra-European",  ""))+
+  theme(axis.text.y=element_text(size=12), axis.title.x=element_text(size=12), axis.title.y=element_blank(), 
+        axis.text.x=element_text(size=10)) +
+  theme(axis.title.x = element_text(margin = margin(r = 0)))+
+  xlab("Dominance") +
+    
+  # Sample sizes (higher position)
+  annotate("text", y=1, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="20_extra"])), size=4, hjust=0.5) +
+  annotate("text", y=2, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="20_intra"])), size=4, hjust=0.5) +
+  annotate("text", y=3, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="20_native"])), size=4, hjust=0.5) +
+  annotate("text", y=5, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="25_extra"])), size=4, hjust=0.5) +
+  annotate("text", y=6, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="25_intra"])), size=4, hjust=0.5) +
+  annotate("text", y=7, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="25_native"])), size=4, hjust=0.5) +
+  annotate("text", y=9, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="30_extra"])), size=4, hjust=0.5) +
+  annotate("text", y=10, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="30_intra"])), size=4, hjust=0.5) +
+  annotate("text", y=11, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="30_native"])), size=4, hjust=0.5) +
+  annotate("text", y=13, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="35_extra"])), size=4, hjust=0.5) +
+  annotate("text", y=14, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="35_intra"])), size=4, hjust=0.5) +
+  annotate("text", y=15, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="35_native"])), size=4, hjust=0.5) +
+  annotate("text", y=17, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="40_extra"])), size=4, hjust=0.5) +
+  annotate("text", y=18, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="40_intra"])), size=4, hjust=0.5) +
+  annotate("text", y=19, x=y_n_Dominance, label=paste("n=", length(dataset$coverMean[dataset$combined=="40_native"])), size=4, hjust=0.5) +
+  # Significance letters (lower position)
+  annotate("text", y=1, x=y_text_Dominance, label="a", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=2, x=y_text_Dominance, label="b", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=3, x=y_text_Dominance, label="c", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=5, x=y_text_Dominance, label="a", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=6, x=y_text_Dominance, label="b", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=7, x=y_text_Dominance, label="c", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=9, x=y_text_Dominance, label="a", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=10, x=y_text_Dominance, label="b", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=11, x=y_text_Dominance, label="c", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=13, x=y_text_Dominance, label="a", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=14, x=y_text_Dominance, label="b", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=15, x=y_text_Dominance, label="c", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=17, x=y_text_Dominance, label="a", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=18, x=y_text_Dominance, label="b", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=19, x=y_text_Dominance, label="c", size=4, hjust=0.5, alpha=1)
+
+# Violin plot for Dominance
+Frequency <- ggplot(dataset, aes(y=combined, x=log10(numberOfPlots), group=combined, colour=neophyte, fill=neophyte)) + 
+  geom_violin(alpha=0.5, scale="width") +
+  geom_boxplot(width=0.25, alpha=0.8, fill="white") +
+  theme_pubr() +
+  stat_summary(fun="mean", geom="point", aes(group=neophyte), size=3) +
+  scale_colour_manual(values=c("#1E88E5", "#FFC107", "#004D40")) +
+  scale_fill_manual(values=c("#1E88E5", "#FFC107", "#004D40"))+
+  guides(color="none") +
+  theme(legend.position="none", axis.ticks.y = element_blank() ) +
+  scale_x_continuous(breaks= seq(2, 5, by =1), limits=c(1.5, y_n_Frequency )) +
+  scale_y_discrete(labels=c("Native","Intra-European", "Extra-European",  "",
+                            "Native","Intra-European", "Extra-European",  "",
+                            "Native","Intra-European", "Extra-European",  "",
+                            "Native","Intra-European", "Extra-European",  "",
+                           "Native","Intra-European", "Extra-European",  ""))+
+  theme(axis.text.y=element_text(size=12), axis.title.x=element_text(size=12), axis.title.y=element_blank(), 
+        axis.text.x=element_text(size=10)) +
+  theme(axis.text.y=element_blank(), axis.title.x=element_text(size=12), axis.title.y=element_blank(), 
+        axis.text.x=element_text(size=10)) +  
+  theme(axis.title.x = element_text(margin = margin(r = 0)))+
+  xlab("Frequency") +
+    
+  # Sample sizes (higher position)
+  annotate("text", y=1, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="20_extra"])), size=4, hjust=0.5) +
+  annotate("text", y=2, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="20_intra"])), size=4, hjust=0.5) +
+  annotate("text", y=3, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="20_native"])), size=4, hjust=0.5) +
+  annotate("text", y=5, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="25_extra"])), size=4, hjust=0.5) +
+  annotate("text", y=6, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="25_intra"])), size=4, hjust=0.5) +
+  annotate("text", y=7, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="25_native"])), size=4, hjust=0.5) +
+  annotate("text", y=9, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="30_extra"])), size=4, hjust=0.5) +
+  annotate("text", y=10, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="30_intra"])), size=4, hjust=0.5) +
+  annotate("text", y=11, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="30_native"])), size=4, hjust=0.5) +
+  annotate("text", y=13, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="35_extra"])), size=4, hjust=0.5) +
+  annotate("text", y=14, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="35_intra"])), size=4, hjust=0.5) +
+  annotate("text", y=15, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="35_native"])), size=4, hjust=0.5) +
+  annotate("text", y=17, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="40_extra"])), size=4, hjust=0.5) +
+  annotate("text", y=18, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="40_intra"])), size=4, hjust=0.5) +
+  annotate("text", y=19, x=y_n_Frequency, label=paste("n=", length(dataset$coverMean[dataset$combined=="40_native"])), size=4, hjust=0.5) +
+  # Significance letters (lower position)
+  annotate("text", y=1, x=y_text_Frequency, label="a", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=2, x=y_text_Frequency, label="b", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=3, x=y_text_Frequency, label="c", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=5, x=y_text_Frequency, label="a", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=6, x=y_text_Frequency, label="b", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=7, x=y_text_Frequency, label="c", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=9, x=y_text_Frequency, label="a", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=10, x=y_text_Frequency, label="b", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=11, x=y_text_Frequency, label="c", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=13, x=y_text_Frequency, label="a", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=14, x=y_text_Frequency, label="b", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=15, x=y_text_Frequency, label="c", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=17, x=y_text_Frequency, label="a", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=18, x=y_text_Frequency, label="b", size=4, hjust=0.5, alpha=1) +
+  annotate("text", y=19, x=y_text_Frequency, label="c", size=4, hjust=0.5, alpha=1)+
+  scale_y_discrete(labels = NULL, breaks = NULL) + labs(y = "")
+
+Frequency
+
+# plot all together
+plot <- ggarrange(Dominance, Frequency, nrow= 1, ncol=2, labels = c("a","b"), align= "v")
+plot
+
+#ggsave("../Images/Sensitivity_dom_fre.svg", width= 15, height =5 )
+```
+
+
+
+# IMPACT
+## 1 START
+## 1.1 Data
