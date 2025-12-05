@@ -1,0 +1,835 @@
+---
+title: "Impact comparison"
+author: "Willem Goossens"
+date: "2025-11-27"
+output: html_document
+---
+
+# Start
+Clean 
+```{r}
+rm(list=ls())
+```
+
+
+Load packages
+```{r}
+library(httr)
+library(jsonlite)
+library(tidyverse)
+#library(stringdist)
+#install.packages("fuzzyjoin")
+library(fuzzyjoin)
+library(tibble)
+library(ggridges)
+library(ggpubr)
+library(lme4)
+library(emmeans)
+library(multcomp)
+```
+
+Load data
+```{r}
+# load impact and phylogenetic data
+impact<- read.csv("I:/Impact_1980_final.csv")
+phylo <- read.csv("../Extra data/Species names/phylo.csv")
+impact[,14:15] <- phylo[match(impact$taxa, phylo$name), 6:7]
+
+# remove only genus level
+check <-vegdata::parse.taxa(unique(impact$taxa))
+genus <- check[is.na(check$epi1),]
+impact <- impact[!impact$taxa %in% genus$original,]
+
+# calculate weighted impact
+general <- impact |> 
+  group_by(taxa, Neophyte, genus, family) |> 
+  summarise(impact= sum((RelDiff*n)/numberOfPlots))
+```
+
+
+# EASIN
+ChatGPT code to retrieve all data
+```{r}
+# root to all data (general)
+easin_root <- "https://easin.jrc.ec.europa.eu/apixg/catxg"
+
+# Get JSON from URL
+get_json <- function(url) {
+  resp <- httr::GET(url)
+  # if error show where it was
+  if (httr::status_code(resp) != 200) {
+    stop("EASIN request failed: ", httr::status_code(resp), " for URL: ", url)
+  }
+  # encode for R
+  content_text <- httr::content(resp, as = "text", encoding = "UTF-8")
+  jsonlite::fromJSON(content_text, flatten = TRUE)
+}
+
+# Function to access all data
+# if take = 15000 these are all species
+fetch_easin_catalogue <- function(take = 15000) {
+  # start value
+  skip <- 0
+  all_items <- list()
+  repeat {
+    url <- sprintf("%s/getall/skip/%d/take/%d", easin_root, skip, take)
+    message("Fetching: ", url)
+    j <- get_json(url)
+    if (length(j) == 0) break
+    all_items[[length(all_items) + 1]] <- j
+    # If returned rows less than 'take', we are done
+    if (length(j) < take) break
+    skip <- skip + take
+  }
+  # Combine rows
+  if (length(all_items) == 0) return(tibble::tibble())
+  combined <- do.call(rbind, lapply(all_items, function(x) as.data.frame(x, stringsAsFactors = FALSE)))
+  as_tibble(combined)
+}
+
+# retrieve all data
+easin <- fetch_easin_catalogue(take = 15000)
+```
+
+
+Make uniform species names
+```{r}
+# load eva to get unique names and synonyms once used in process
+eva <- read_csv("../EVA data/fullPlotEva_4.csv", show_col_types = FALSE)
+# get names
+names <- unique(eva[, c(2:6)])
+# reduce names to those relevant for us
+names<- names[names$name %in% general$taxa, ]
+
+# create extra column
+easin$name <- names$name[match(easin$Name, names$name)]
+# we have the names for 20%
+sum(!is.na(easin$name))
+
+# check other options
+easin$name[is.na(easin$name)] <- names$name[match(easin$Name[is.na(easin$name)], names$species)]
+sum(!is.na(easin$name))
+# 2394
+
+# check other options
+easin$name[is.na(easin$name)] <- names$name[match(easin$Name[is.na(easin$name)], names$irena)]
+sum(!is.na(easin$name))
+# 2408
+
+# check other options
+easin$name[is.na(easin$name)] <- names$name[match(easin$Name[is.na(easin$name)], names$`Matched concept`)]
+sum(!is.na(easin$name))
+# 2423
+
+# check other options
+easin$name[is.na(easin$name)] <- names$name[match(easin$Name[is.na(easin$name)], names$`Turboveg2 concept`)]
+sum(!is.na(easin$name))
+# 2584
+```
+
+
+
+Join with species
+```{r}
+# some names appear multiple times
+# only get the ones that are relevant
+id <- easin$EasinID[!(duplicated(easin[,13]) | duplicated(easin[, 13], fromLast=T))]
+# get duplicated
+dup <- easin[duplicated(easin[,13]) | duplicated(easin[, 13], fromLast=T),]
+dup <- dup[!is.na(dup$name),]
+# get save id
+save <- dup$EasinID[dup$Name==gsub(" aggr.", "",dup$name)]
+id <- c(id, save)
+
+# match these already
+# exact join by normalized name
+exact_matches <- general %>%
+  left_join(easin[easin$EasinID %in% id,], by = c("taxa" = "name"))
+# check number of species not yet identified
+# 3467
+sum(is.na(exact_matches$EasinID))
+
+# we will perform the ESy classification on EASIN
+# read EURO MED database
+library(RSQLite)
+# connect to the database
+con <- dbConnect(drv=RSQLite::SQLite(), dbname="C:/Users/u0166342/Documents/Doctoraat/Impact/Extra Data/EURO+MED/EuroSL.sqlite")
+# list all tables
+tables <- dbListTables(con)
+lDataFrames <- vector("list", length=length(tables))
+for (i in seq(along=tables)) {
+  lDataFrames[[i]] <- dbGetQuery(conn=con, statement=paste("SELECT * FROM '", tables[[i]], "'", sep=""))
+}
+# retrieve data with euro med classification
+Euro <- lDataFrames[[1]]
+dbDisconnect(con)
+# remove unnecessary data
+rm(lDataFrames,tables,con)
+
+
+# add other data from euro+med
+easin$taxa <- Euro$TaxonConcept[match(vegdata::taxname.abbr(easin$Name), vegdata::taxname.abbr(Euro$TaxonName))]
+# create dataframe with species names to feed to the database and to aggregate some species
+obs <- easin[!is.na(easin$taxa),c(1,14,4)]
+# give necessary names
+colnames(obs) <- c("RELEVE_NR","TaxonName","Cover_Perc")
+# run function
+source("2.2.1_Bruelheide.R")
+# add names to our dataset
+easin$taxa[!is.na(easin$taxa)] <- obs$TaxonName
+# we found an additional 2680 species
+sum(!is.na(easin$taxa))
+
+# change taxa for species previously already included
+easin$taxa[easin$EasinID %in% id] <- easin$name[easin$EasinID %in% id]
+
+# link again
+exact_matches <- general %>% left_join(easin, by = c("taxa" = "taxa"))
+
+
+
+
+# get duplicated
+dup <- exact_matches[duplicated(exact_matches[,1:2]) | duplicated(exact_matches[, 1:2], fromLast=T),]
+# check for which of these duplicates there is a problem regarding status
+dup_status <- dup[!(duplicated(dup[,c(1:2,11:17)]) | duplicated(dup[,c(1:2,11:17)], fromLast = T)),]
+
+# get save id
+length(unique(dup_status$taxa))
+save <- dup_status[dup_status$Name==gsub(" aggr.", "",dup_status$name) & !is.na(dup_status$EasinID), c(1,6)]
+save <- save[!is.na(save$taxa) & !duplicated(save$EasinID),]
+
+# keep these already
+dup_keep <- dup_status[(dup_status$taxa %in% save$taxa) & dup_status$EasinID %in% save$EasinID,]
+change <- dup_keep
+
+# check again
+dup_status <- dup_status[!dup_status$taxa %in% dup_keep$taxa,]
+dup_status <- dup[dup$taxa %in% dup_status$taxa,]
+
+# check whether there are problems with impact
+dup_impact <- dup_status[!(duplicated(dup_status[,c(1:2,11:14)]) | duplicated(dup_status[,c(1:2,11:14)], fromLast = T)),]
+# only one Rubus spec has impact, we will remove this one
+dup_status <- dup_status[!dup_status$Name %in% dup_impact$Name,]
+
+# for the idea, we look whether some species are duplicated and present in easin
+save <- dup_status[dup_status$Name==gsub(" aggr.", "",dup_status$name) & !is.na(dup_status$EasinID), c(1,6)]
+save <- save[!is.na(save$taxa) & !duplicated(save$EasinID),]
+# keep these 
+dup_keep <- dup_status[(dup_status$taxa %in% save$taxa) & dup_status$EasinID %in% save$EasinID,]
+change <- rbind(change, dup_keep)
+
+# which one are not present in that group
+dup_status <- dup_status[!dup_status$taxa %in% dup_keep$taxa,]
+# just keep one random, it does not matter that much
+dup_keep <- dup_status[!duplicated(dup_status$taxa),]
+change <- rbind(change, dup_keep)
+
+# now look at all the rest in dup
+dup_status <- dup[!dup$taxa %in% change$taxa,]
+dup_keep<- dup_status[!duplicated(dup_status$taxa),]
+change <- rbind(change, dup_keep)
+change <- change[!duplicated(change$taxa),]
+
+# duplicated
+dup_ids <- exact_matches$EasinID[duplicated(exact_matches[,1:2]) | duplicated(exact_matches[, 1:2], fromLast=T)]
+dup_ids <- setdiff(dup_ids, change$EasinID)
+
+# remove these ids
+exact_matches <- exact_matches[!exact_matches$EasinID %in% dup_ids,]
+# it is fine again
+# check for how many species we have observations 
+table(exact_matches$Neophyte[!is.na(exact_matches$EasinID)])/ table(exact_matches$Neophyte)
+# we have observations for most intra and extra European species!
+```
+
+# GLONAF
+```{r}
+# get this file to filter regions
+glonaf_regions<- read_csv("../Extra data/GLONAF/Region_GloNAF_vanKleunenetal2018Ecology.csv", show_col_types = FALSE)
+# filter for Europe
+regions_include <- glonaf_regions$region_id[glonaf_regions$tdwg1_name=="Europe"]
+regions_include <- c(regions_include, 889, 349)
+# check regions
+check <- glonaf_regions[glonaf_regions$region_id %in% regions_include,]
+# looks fine
+unique(check$tdwg4_name)
+
+# get species data and status
+glonaf_species <- read_csv("../Extra data/GLONAF2.0/glonaf_taxon_wcvp.csv",show_col_types = FALSE)
+glonaf_region <- read_csv("../Extra data/GLONAF2.0/glonaf_region.csv",show_col_types = FALSE)
+glonaf_status <- read_csv("../Extra data/GLONAF2.0/glonaf_flora2.csv",show_col_types = FALSE)
+
+# filer species regions
+glonaf_region <- glonaf_region[glonaf_region$id %in% glonaf_regions$region_id,]
+
+# get all species together
+glonaf_species <- left_join(glonaf_status, glonaf_species ,by= c("taxon_wcvp_id"="id", "family_wcvp"="family_wcvp"))
+glonaf_species <- left_join(glonaf_species, glonaf_regions, by = c("region_id"="region_id"))
+# only keep european species
+europe_species <- glonaf_species[glonaf_species$region_id %in% regions_include,]
+
+# keep only invasives
+glonaf_invasives <- europe_species[europe_species$status=="Invasive",]
+
+# clean names again
+# we have to load the data again because we are going to link with location as well
+# it would not be fair to assess invasives if they were not observed in the region of interest
+# read eva en header data
+eva <- read_csv("../EVA data/fullPlotEVA_new.csv", show_col_types=F)
+fullPlotData <- read_csv("../EVA data/fullPlotData_new.csv", show_col_types = FALSE)
+# read the status data
+species_country_status<- read_csv("../EVA data/country_species_new.csv", show_col_types = FALSE)
+species_country_status$Neophyte[species_country_status$Neophyte=="native_intra"] <- "native"
+
+# Only observation ID and Region
+fullPlot2<- fullPlotData[,c("PlotObservationID","Region")]
+# Right join to keep only species present in fullplot (otherwise a lot of NAs)
+eva<- right_join(eva, fullPlot2, by = c("PlotObservationID"="PlotObservationID"))
+# Join eva and classification
+eva <- left_join(eva, species_country_status[, -c(2:4,6:7)], by= c("Region"= "Region", "name"= "name"))
+
+# get all unique eva names
+eva_names <- unique(eva[, c(6,25,24)])
+# one specific name that was changed
+eva_names$name[eva_names$name=="Hippophaë rhamnoides"] <- "Hippophae rhamnoides"
+
+# link with glonaf
+# first check general name
+eva_names$glonaf_name <- glonaf_species$taxa_accepted[match(gsub(" aggr.","",eva_names$name), glonaf_species$taxa_accepted)]
+# swith x
+eva_names$glonaf_name[is.na(eva_names$glonaf_name)] <- glonaf_species$taxa_accepted[match(gsub("×","x",eva_names$name[is.na(eva_names$glonaf_name)]),
+                                                                                          glonaf_species$taxa_accepted)]
+# remove aggr gain
+eva_names$glonaf_name[is.na(eva_names$glonaf_name)] <- glonaf_species$taxa_accepted[match(gsub(" aggr.","",eva_names$name[is.na(eva_names$glonaf_name)]),
+                                                                                          glonaf_species$taxon_corrected)]
+
+# check how many species were invasive per region
+glonaf_sum <- glonaf_invasives |> group_by(taxa_accepted, status) |> summarise(n = n() )
+# there is one NA here, remove
+glonaf_sum <- glonaf_sum[!is.na(glonaf_sum$taxa_accepted),]
+
+# get all species that are invasive
+eva_names$invasive <- NA
+eva_names$invasive[eva_names$glonaf_name %in% glonaf_sum$taxa_accepted] <- "GloNAF"
+eva_names$n <- glonaf_sum$n[match(eva_names$glonaf_name, glonaf_sum$taxa_accepted)]
+
+# check how many of the species were found in GloNAF
+table(eva_names$Neophyte[!is.na(eva_names$glonaf_name)]) / table(eva_names$Neophyte)
+# most extra and intra-European species were found
+
+# check number invasive
+table(eva_names$Neophyte[!is.na(eva_names$glonaf_name) & !is.na(eva_names$invasive)]) / table(eva_names$Neophyte)
+table(eva_names$Neophyte[!is.na(eva_names$glonaf_name) & !is.na(eva_names$invasive)])
+# a lot of the species were considered invasive
+
+# save eva_names 
+eva_names_countries <- eva_names
+eva_names <- eva_names_countries
+# get one observation per species
+eva_names <- eva_names[!duplicated(eva_names[, 1:2]), c(1, 2 ,4:6)]
+
+
+# link
+overall <- exact_matches |>  left_join(eva_names, by = c("taxa"= "name", "Neophyte"="Neophyte"))
+# change the impact column
+overall$HasImpact[overall$HasImpact== T] <- "EASIN impact"
+overall$HasImpact[overall$HasImpact== F] <- "EASIN no impact"
+overall$HasImpact[overall$Neophyte=="native"] <- NA
+# change the glonaf column
+overall$invasive[!is.na(overall$invasive)] <- "GloNAF invasive"
+overall$invasive[overall$Neophyte=="native"] <- NA
+
+table(overall$Neophyte[!is.na(overall$invasive)])
+```
+
+
+# GIDIAS
+```{r}
+# read data
+gidias <- read_csv("../Extra data/GLONAF2.0/GIDIAS.csv",show_col_types = FALSE)
+
+# only keep plants
+gidias <- gidias[gidias$Kingdom== "Plantae",]
+gidias <- gidias[!is.na(gidias$Region),]
+gidias <- gidias[gidias$Region=="Europe_and_Central_Asia",]
+
+colnames(gidias)
+
+# get only important columns
+EICAT <- gidias[, c(3,4,6,7,39, 45)]
+# if data is available for both, is the impact the same
+setdiff(EICAT$direction.Nature[!is.na(EICAT$direction.Nature) & !is.na(EICAT$direction.NCP)], 
+        EICAT$direction.NCP[!is.na(EICAT$direction.Nature) & !is.na(EICAT$direction.NCP)])
+# we merge --> these are both impacts on humans and nature
+EICAT$direction.NCP[is.na(EICAT$direction.NCP)] <- EICAT$direction.Nature[is.na(EICAT$direction.NCP)]
+# save this data for later 
+EICAT_all_impacts <- EICAT
+
+# get per species only one value
+EICAT <- EICAT |> group_by(IAS.Species.Name, Verified.Name.GBIF.Taxon, Genus, Family, direction.Nature) |> 
+  summarise(n= n(), .groups = "drop_last") %>%   
+  mutate(total_n = sum(n[!is.na(direction.Nature)]), relative_n = ifelse(is.na(direction.Nature), NA, n / total_n)) %>% ungroup()
+
+length(EICAT$IAS.Species.Name[EICAT$direction.Nature=="Negative" & !is.na(EICAT$direction.Nature)])
+length(unique(EICAT$IAS.Species.Name))
+
+# link species names
+names_gidias <- unique(EICAT[, 1:2])
+names_gidias$IAS.Species.Name <- gsub(" ssp.", "", names_gidias$IAS.Species.Name)
+names_gidias$Verified.Name.GBIF.Taxon <- gsub(" spp", "", names_gidias$Verified.Name.GBIF.Taxon)
+
+# link to overall
+names_gidias$name <- names$name[match(names_gidias$IAS.Species.Name, gsub(" aggr.","",names$name))]
+sum(!is.na(names_gidias$name))
+names_gidias$name[is.na(names_gidias$name)] <- names$name[match(names_gidias$Verified.Name.GBIF.Taxon[is.na(names_gidias$name)], gsub(" aggr.","",names$name))]
+sum(!is.na(names_gidias$name))
+
+# link with species name
+names_gidias$name[is.na(names_gidias$name)] <- names$name[match(names_gidias$IAS.Species.Name[is.na(names_gidias$name)], gsub(" subsp. "," ",names$species))]
+sum(!is.na(names_gidias$name))
+names_gidias$name[is.na(names_gidias$name)] <- names$name[match(names_gidias$Verified.Name.GBIF.Taxon[is.na(names_gidias$name)], gsub(" subsp. "," ",names$species))]
+sum(!is.na(names_gidias$name))
+
+# link with matched concept
+names_gidias$name[is.na(names_gidias$name)] <- names$name[match(names_gidias$IAS.Species.Name[is.na(names_gidias$name)], 
+                                                                gsub(" subsp. "," ", names$`Matched concept`))]
+sum(!is.na(names_gidias$name))
+names_gidias$name[is.na(names_gidias$name)] <- names$name[match(names_gidias$Verified.Name.GBIF.Taxon[is.na(names_gidias$name)], 
+                                                                gsub(" subsp. "," ", names$`Matched concept`))]
+sum(!is.na(names_gidias$name))
+
+# link with turboveg
+names_gidias$name[is.na(names_gidias$name)] <- names$name[match(names_gidias$IAS.Species.Name[is.na(names_gidias$name)], 
+                                                                gsub(" subsp. "," ", names$`Turboveg2 concept`))]
+sum(!is.na(names_gidias$name))
+names_gidias$name[is.na(names_gidias$name)] <- names$name[match(names_gidias$Verified.Name.GBIF.Taxon[is.na(names_gidias$name)], 
+                                                                gsub(" subsp. "," ", names$`Turboveg2 concept`))]
+sum(!is.na(names_gidias$name))
+
+
+# should we check EURO+MED
+# create dataframe with species names to feed to the database and to aggregate some species
+obs <- names_gidias[is.na(names_gidias$name),c(1,2,3)]
+# give necessary names
+colnames(obs) <- c("RELEVE_NR","TaxonName","Cover_Perc")
+# run function
+source("2.2.1_Bruelheide.R")
+# check against name
+names_gidias[(names_gidias$name %in% obs$TaxonName),]
+# link with 
+names_gidias$name[is.na(names_gidias$name)] <- obs$TaxonName
+
+# assign to EICAT
+EICAT$name <- names_gidias$name[match(EICAT$IAS.Species.Name, names_gidias$IAS.Species.Name)]
+EICAT_all_impacts$name <- names_gidias$name[match(EICAT_all_impacts$IAS.Species.Name, names_gidias$IAS.Species.Name)]
+
+# some species re-occur
+# merge
+EICAT <- EICAT |> group_by(name, direction.Nature) |> summarise(n= n(), .groups = "drop_last") %>%   
+  mutate(total_n = sum(n[!is.na(direction.Nature)]), relative_n = ifelse(is.na(direction.Nature), NA, n / total_n)) %>%
+  ungroup() 
+
+EICAT_all_impacts <- EICAT_all_impacts |> group_by(name, direction.NCP) |> summarise(n= n(), .groups = "drop_last") %>%   
+  mutate(total_n = sum(n[!is.na(direction.NCP)]), relative_n = ifelse(is.na(direction.NCP), NA, n / total_n)) %>% ungroup() 
+
+# create columns
+overall$gidias <- NA
+overall$gidias_score <- NA
+# link with overall negatives
+overall$gidias[overall$taxa %in% EICAT$name[EICAT$relative_n >= 0.5 & EICAT$direction.Nature == "Negative" & !is.na(EICAT$direction.Nature)] 
+               & overall$Neophyte != "native"] <- "GIDIAS negative"
+overall$gidias_score[!is.na(overall$gidias)] <- EICAT$relative_n[match(overall$taxa[!is.na(overall$gidias)], EICAT$name)]
+# link with positives
+overall$gidias[is.na(overall$gidias) & overall$taxa %in% EICAT$name & overall$Neophyte != "native"] <- "GIDIAS other"
+
+# link all impacts, including those on humans
+overall$gidias_all <- NA
+overall$gidias_score_all <- NA 
+# link with overall negatives
+overall$gidias_all[overall$taxa %in% EICAT_all_impacts$name[EICAT_all_impacts$relative_n >= 0.5 & EICAT_all_impacts$direction.NCP == "Negative" &
+                                                          !is.na(EICAT_all_impacts$direction.NCP)] & overall$Neophyte != "native"] <- "GIDIAS negative"
+overall$gidias_score_all[!is.na(overall$gidias_all)] <- EICAT_all_impacts$relative_n[match(overall$taxa[!is.na(overall$gidias_all)], EICAT_all_impacts$name)]
+# link with positives
+overall$gidias_all[is.na(overall$gidias_all) & overall$taxa %in% EICAT_all_impacts$name & overall$Neophyte != "native"] <- "GIDIAS other"
+
+# check how many there are of each
+table(overall$gidias)
+table(overall$Neophyte[!is.na(overall$gidias)])
+
+# check how many there are of each
+table(overall$gidias_all)
+table(overall$Neophyte[!is.na(overall$gidias_all)])
+```
+
+
+
+
+# IMPACT
+## Impact plot 1
+Prepare plotting
+```{r}
+# get data to plot
+plot <- overall[, c(1:5,11, 20, 22)]
+colnames(plot)[6:8] <- c("EASIN","GLONAF", "GIDIAS")
+# change names of origins
+plot$Neophyte[plot$Neophyte=="native"] <- "N"
+plot$Neophyte[plot$Neophyte=="intra"] <- "IE"
+plot$Neophyte[plot$Neophyte=="extra"] <- "EE"
+
+# create a new grouping
+plot$EASIN_group <- NA
+plot$EASIN_group[!is.na(plot$EASIN)] <- paste( plot$EASIN[!is.na(plot$EASIN)], plot$Neophyte[!is.na(plot$EASIN)], sep= " ")
+plot$Glonaf_group <- NA
+plot$Glonaf_group[!is.na(plot$GLONAF)] <- paste( plot$GLONAF[!is.na(plot$GLONAF)], plot$Neophyte[!is.na(plot$GLONAF)], sep= " ")
+plot$Gidias_group <- NA
+plot$Gidias_group[!is.na(plot$GIDIAS)] <- paste( plot$GIDIAS[!is.na(plot$GIDIAS)], plot$Neophyte[!is.na(plot$GIDIAS)], sep= " ")
+# change names again to make it look better
+#plot$Neophyte[plot$Neophyte=="native"] <- "N"
+#plot$Neophyte[plot$Neophyte=="intra-European"] <- "IE"
+#plot$Neophyte[plot$Neophyte=="extra-European"] <- "EE"
+```
+
+
+Create final database
+```{r}
+combined_table <- rbind(
+  # Always include Neophyte
+  data.frame(species = plot$taxa, Neophyte= plot$Neophyte, combined = plot$Neophyte, impact   = plot$impact, family = plot$family, genus = plot$genus),
+  # Include GLONAF only where it exists
+  data.frame(species = plot$taxa[!is.na(plot$Glonaf_group)], Neophyte= plot$Neophyte[!is.na(plot$Glonaf_group)], 
+             combined = plot$Glonaf_group[!is.na(plot$Glonaf_group)],impact   = plot$impact[!is.na(plot$Glonaf_group)], 
+             family = plot$family[!is.na(plot$Glonaf_group)], genus = plot$genus[!is.na(plot$Glonaf_group)]),
+  # Include EASIN only where it exists
+  data.frame(species = plot$taxa[!is.na(plot$EASIN_group)], Neophyte= plot$Neophyte[!is.na(plot$EASIN_group)],
+             combined = plot$EASIN_group[!is.na(plot$EASIN_group)], impact   = plot$impact[!is.na(plot$EASIN_group)], 
+             family = plot$family[!is.na(plot$EASIN_group)], genus = plot$genus[!is.na(plot$EASIN_group)] ),
+  # Include GIDIAS only where it exists
+  data.frame(species = plot$taxa[!is.na(plot$Gidias_group)], Neophyte= plot$Neophyte[!is.na(plot$Gidias_group)],
+             combined = plot$Gidias_group[!is.na(plot$Gidias_group)], impact   = plot$impact[!is.na(plot$Gidias_group)], 
+             family = plot$family[!is.na(plot$Gidias_group)], genus = plot$genus[!is.na(plot$Gidias_group)] )
+  )
+
+# add spacers
+spacers <- tibble( impact   = NA, Neophyte = NA, combined = c("Spacer1", "Spacer2", "Spacer3"))
+plot_data <- bind_rows(combined_table, spacers)
+
+# add to order
+order_levels <- c("N", "IE","EE","Spacer1",
+                  "EASIN no impact IE","EASIN no impact EE", "EASIN impact IE", "EASIN impact EE", "Spacer2",
+                  "GloNAF invasive IE", "GloNAF invasive EE","Spacer3",
+                  "GIDIAS negative IE","GIDIAS negative EE", "GIDIAS other IE",
+                  "GIDIAS other EE"
+                  )
+# change order
+plot_data$combined <- factor(plot_data$combined, levels = rev(order_levels))
+
+
+# add significance
+model <- lmer(impact ~ -1 + combined + (1|family/genus), data = plot_data)
+# get letters
+emm   <- emmeans(model, pairwise ~ combined)
+cld_results <- cld(emm$emmeans, alpha = 0.05, Letters = letters, adjust = "tukey", reversed = TRUE) %>% mutate(.group = gsub(" ", "", .group))
+
+# assign letters
+letters_df <- cld_results[,c(1,7)] %>% rename(combined = combined, letter = .group)
+
+# get numbers
+n_counts <- plot_data %>% group_by(combined) %>% summarise(n = n(), .groups = "drop")
+
+# combine
+plot_labels <- left_join(letters_df, n_counts, by = "combined")
+```
+
+
+Plot data
+```{r}
+# plot data
+ggplot(plot_data, aes(x= impact, y= combined, fill= Neophyte))+
+  stat_density_ridges(alpha = 0.5, rel_min_height = 0.01, scale = 1.2,
+                      quantile_lines = TRUE, quantile_fun = mean, na.rm = TRUE)+
+  theme_ridges() +
+  theme_pubr() +
+  scale_y_discrete(labels = function(l) ifelse(grepl("^Spacer", l), "", l)) +
+  geom_text(data = plot_labels,aes(x = max(plot_data$impact, na.rm = TRUE) * 0.75, 
+                                    y = combined, label = letter),inherit.aes = FALSE,
+             hjust = 0,size = 4 ) +
+  geom_text(data = plot_labels,aes(x = max(plot_data$impact, na.rm = TRUE) * 0.70, 
+                                   y = combined, label = paste0("n=", n)), inherit.aes = FALSE,
+            hjust = 1,  size = 4) +
+  theme(legend.position = "none", axis.title.y = element_blank(), axis.title.x = element_text(size = 14),
+        axis.text.y  = element_text(size = 12), axis.text.x  = element_text(size = 12),axis.ticks.y = element_blank() ) +
+  scale_fill_manual(values = c("#004D40", "#FFC107", "#1E88E5"))+
+  coord_cartesian(xlim = c(min(plot_data$impact, na.rm = TRUE),
+                           max(plot_data$impact, na.rm = TRUE) * 0.80) )+
+ geom_vline(xintercept=0, linetype='dotted', alpha=1)+
+  xlab("Impact")
+```
+
+## Summary
+```{r}
+# percentage positive overall
+table(overall$Neophyte[overall$impact>=0])/ table(overall$Neophyte)
+
+# easin
+table(overall$Neophyte[overall$impact>=0 & overall$HasImpact=="Impact"])/ table(overall$Neophyte[overall$HasImpact=="Impact"])
+table(overall$Neophyte[overall$impact>=0 & overall$HasImpact=="No impact"])/ table(overall$Neophyte[overall$HasImpact=="No impact"])
+table(overall$Neophyte[overall$impact>=0 & !is.na(overall$HasImpact)])/ table(overall$Neophyte[!is.na(overall$HasImpact)])
+
+# easin
+table(overall$Neophyte[overall$impact>=0 & !is.na(overall$invasive)])/ table(overall$Neophyte[!is.na(overall$invasive)])
+
+# gidias
+table(overall$Neophyte[overall$impact>=0 & overall$gidias== "Negative"])/ table(overall$Neophyte[overall$gidias== "Negative"])
+table(overall$Neophyte[overall$impact>=0 & overall$gidias== "Other"])/ table(overall$Neophyte[overall$gidias== "Other"])
+table(overall$Neophyte[overall$impact>=0 & !is.na(overall$gidias)])/ table(overall$Neophyte[!is.na(overall$gidias)])
+```
+
+
+
+
+## Impact plot 2
+```{r}
+# change the impact column
+overall$HasImpact[overall$HasImpact== "EASIN impact"] <- "Impact"
+overall$HasImpact[overall$HasImpact== "EASIN no impact"] <- "No impact"
+overall$HasImpact[overall$Neophyte=="native"] <- NA
+# change the glonaf column
+overall$invasive[overall$invasive== "GLONAF invasive"] <- "Invasive"
+# change the gidias column
+overall$gidias[overall$gidias== "GIDIAS negative"] <- "Negative"
+overall$gidias[overall$gidias== "GIDIAS other"] <- "Other"
+```
+
+Prepare plotting
+```{r}
+# get data to plot
+plot <- overall[, c(1:5,11, 20, 22)]
+colnames(plot)[6:8] <- c("EASIN","GLONAF", "GIDIAS")
+# change names of origins
+plot$Neophyte[plot$Neophyte=="native"] <- "native"
+plot$Neophyte[plot$Neophyte=="intra"] <- "intra-European"
+plot$Neophyte[plot$Neophyte=="extra"] <- "extra-European"
+
+# create a new grouping
+plot$EASIN_group <- NA
+plot$EASIN_group[!is.na(plot$EASIN)] <- paste( plot$EASIN[!is.na(plot$EASIN)], plot$Neophyte[!is.na(plot$EASIN)], sep= " ")
+plot$Glonaf_group <- NA
+plot$Glonaf_group[!is.na(plot$GLONAF)] <- paste( plot$GLONAF[!is.na(plot$GLONAF)], plot$Neophyte[!is.na(plot$GLONAF)], sep= " ")
+plot$Gidias_group <- NA
+plot$Gidias_group[!is.na(plot$GIDIAS)] <- paste( plot$GIDIAS[!is.na(plot$GIDIAS)], plot$Neophyte[!is.na(plot$GIDIAS)], sep= " ")
+# change names again to make it look better
+plot$Neophyte[plot$Neophyte=="native"] <- "Native"
+plot$Neophyte[plot$Neophyte=="intra-European"] <- "Intra-European"
+plot$Neophyte[plot$Neophyte=="extra-European"] <- "Extra-European"
+```
+
+
+Create final database
+```{r}
+combined_table <- rbind(
+  # Always include Neophyte
+  data.frame(species = plot$taxa, Neophyte= plot$Neophyte, combined = plot$Neophyte, impact   = plot$impact, family = plot$family, genus = plot$genus),
+  # Include GLONAF only where it exists
+  data.frame(species = plot$taxa[!is.na(plot$Glonaf_group)], Neophyte= plot$Neophyte[!is.na(plot$Glonaf_group)], 
+             combined = plot$Glonaf_group[!is.na(plot$Glonaf_group)],impact   = plot$impact[!is.na(plot$Glonaf_group)], 
+             family = plot$family[!is.na(plot$Glonaf_group)], genus = plot$genus[!is.na(plot$Glonaf_group)]),
+  # Include EASIN only where it exists
+  data.frame(species = plot$taxa[!is.na(plot$EASIN_group)], Neophyte= plot$Neophyte[!is.na(plot$EASIN_group)],
+             combined = plot$EASIN_group[!is.na(plot$EASIN_group)], impact   = plot$impact[!is.na(plot$EASIN_group)], 
+             family = plot$family[!is.na(plot$EASIN_group)], genus = plot$genus[!is.na(plot$EASIN_group)] ),
+  # Include GIDIAS only where it exists
+  data.frame(species = plot$taxa[!is.na(plot$Gidias_group)], Neophyte= plot$Neophyte[!is.na(plot$Gidias_group)],
+             combined = plot$Gidias_group[!is.na(plot$Gidias_group)], impact   = plot$impact[!is.na(plot$Gidias_group)], 
+             family = plot$family[!is.na(plot$Gidias_group)], genus = plot$genus[!is.na(plot$Gidias_group)] )
+  )
+
+# add spacers
+spacers <- tibble( impact   = NA, Neophyte = NA, combined = c("Spacer1", "Spacer2", "Spacer3"))
+plot_data <- bind_rows(combined_table, spacers)
+
+# add to order
+order_levels <- c("Native", "Intra-European", "Extra-European", "Spacer1",
+                  "No impact intra-European","No impact extra-European", "Impact intra-European", "Impact extra-European", "Spacer2",
+                  "Invasive intra-European", "Invasive extra-European","Spacer3",
+                  "Negative intra-European","Negative extra-European", "Other intra-European","Other extra-European")
+# change order
+plot_data$combined <- factor(plot_data$combined, levels = rev(order_levels))
+
+
+# add significance
+model <- lmer(impact ~ -1 + combined + (1|family/genus), data = plot_data)
+# get letters
+emm   <- emmeans(model, pairwise ~ combined)
+cld_results <- cld(emm$emmeans, alpha = 0.05, Letters = letters, adjust = "tukey", reversed = TRUE) %>% mutate(.group = gsub(" ", "", .group))
+
+# assign letters
+letters_df <- cld_results[,c(1,7)] %>% rename(combined = combined, letter = .group)
+
+# get numbers
+n_counts <- plot_data %>% group_by(combined) %>% summarise(n = n(), .groups = "drop")
+
+# combine
+plot_labels <- left_join(letters_df, n_counts, by = "combined")
+```
+
+
+
+Plot data
+```{r}
+# plot data
+ggplot(plot_data, aes(x= impact, y= combined, fill= Neophyte))+
+  stat_density_ridges(alpha = 0.5, rel_min_height = 0.01, scale = 1.2,
+                      quantile_lines = TRUE, quantile_fun = mean, na.rm = TRUE)+
+  theme_ridges() +
+  theme_pubr() +
+  scale_y_discrete(labels = function(l) ifelse(grepl("^Spacer", l), "", l)) +
+  geom_text(data = plot_labels,aes(x = max(plot_data$impact, na.rm = TRUE) * 0.75, 
+                                    y = combined, label = letter),inherit.aes = FALSE,
+             hjust = 0,size = 4 ) +
+  geom_text(data = plot_labels,aes(x = max(plot_data$impact, na.rm = TRUE) * 0.70, 
+                                   y = combined, label = paste0("n=", n)), inherit.aes = FALSE,
+            hjust = 1,  size = 4) +
+  theme(legend.position = "none", axis.title.y = element_blank(), axis.title.x = element_text(size = 14),
+        axis.text.y  = element_text(size = 12), axis.text.x  = element_text(size = 12),axis.ticks.y = element_blank() ) +
+  scale_fill_manual(values = c("#004D40", "#FFC107", "#1E88E5"))+
+  coord_cartesian(xlim = c(min(plot_data$impact, na.rm = TRUE),
+                           max(plot_data$impact, na.rm = TRUE) * 0.80) )+
+ geom_vline(xintercept=0, linetype='dotted', alpha=1)+
+  xlab("Impact")
+
+ggsave("../Images/Impact_EASIN_Glonaf_GIDIAS.svg")
+```
+
+
+
+## Impact plot 3
+```{r}
+# change the impact column
+overall$HasImpact[overall$HasImpact== "EASIN impact"] <- "Impact"
+overall$HasImpact[overall$HasImpact== "EASIN no impact"] <- "No impact"
+overall$HasImpact[overall$Neophyte=="native"] <- NA
+# change the glonaf column
+overall$invasive[overall$invasive== "GLONAF invasive"] <- "Invasive"
+# change the gidias column
+overall$gidias[overall$gidias== "GIDIAS negative"] <- "Negative"
+overall$gidias[overall$gidias== "GIDIAS other"] <- "Other"
+
+# change the all gidias column
+overall$gidias_all[overall$gidias_all== "GIDIAS negative"] <- "Negative"
+overall$gidias_all[overall$gidias_all== "GIDIAS other"] <- "Other"
+```
+
+Prepare plotting
+```{r}
+# get data to plot
+plot <- overall[, c(1:5,11, 20, 22, 24)]
+colnames(plot)[6:9] <- c("EASIN","GLONAF", "GIDIAS", "GIDIAS_all")
+# change names of origins
+plot$Neophyte[plot$Neophyte=="native"] <- "native"
+plot$Neophyte[plot$Neophyte=="intra"] <- "intra-European"
+plot$Neophyte[plot$Neophyte=="extra"] <- "extra-European"
+
+# create a new grouping
+plot$EASIN_group <- NA
+plot$EASIN_group[!is.na(plot$EASIN)] <- paste( plot$EASIN[!is.na(plot$EASIN)], plot$Neophyte[!is.na(plot$EASIN)], sep= " ")
+plot$Glonaf_group <- NA
+plot$Glonaf_group[!is.na(plot$GLONAF)] <- paste( plot$GLONAF[!is.na(plot$GLONAF)], plot$Neophyte[!is.na(plot$GLONAF)], sep= " ")
+plot$Gidias_group <- NA
+plot$Gidias_group[!is.na(plot$GIDIAS)] <- paste( plot$GIDIAS[!is.na(plot$GIDIAS)],
+                                                 plot$Neophyte[!is.na(plot$GIDIAS)], sep= " ")
+plot$Gidias_group_all <- NA
+plot$Gidias_group_all[!is.na(plot$GIDIAS_all)] <- paste( plot$GIDIAS[!is.na(plot$GIDIAS_all)],
+                                                 plot$Neophyte[!is.na(plot$GIDIAS_all)], sep= " ")
+# change names again to make it look better
+plot$Neophyte[plot$Neophyte=="native"] <- "Native"
+plot$Neophyte[plot$Neophyte=="intra-European"] <- "Intra-European"
+plot$Neophyte[plot$Neophyte=="extra-European"] <- "Extra-European"
+```
+
+
+Create final database
+```{r}
+combined_table <- rbind(
+  # Always include Neophyte
+  data.frame(species = plot$taxa, Neophyte= plot$Neophyte, combined = plot$Neophyte, impact   = plot$impact, family = plot$family, genus = plot$genus),
+  # Include GLONAF only where it exists
+  data.frame(species = plot$taxa[!is.na(plot$Glonaf_group)], Neophyte= plot$Neophyte[!is.na(plot$Glonaf_group)], 
+             combined = plot$Glonaf_group[!is.na(plot$Glonaf_group)],impact   = plot$impact[!is.na(plot$Glonaf_group)], 
+             family = plot$family[!is.na(plot$Glonaf_group)], genus = plot$genus[!is.na(plot$Glonaf_group)]),
+  # Include EASIN only where it exists
+  data.frame(species = plot$taxa[!is.na(plot$EASIN_group)], Neophyte= plot$Neophyte[!is.na(plot$EASIN_group)],
+             combined = plot$EASIN_group[!is.na(plot$EASIN_group)], impact   = plot$impact[!is.na(plot$EASIN_group)], 
+             family = plot$family[!is.na(plot$EASIN_group)], genus = plot$genus[!is.na(plot$EASIN_group)] ),
+  # Include GIDIAS only where it exists
+  data.frame(species = plot$taxa[!is.na(plot$Gidias_group)], Neophyte= plot$Neophyte[!is.na(plot$Gidias_group)],
+             combined = plot$Gidias_group[!is.na(plot$Gidias_group)], impact   = plot$impact[!is.na(plot$Gidias_group)], 
+             family = plot$family[!is.na(plot$Gidias_group)], genus = plot$genus[!is.na(plot$Gidias_group)] ),
+  # Include GIDIAS only where it exists
+  data.frame(species = plot$taxa[!is.na(plot$Gidias_group_all)], 
+             Neophyte= plot$Neophyte[!is.na(plot$Gidias_group_all)],
+             combined = plot$Gidias_group[!is.na(plot$Gidias_group_all)], 
+             impact   = plot$impact[!is.na(plot$Gidias_group_all)], 
+             family = plot$family[!is.na(plot$Gidias_group_all)], 
+             genus = plot$genus[!is.na(plot$Gidias_group_all)] )
+  )
+
+# add spacers
+spacers <- tibble( impact   = NA, Neophyte = NA, combined = c("Spacer1", "Spacer2", "Spacer3", "Spacer4"))
+plot_data <- bind_rows(combined_table, spacers)
+
+# add to order
+order_levels <- c("Native", "Intra-European", "Extra-European", "Spacer1",
+                  "No impact intra-European","No impact extra-European", "Impact intra-European", 
+                  "Impact extra-European", "Spacer2",
+                  "Invasive intra-European", "Invasive extra-European","Spacer3",
+                  "Negative intra-European","Negative extra-European", "Other intra-European",
+                  "Other extra-European", "Spacer4",
+                  )
+# change order
+plot_data$combined <- factor(plot_data$combined, levels = rev(order_levels))
+
+
+# add significance
+model <- lmer(impact ~ -1 + combined + (1|family/genus), data = plot_data)
+# get letters
+emm   <- emmeans(model, pairwise ~ combined)
+cld_results <- cld(emm$emmeans, alpha = 0.05, Letters = letters, adjust = "tukey", reversed = TRUE) %>% mutate(.group = gsub(" ", "", .group))
+
+# assign letters
+letters_df <- cld_results[,c(1,7)] %>% rename(combined = combined, letter = .group)
+
+# get numbers
+n_counts <- plot_data %>% group_by(combined) %>% summarise(n = n(), .groups = "drop")
+
+# combine
+plot_labels <- left_join(letters_df, n_counts, by = "combined")
+```
+
+
+
+Plot data
+```{r}
+# plot data
+ggplot(plot_data, aes(x= impact, y= combined, fill= Neophyte))+
+  stat_density_ridges(alpha = 0.5, rel_min_height = 0.01, scale = 1.2,
+                      quantile_lines = TRUE, quantile_fun = mean, na.rm = TRUE)+
+  theme_ridges() +
+  theme_pubr() +
+  scale_y_discrete(labels = function(l) ifelse(grepl("^Spacer", l), "", l)) +
+  geom_text(data = plot_labels,aes(x = max(plot_data$impact, na.rm = TRUE) * 0.75, 
+                                    y = combined, label = letter),inherit.aes = FALSE,
+             hjust = 0,size = 4 ) +
+  geom_text(data = plot_labels,aes(x = max(plot_data$impact, na.rm = TRUE) * 0.70, 
+                                   y = combined, label = paste0("n=", n)), inherit.aes = FALSE,
+            hjust = 1,  size = 4) +
+  theme(legend.position = "none", axis.title.y = element_blank(), axis.title.x = element_text(size = 14),
+        axis.text.y  = element_text(size = 12), axis.text.x  = element_text(size = 12), axis.ticks.y = element_blank() ) +
+  scale_fill_manual(values = c("#004D40", "#FFC107", "#1E88E5"))+
+  coord_cartesian(xlim = c(min(plot_data$impact, na.rm = TRUE),
+                           max(plot_data$impact, na.rm = TRUE) * 0.80) )+
+ geom_vline(xintercept=0, linetype='dotted', alpha=1)+
+  xlab("Impact")
+
+ggsave("../Images/Impact_EASIN_Glonaf_GIDIAS.svg")
+```
