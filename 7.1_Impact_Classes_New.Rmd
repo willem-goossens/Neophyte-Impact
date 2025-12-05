@@ -1141,7 +1141,7 @@ EU <-ggplot() +
   new_scale_fill() +
   # Plot occurrences
   geom_raster(data = grid_df, aes(X, Y, fill = mean), alpha= 0.8) +
-  scale_fill_viridis_c(option = "magma", trans= "log",na.value = "NA",
+  scale_fill_viridis_c(option = "inferno", trans= "log",na.value = "NA", direction= 1,
                        breaks = c(0,0.01, 0.1 ,1,10,100),
                        labels = c("0","0.01","0.1", "1", "10", "100"))+
   # Add country borders

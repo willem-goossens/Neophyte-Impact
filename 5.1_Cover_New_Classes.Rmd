@@ -659,7 +659,7 @@ Dominance <- ggplot(speciesDominance, aes(x=neophyte, y=log10(coverMean), group=
         axis.text.y=element_text(size=10)) +
   
   theme(axis.title.y = element_text(margin = margin(r = 0)))+
-  ylab("Mean cover\nwhen present (%)") +
+  ylab("Dominance") +
   
   # Sample sizes (higher position)
   annotate("text", x=1, y=y_n_Dominance, label=paste("n=", length(speciesDominance$coverMean[speciesDominance$neophyte=="extra"])), size=4, hjust=0.5) +
@@ -683,7 +683,7 @@ Frequency <- ggplot(speciesDominance, aes(x=neophyte, y=log10(numberOfPlots), gr
   theme(legend.position="none") +
   scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native")) +
   scale_y_continuous(breaks= seq(2, 5, by =1), limits=c(1.5, y_n_Frequency )) +
-  ylab("log10 number\nof occurrences")+
+  ylab("Frequency")+
   xlab(element_blank())+
   theme(axis.title.y = element_text(margin = margin(r = 0)))+
   
@@ -718,7 +718,7 @@ Dominance <- ggplot(speciesDominance, aes(x=neophyte, y=log10(coverMean), group=
   scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native", "Native\nalien elsewhere")) +
   theme(axis.text.x=element_text(size=12), axis.title.y=element_text(size=12), axis.title.x=element_blank(), 
         axis.text.y=element_text(size=10)) +
-  ylab("Mean cover when present (%)") +
+  ylab("Dominance") +
   
   # Sample sizes (higher position)
   annotate("text", x=1, y=y_n_Dominance, label=paste("n=", length(speciesDominance$coverMean[speciesDominance$neophyte=="extra"])), size=4, hjust=0.5) +
@@ -743,7 +743,7 @@ Frequency <- ggplot(speciesDominance, aes(x=neophyte, y=log10(numberOfPlots), gr
   theme(legend.position="none") +
   scale_x_discrete(labels=c("Extra-\nEuropean", "Intra-\nEuropean", "Native", "Native\nalien elsewhere")) +
   scale_y_continuous(breaks= seq(2, 5, by =1), limits=c(1.5, y_n_Frequency )) +
-  ylab("log10 number\nof occurrences")+
+  ylab("Frequency")+
   xlab(element_blank())+
   
   # Sample sizes (higher position)

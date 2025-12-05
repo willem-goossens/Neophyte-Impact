@@ -163,6 +163,7 @@ gisd$impact[is.na(gisd$impact)]<- general_native$impact[match(gisd$eva[is.na(gis
 gisd$Neophyte[is.na(gisd$Neophyte)]<- general_native$Neophyte[match(gisd$eva[is.na(gisd$Neophyte)], general_native$taxa)]
 
 
+
 ##### 4.2 DAISY ####
 # here we can try whether our species are among the most impactful
 Daisy <- read.csv("../Extra data/Intermediate/Daisy_list.csv", sep=";")
